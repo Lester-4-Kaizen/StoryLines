@@ -16,16 +16,14 @@
 
 ### Production deployment URL
 
-There is no production domain configured in this workspace yet. The production URL is assigned by your hosting provider when you deploy; it is not the Supabase project URL.
+StoryLines is deployed at **https://story-lines-evangelista.vercel.app**. This is the Vercel-assigned production hostname; it is separate from the Supabase project URL. A custom domain can be added later in **Vercel Dashboard → story-lines → Settings → Domains**.
 
-For Vercel, after the project is deployed:
+In Supabase **Authentication → URL Configuration**:
 
-1. Open **Vercel Dashboard → your project → Deployments** and open the deployment marked **Production**. Its assigned `*.vercel.app` URL is a working production domain.
-2. If you connected a custom domain, find it under **Project → Settings → Domains**. Use whichever production hostname you want people to visit.
-3. In Supabase **Authentication → URL Configuration → Redirect URLs**, add the exact callback URL: `https://<your-production-hostname>/auth/callback` (replace the example hostname with the real one shown by Vercel).
-4. Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` to the Vercel project's **Settings → Environment Variables** for Production, then redeploy.
+1. Set the production Site URL to `https://story-lines-evangelista.vercel.app`.
+2. Add both `http://localhost:3000/auth/callback` and `https://story-lines-evangelista.vercel.app/auth/callback` to the allowed Redirect URLs.
 
-Do not enter `https://your-domain.example` literally; it is only a placeholder. If you have not deployed the app or assigned a custom domain, use the Vercel `*.vercel.app` hostname from the Production deployment. This local workspace is not linked to a Vercel project, so its production hostname cannot be determined here.
+The Supabase URL and publishable key are already configured on the Vercel project for Production, Preview, and Development. If you change a key, update `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in **Vercel Dashboard → story-lines → Settings → Environment Variables**, then redeploy.
 
 Users can register and sign in with email and password. If email confirmation is enabled in Supabase, confirmation links return to the app's `/auth/callback` route, which exchanges the confirmation code for a session and returns the user to the page they were heading to. The selected Reader, Writer, or Artist badge is saved as Supabase user metadata and restored with the authenticated account.
 
