@@ -12,8 +12,8 @@ export function ProfileView({ onEdit }: { onEdit: () => void }) {
             <UserRound className="size-8" />
           </span>
           <div className="flex-1">
-            <h1 className="font-serif text-3xl font-bold">Your profile</h1>
-            <p className="mt-1 text-sm text-muted-foreground">@your-username · Your bio will appear here.</p>
+            <h1 className="font-serif text-3xl font-bold">Profile mo</h1>
+            <p className="mt-1 text-sm text-muted-foreground">@your-username · Dito lalabas ang bio mo.</p>
             <span className="badge badge-reader mt-3">
               <BookOpen className="size-3" /> Reader
             </span>
@@ -23,7 +23,7 @@ export function ProfileView({ onEdit }: { onEdit: () => void }) {
           </Button>
         </div>
       </section>
-      <EmptyState icon={<BookOpen />} title="No works published yet" message="There is plenty of room here for what comes next." />
+      <EmptyState icon={<BookOpen />} title="Wala ka pang nailalathalang gawa" message="Marami pang puwang dito para sa susunod mong kuwento o likha." />
     </div>
   )
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { usePathname, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
 import { isSupabaseConfigured } from '@/lib/supabase/config'
 import { getSupabaseClient } from '@/lib/supabase'
@@ -15,21 +15,15 @@ type AppState = {
   hydrated: boolean
   mobileNav: boolean
   upgradeOpen: boolean
-  authOpen: boolean
-  authNext: Route
-  authTab: 'login' | 'register'
   notice: string | null
   setMobileNav: (value: boolean) => void
   setUpgradeOpen: (value: boolean) => void
   toggleBadge: (b: Badge) => void
   go: (route: Route) => void
+  refreshSession: () => Promise<void>
   create: () => void
-  signIn: (email: string, password: string) => Promise<void>
-  signUp: (email: string, password: string, displayName: string, role: Badge, next: Route) => Promise<boolean>
   logout: () => Promise<void>
   requireAuth: (next: Route) => void
-  openAuth: (next: Route, tab?: 'login' | 'register') => void
-  closeAuth: () => void
   dismissNotice: () => void
 }
 
@@ -37,30 +31,26 @@ const AppStateContext = createContext<AppState | null>(null)
 const BADGES: Badge[] = ['reader', 'writer', 'artist']
 
 function accountFromUser(user: User): { badges: Badge[]; role: Badge } {
-  const metadataBadges = user.user_metadata.badges
+  const metadataBadges = user.user_metadata.roles ?? user.user_metadata.badges
   const badges: Badge[] = Array.isArray(metadataBadges)
-    ? Array.from(new Set<Badge>(['reader', ...metadataBadges.filter((value): value is Badge => BADGES.includes(value))]))
+    ? Array.from(new Set<Badge>(metadataBadges.filter((value): value is Badge => BADGES.includes(value))))
     : ['reader']
   const selectedRole = user.user_metadata.role
   const role = BADGES.includes(selectedRole) && badges.includes(selectedRole)
     ? selectedRole
-    : badges.find((badge) => badge !== 'reader') ?? 'reader'
+    : badges.find((badge) => badge !== 'reader') ?? badges[0] ?? 'reader'
 
   return { badges, role }
 }
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
-  const pathname = usePathname()
   const [user, setUser] = useState<User | null>(null)
   const [badges, setBadges] = useState<Badge[]>(['reader'])
   const [role, setRole] = useState<Badge>('reader')
   const [hydrated, setHydrated] = useState(false)
   const [mobileNav, setMobileNav] = useState(false)
   const [upgradeOpen, setUpgradeOpen] = useState(false)
-  const [authOpen, setAuthOpen] = useState(false)
-  const [authNext, setAuthNext] = useState<Route>('/')
-  const [authTab, setAuthTab] = useState<'login' | 'register'>('login')
   const [notice, setNotice] = useState<string | null>(null)
   const creator = badges.includes('writer') || badges.includes('artist')
 
@@ -126,18 +116,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setMobileNav(false)
   }
 
-  const openAuth = (next: Route, tab: 'login' | 'register' = 'login') => {
-    setAuthNext(next)
-    setAuthTab(tab)
-    setAuthOpen(true)
-    setMobileNav(false)
-  }
-
-  const closeAuth = () => setAuthOpen(false)
-
   const requireAuth = (next: Route) => {
-    openAuth(next, 'login')
-    if (pathname !== '/') router.push('/')
+    const destination = `${next}${typeof window !== 'undefined' ? window.location.search : ''}`
+    router.push(`/login?next=${encodeURIComponent(destination)}`)
+    setMobileNav(false)
   }
 
   const toggleBadge = async (badge: Badge) => {
@@ -154,8 +136,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       : badge !== 'reader' ? badge : role
 
     try {
+      const { error: profileError } = await getSupabaseClient()
+        .from('profiles')
+        .update({ roles: nextBadges })
+        .eq('id', user.id)
+      if (profileError) throw profileError
+
       const { data, error } = await getSupabaseClient().auth.updateUser({
-        data: { ...user.user_metadata, badges: nextBadges, role: nextRole },
+        data: { ...user.user_metadata, badges: nextBadges, roles: nextBadges, role: nextRole },
       })
       if (error) throw error
       applyUser(data.user)
@@ -169,25 +157,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return creator ? go('/create') : setUpgradeOpen(true)
   }
 
-  const signIn = async (email: string, password: string) => {
-    const { data, error } = await getSupabaseClient().auth.signInWithPassword({ email, password })
+  const refreshSession = async () => {
+    const { data, error } = await getSupabaseClient().auth.getSession()
     if (error) throw error
-    if (data.user) applyUser(data.user)
-  }
-
-  const signUp = async (email: string, password: string, displayName: string, selectedRole: Badge, next: Route) => {
-    const badges: Badge[] = selectedRole === 'reader' ? ['reader'] : ['reader', selectedRole]
-    const { data, error } = await getSupabaseClient().auth.signUp({
-      email,
-      password,
-      options: {
-        data: { display_name: displayName, badges, role: selectedRole },
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
-      },
-    })
-    if (error) throw error
-    if (data.session && data.user) applyUser(data.user)
-    return !data.session
+    applyUser(data.session?.user ?? null)
+    setHydrated(true)
   }
 
   const logout = async () => {
@@ -213,21 +187,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         hydrated,
         mobileNav,
         upgradeOpen,
-        authOpen,
-        authNext,
-        authTab,
         notice,
         setMobileNav,
         setUpgradeOpen,
         toggleBadge,
         go,
+        refreshSession,
         create,
-        signIn,
-        signUp,
         logout,
         requireAuth,
-        openAuth,
-        closeAuth,
         dismissNotice,
       }}
     >

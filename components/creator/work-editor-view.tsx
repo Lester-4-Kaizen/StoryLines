@@ -43,7 +43,7 @@ export function WorkEditorView({ work }: { work: Work }) {
   }
 
   const remove = () => {
-    if (confirm(`Delete "${work.title}"? This can't be undone.`)) {
+    if (confirm(`Burahin ang "${work.title}"? Hindi na ito maibabalik.`)) {
       deleteWork(work.id)
       backToWorks()
     }
@@ -82,7 +82,7 @@ export function WorkEditorView({ work }: { work: Work }) {
             <textarea
               value={synopsis}
               onChange={(e) => setSynopsis(e.target.value.slice(0, 500))}
-              placeholder="What should readers know before they begin?"
+              placeholder="Ano ang dapat malaman ng readers bago magsimula?"
               className="mt-2 min-h-28 w-full resize-none rounded-lg border border-input bg-background px-3 py-3 text-sm outline-none focus:border-accent"
             />
           </div>
@@ -107,14 +107,14 @@ export function WorkEditorView({ work }: { work: Work }) {
               <textarea
                 value={chapterBody}
                 onChange={(e) => setChapterBody(e.target.value)}
-                placeholder="Begin writing here..."
+                placeholder="Dito magsimula ang kuwento mo..."
                 className="min-h-70 w-full resize-y bg-transparent font-serif text-base leading-7 outline-none"
               />
             </div>
           ) : (
             <div className="border-t border-border pt-6">
               <label className="text-sm font-bold">Page count</label>
-              <p className="mt-1 text-xs text-muted-foreground">Re-uploading pages isn't available yet — you can adjust the count for now.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Hindi pa puwedeng mag-upload ulit ng pages—bilang lang muna ang puwede mong baguhin.</p>
               <input
                 type="number"
                 min={0}

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import Image from 'next/image'
 import { BookMarked, ChevronDown, Inbox, Library, LogOut, Menu, Search, Settings, UserRound, X } from 'lucide-react'
 import type { Route } from '@/lib/types'
@@ -45,7 +46,7 @@ function NavItem({
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-1.5 rounded-md px-2.5 py-2 text-[11px] font-bold tracking-[0.12em] transition ${
+      className={`flex min-h-11 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-2 text-[11px] font-bold tracking-[0.04em] transition ${
         active ? 'bg-primary-foreground/12 text-accent' : 'text-primary-foreground/75 hover:bg-primary-foreground/10 hover:text-primary-foreground'
       }`}
     >
@@ -93,7 +94,7 @@ function NavMenu({
     <div ref={ref} className="relative">
       <button
         onClick={trigger}
-        className={`flex items-center gap-1.5 rounded-md px-2.5 py-2 text-[11px] font-bold tracking-[0.12em] transition ${
+        className={`flex min-h-11 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-2 text-[11px] font-bold tracking-[0.04em] transition ${
           active ? 'bg-primary-foreground/12 text-accent' : 'text-primary-foreground/75 hover:bg-primary-foreground/10 hover:text-primary-foreground'
         }`}
       >
@@ -174,14 +175,10 @@ function AccountMenu({ go, logout }: { go: (route: Route) => void; logout: () =>
   )
 }
 
-// Inline expanding search, like Webnovel's — no dedicated /search page.
-// Tapping the icon expands a text field right there in the header; a small
-// panel below it responds live as you type. There's no real search index
-// behind it yet, so it always resolves to an empty state, same as every
-// other list in the app.
 function HeaderSearch() {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const router = useRouter()
   const ref = useClickOutside<HTMLDivElement>(() => close(), open)
 
   function close() {
@@ -189,31 +186,44 @@ function HeaderSearch() {
     setQuery('')
   }
 
+  function submitSearch(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const search = query.trim()
+    router.push(search ? `/browse?search=${encodeURIComponent(search)}` : '/browse')
+    close()
+  }
+
   return (
     <div ref={ref} className="relative">
-      {open ? (
-        <div className="flex items-center gap-2 rounded-full bg-primary-foreground/10 px-3 py-1.5">
-          <Search className="size-4 shrink-0" />
-          <input
-            autoFocus
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search stories, comics, creators..."
-            className="w-24 bg-transparent text-xs outline-none placeholder:text-primary-foreground/50 sm:w-52"
-          />
-          <button onClick={close} aria-label="Close search" className="shrink-0">
-            <X className="size-3.5" />
-          </button>
-        </div>
-      ) : (
-        <button onClick={() => setOpen(true)} className="rounded-full p-2 hover:bg-primary-foreground/10" aria-label="Search">
-          <Search className="size-5" />
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="flex size-11 items-center justify-center rounded-full hover:bg-primary-foreground/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        aria-label={open ? 'Isara ang paghahanap' : 'Search'}
+        aria-expanded={open}
+        aria-controls="header-search-panel"
+      >
+        {open ? <X className="size-5" /> : <Search className="size-5" />}
+      </button>
       {open && (
-        <div className="absolute right-0 z-20 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-card p-4 shadow-lg">
-          <p className="text-xs leading-5 text-muted-foreground">
-            {query ? `Nothing found for “${query}”.` : 'Start typing to search stories, comics, and creators.'}
+        <div id="header-search-panel" className="absolute right-0 top-full z-30 mt-2 w-[min(24rem,calc(100vw-1.5rem))] rounded-xl border border-border bg-card p-3 text-foreground shadow-xl max-[600px]:fixed max-[600px]:inset-x-3 max-[600px]:top-[4.5rem] max-[600px]:mt-0 max-[600px]:w-auto">
+          <form onSubmit={submitSearch} role="search" className="flex min-h-12 items-center gap-2 rounded-lg border border-input bg-background px-3 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20">
+            <Search className="size-4 shrink-0" />
+            <input
+              autoFocus
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Hanap pamagat, genre, o keyword..."
+              aria-label="Maghanap ayon sa pamagat, genre, o keyword"
+              className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            />
+            <button type="submit" className="flex min-h-10 shrink-0 items-center rounded-md bg-accent px-3 text-xs font-bold text-accent-foreground hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+              Hanapin
+            </button>
+          </form>
+          <p className="px-1 pt-2 text-xs leading-5 text-muted-foreground">
+            Maghanap sa pamagat, genre, at description ng mga nailathalang gawa.
           </p>
         </div>
       )}
@@ -230,7 +240,6 @@ export function SiteHeader({
   go,
   create,
   requireAuth,
-  openAuth,
   logout,
 }: {
   route: Route
@@ -241,12 +250,11 @@ export function SiteHeader({
   go: (route: Route) => void
   create: () => void
   requireAuth: (next: Route) => void
-  openAuth: (next: Route, tab?: 'login' | 'register') => void
   logout: () => void
 }) {
   return (
     <header className="sticky top-0 z-30 border-b border-border/70 bg-primary text-primary-foreground shadow-[0_3px_0_rgba(68,45,31,0.12)]">
-      <div className="mx-auto flex h-16 max-w-7xl items-center gap-5 px-4 sm:px-6">
+      <div className="mx-auto flex h-[4.5rem] max-w-7xl items-center gap-4 px-4 sm:gap-6 sm:px-6">
         <button onClick={() => go('/')} className="flex shrink-0 items-center gap-2" aria-label="StoryLines home">
           <span className="brand-mark">
             <picture className="size-full">
@@ -264,7 +272,7 @@ export function SiteHeader({
           <span className="font-serif text-xl font-bold tracking-tight">StoryLines</span>
         </button>
 
-        <nav className="hidden flex-1 items-center gap-1.5 lg:flex" aria-label="Main navigation">
+        <nav className="hidden flex-1 items-center gap-2 min-[1200px]:flex" aria-label="Main navigation">
           <NavItem label="HOME" active={route === '/'} onClick={() => go('/')} />
           <NavItem label="COMMUNITY" active={route === '/community'} onClick={() => go('/community')} />
           <NavItem label="BROWSE" active={route === '/browse'} onClick={() => go('/browse')} />
@@ -299,35 +307,35 @@ export function SiteHeader({
           <NavItem label="LIBRARY" icon={<Library />} locked={!isLoggedIn} active={route === '/library'} onClick={() => go('/library')} />
         </nav>
 
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
+          <HeaderSearch />
           {!isLoggedIn && (
-            <div className="hidden items-center gap-2 sm:flex">
-              <button onClick={() => openAuth(route, 'login')} className="flex items-center rounded-full px-3 py-1.5 text-xs font-bold hover:bg-primary-foreground/10">
+            <div className="hidden shrink-0 items-center gap-2 sm:flex">
+              <Link href={{ pathname: '/login', query: { next: route } }} className="flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-bold hover:bg-primary-foreground/10">
                 Log in
-              </button>
-              <button
-                onClick={() => openAuth(route, 'register')}
-                className="flex items-center rounded-full border border-primary-foreground/25 px-3 py-1.5 text-xs font-bold hover:bg-primary-foreground/10"
+              </Link>
+              <Link
+                href={{ pathname: '/signup', query: { next: route } }}
+                className="flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-primary-foreground/25 px-4 py-1.5 text-sm font-bold hover:bg-primary-foreground/10"
               >
                 Sign up
-              </button>
+              </Link>
             </div>
           )}
-          <HeaderSearch />
           {isLoggedIn && (
             <button className="relative rounded-full p-2 hover:bg-primary-foreground/10" aria-label="Inbox">
               <Inbox className="size-5" />
             </button>
           )}
           {isLoggedIn && <AccountMenu go={go} logout={logout} />}
-          <button onClick={() => setMobileNav(!mobileNav)} className="rounded-full p-2 lg:hidden" aria-label="Open menu">
+          <button onClick={() => setMobileNav(!mobileNav)} className="flex size-11 items-center justify-center rounded-full hover:bg-primary-foreground/10 min-[1200px]:hidden" aria-label={mobileNav ? 'Close menu' : 'Open menu'} aria-expanded={mobileNav}>
             {mobileNav ? <X /> : <Menu />}
           </button>
         </div>
       </div>
 
       {mobileNav && (
-        <div className="flex flex-col gap-1 border-t border-primary-foreground/10 px-4 py-3 lg:hidden">
+        <div className="flex flex-col gap-1 border-t border-primary-foreground/10 px-4 py-3 min-[1200px]:hidden">
           {[
             ['HOME', '/'],
             ['COMMUNITY', '/community'],
@@ -337,41 +345,41 @@ export function SiteHeader({
           ].map(([label, path]) => (
             <button
               key={path}
-              className="rounded-lg px-3 py-2 text-left text-xs font-bold tracking-widest hover:bg-primary-foreground/10"
+              className="flex min-h-11 items-center rounded-lg px-3 text-left text-sm font-bold tracking-wide hover:bg-primary-foreground/10"
               onClick={() => go(path as Route)}
             >
               {label}
             </button>
           ))}
-          <button className="rounded-lg px-3 py-2 text-left text-xs font-bold tracking-widest hover:bg-primary-foreground/10" onClick={create}>
+          <button className="flex min-h-11 items-center rounded-lg px-3 text-left text-sm font-bold tracking-wide hover:bg-primary-foreground/10" onClick={create}>
             CREATE
           </button>
           <button
-            className="rounded-lg px-3 py-2 text-left text-xs font-bold tracking-widest hover:bg-primary-foreground/10"
+            className="flex min-h-11 items-center rounded-lg px-3 text-left text-sm font-bold tracking-wide hover:bg-primary-foreground/10"
             onClick={() => (isLoggedIn ? go('/collaborate') : requireAuth('/collaborate'))}
           >
             COLLABORATE
           </button>
           {isLoggedIn ? (
             <>
-              <button className="rounded-lg px-3 py-2 text-left text-xs font-bold tracking-widest hover:bg-primary-foreground/10" onClick={() => go('/profile')}>
+              <button className="flex min-h-11 items-center rounded-lg px-3 text-left text-sm font-bold tracking-wide hover:bg-primary-foreground/10" onClick={() => go('/profile')}>
                 PROFILE
               </button>
-              <button className="rounded-lg px-3 py-2 text-left text-xs font-bold tracking-widest hover:bg-primary-foreground/10" onClick={() => go('/settings')}>
+              <button className="flex min-h-11 items-center rounded-lg px-3 text-left text-sm font-bold tracking-wide hover:bg-primary-foreground/10" onClick={() => go('/settings')}>
                 SETTINGS
               </button>
-              <button className="rounded-lg px-3 py-2 text-left text-xs font-bold tracking-widest text-destructive hover:bg-primary-foreground/10" onClick={logout}>
+              <button className="flex min-h-11 items-center rounded-lg px-3 text-left text-sm font-bold tracking-wide text-destructive hover:bg-primary-foreground/10" onClick={logout}>
                 LOG OUT
               </button>
             </>
           ) : (
             <>
-              <button className="rounded-lg px-3 py-2 text-left text-xs font-bold tracking-widest hover:bg-primary-foreground/10" onClick={() => openAuth(route, 'login')}>
+              <Link className="flex min-h-11 items-center rounded-lg px-3 py-2 text-left text-xs font-bold tracking-widest hover:bg-primary-foreground/10" href={{ pathname: '/login', query: { next: route } }}>
                 LOG IN
-              </button>
-              <button className="rounded-lg px-3 py-2 text-left text-xs font-bold tracking-widest hover:bg-primary-foreground/10" onClick={() => openAuth(route, 'register')}>
+              </Link>
+              <Link className="flex min-h-11 items-center rounded-lg px-3 py-2 text-left text-xs font-bold tracking-widest hover:bg-primary-foreground/10" href={{ pathname: '/signup', query: { next: route } }}>
                 SIGN UP
-              </button>
+              </Link>
             </>
           )}
         </div>

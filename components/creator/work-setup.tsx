@@ -71,7 +71,7 @@ export function WorkSetup({
           <div>
             <label className="text-sm font-bold">Cover image</label>
             <div className="mt-2 flex min-h-36 items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 text-center text-sm text-muted-foreground">
-              <Upload className="mr-2 size-4" /> Upload a cover, or add one later
+              <Upload className="mr-2 size-4" /> Mag-upload ng cover, o idagdag na lang mamaya
             </div>
           </div>
           <div>
@@ -82,7 +82,7 @@ export function WorkSetup({
             <textarea
               value={synopsis}
               onChange={(e) => setSynopsis(e.target.value.slice(0, 500))}
-              placeholder="What should readers know before they begin?"
+              placeholder="Ano ang dapat malaman ng readers bago magsimula?"
               className="mt-2 min-h-28 w-full resize-none rounded-lg border border-input bg-background px-3 py-3 text-sm outline-none focus:border-accent"
             />
           </div>
@@ -98,7 +98,7 @@ export function WorkSetup({
               Save draft
             </Button>
             <Button disabled={!title.trim()} onClick={continueToEditor} className="rounded-lg bg-accent text-accent-foreground">
-              Continue to editor <ChevronRight data-icon="inline-end" />
+              Magpatuloy sa editor <ChevronRight data-icon="inline-end" />
             </Button>
           </div>
         </div>

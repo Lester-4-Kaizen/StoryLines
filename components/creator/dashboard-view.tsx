@@ -15,10 +15,10 @@ export function DashboardView({ go }: { go: (route: Route) => void }) {
   const recent = works.slice(0, 4)
 
   return (
-    <CreatorFrame eyebrow="Creator studio" title="Your creative home." go={go}>
+    <CreatorFrame eyebrow="Creator studio" title="Tahanan ng mga likha mo." go={go}>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          ['Published works', String(published)],
+          ['Mga nailathalang gawa', String(published)],
           ['Total reads', '0'],
           ['Likes received', '0'],
           ['Followers', '0'],
@@ -26,7 +26,7 @@ export function DashboardView({ go }: { go: (route: Route) => void }) {
           <Panel key={label}>
             <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{label}</span>
             <p className="mt-4 font-serif text-4xl font-bold">{value}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{label === 'Published works' && published > 0 ? `${works.length} total including drafts` : 'No activity yet'}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{label === 'Mga nailathalang gawa' && published > 0 ? `${works.length} lahat-lahat, kasama ang drafts` : 'Wala pang activity'}</p>
           </Panel>
         ))}
       </div>
@@ -34,23 +34,23 @@ export function DashboardView({ go }: { go: (route: Route) => void }) {
         <Panel>
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="font-serif text-2xl font-bold">Quick actions</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Start with a blank page or check on your work.</p>
+              <h2 className="font-serif text-2xl font-bold">Mga puwede mong gawin</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Magsimula sa blank page o balikan ang mga ginagawa mo.</p>
             </div>
             <Sparkles className="text-accent" />
           </div>
           <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <ActionButton icon={<PenLine />} label="New work" onClick={() => go('/create/works/new')} />
-            <ActionButton icon={<BookOpen />} label="Manage works" onClick={() => go('/create/works')} />
+            <ActionButton icon={<PenLine />} label="Bagong gawa" onClick={() => go('/create/works/new')} />
+            <ActionButton icon={<BookOpen />} label="Ayusin ang mga gawa" onClick={() => go('/create/works')} />
             <ActionButton icon={<Brush />} label="Portfolio" onClick={() => go('/create/portfolio')} />
-            <ActionButton icon={<Crown />} label="View analytics" onClick={() => go('/create/works/analytics')} />
+            <ActionButton icon={<Crown />} label="Tingnan ang analytics" onClick={() => go('/create/works/analytics')} />
           </div>
         </Panel>
         <Panel>
-          <h2 className="font-serif text-2xl font-bold">Recent activity</h2>
+          <h2 className="font-serif text-2xl font-bold">Mga bagong galaw</h2>
           <div className="mt-6">
             {recent.length === 0 ? (
-              <EmptyState icon={<Sparkles />} title="A quiet beginning" message="Your activity will appear here once you publish." />
+              <EmptyState icon={<Sparkles />} title="Tahimik na simula" message="Dito lalabas ang activity mo kapag may nailathala ka na." />
             ) : (
               <div className="flex flex-col gap-3">
                 {recent.map((work) => (

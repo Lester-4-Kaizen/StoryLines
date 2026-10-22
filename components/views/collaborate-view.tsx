@@ -28,10 +28,10 @@ export function CollaborateView({
   return (
     <div className="flex flex-col gap-8">
       <div>
-        <span className="eyebrow">Find your people</span>
-        <h1 className="mt-3 font-serif text-5xl font-bold text-balance">Make something together.</h1>
+        <span className="eyebrow">Hanap ka-creative mo</span>
+        <h1 className="mt-3 font-serif text-5xl font-bold text-balance">May mabubuo kapag nagsama-sama.</h1>
         <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-          Find a thoughtful creative partner for the story or images you have been carrying.
+          Humanap ng ka-partner para buhayin ang kuwentong sinusulat o larawang iniisip mo.
         </p>
       </div>
 
@@ -56,12 +56,12 @@ export function CollaborateView({
       {!canFind ? (
         <Panel className="flex flex-col items-center p-8 text-center">
           <Users className="size-10 text-accent" />
-          <h2 className="mt-4 font-serif text-2xl font-bold">Creator access opens collaboration.</h2>
+          <h2 className="mt-4 font-serif text-2xl font-bold">Para makipag-collab, kailangan ng creator role.</h2>
           <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-            Add a Writer or Artist badge to find partners, send requests, and open a shared workspace.
+            Idagdag ang Writer o Alagad ng sining role para makahanap ng ka-partner, magpadala ng request, at gumawa sa iisang workspace.
           </p>
           <Button onClick={onUpgrade} className="mt-6 rounded-lg bg-accent text-accent-foreground">
-            Unlock creator tools
+            I-unlock ang creator tools
           </Button>
         </Panel>
       ) : tab === 'find' ? (
@@ -71,13 +71,13 @@ export function CollaborateView({
               onClick={() => setKind('artist')}
               className={`rounded-full px-4 py-2 text-xs font-bold ${kind === 'artist' ? 'bg-primary text-primary-foreground' : 'border border-border bg-card'}`}
             >
-              Find an artist
+              Hanap alagad ng sining
             </button>
             <button
               onClick={() => setKind('writer')}
               className={`rounded-full px-4 py-2 text-xs font-bold ${kind === 'writer' ? 'bg-primary text-primary-foreground' : 'border border-border bg-card'}`}
             >
-              Find a writer
+              Hanap writer
             </button>
           </div>
           <label className="flex items-center gap-3 rounded-xl border border-input bg-card px-4 py-3">
@@ -85,22 +85,22 @@ export function CollaborateView({
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={`Search ${kind}s by name or style...`}
+              placeholder={`Maghanap ng ${kind} ayon sa pangalan o style...`}
               className="w-full bg-transparent text-sm outline-none"
             />
           </label>
           <EmptyState
             icon={<Users />}
-            title={`No ${kind}s found`}
-            message={query ? `There are no matching ${kind}s yet.` : `The ${kind} directory is waiting for its first profiles.`}
+            title={`Wala pang ${kind} na makita`}
+            message={query ? `Wala pang tugmang ${kind}. Subukan ang ibang pangalan o style.` : `Naghihintay pa ng unang ${kind} profile.`}
           />
         </div>
       ) : (
         <EmptyState
           icon={tab === 'active' ? <Sparkles /> : tab === 'pending' ? <Inbox /> : <BookMarked />}
-          title={`No ${tab} collaborations`}
-          message="Your private collaboration history will appear here when you begin working with someone."
-          action={tab === 'active' ? 'Find a collaborator' : undefined}
+          title={`Wala pang ${tab === 'active' ? 'active' : tab === 'pending' ? 'pending' : 'dating'} collaboration`}
+          message="Dito mo makikita ang collaboration history mo kapag nagsimula ka nang gumawa kasama ang iba."
+          action={tab === 'active' ? 'Maghanap ng ka-collab' : undefined}
           onAction={() => setTab('find')}
         />
       )}

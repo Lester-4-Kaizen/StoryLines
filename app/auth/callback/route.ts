@@ -1,24 +1,18 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { safeNextPath } from '@/lib/auth/redirect'
 import { isSupabaseConfigured, supabaseKey, supabaseUrl } from '@/lib/supabase/config'
-
-function getSafeDestination(request: NextRequest) {
-  const next = request.nextUrl.searchParams.get('next') ?? '/'
-  if (!next.startsWith('/') || next.startsWith('//') || next.includes('\\')) return new URL('/', request.url)
-  return new URL(next, request.url)
-}
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get('code')
-  const destination = getSafeDestination(request)
-  const response = NextResponse.redirect(destination)
+  const destination = new URL(safeNextPath(request.nextUrl.searchParams.get('next')), request.url)
 
   if (!code || !isSupabaseConfigured || !supabaseUrl || !supabaseKey) {
     destination.searchParams.set('auth', 'error')
-    response.headers.set('Location', destination.toString())
-    return response
+    return NextResponse.redirect(destination)
   }
 
+  const response = NextResponse.redirect(destination)
   const supabase = createServerClient(supabaseUrl, supabaseKey, {
     cookies: {
       getAll() {

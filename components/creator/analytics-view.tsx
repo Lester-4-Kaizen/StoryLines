@@ -11,14 +11,14 @@ export function AnalyticsView() {
           <Panel key={label}>
             <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{label}</span>
             <p className="mt-4 font-serif text-4xl font-bold">0</p>
-            <p className="mt-1 text-xs text-muted-foreground">Waiting for your first publication</p>
+            <p className="mt-1 text-xs text-muted-foreground">Hinihintay ang una mong publication</p>
           </Panel>
         ))}
       </div>
       <Panel>
-        <h2 className="font-serif text-2xl font-bold">Reading activity</h2>
+        <h2 className="font-serif text-2xl font-bold">Mga nagbabasa</h2>
         <div className="mt-6 flex h-56 items-center justify-center rounded-lg border border-dashed border-border bg-muted/20 text-sm text-muted-foreground">
-          Analytics will appear after your work has readers.
+          Lalabas dito ang analytics kapag may nagbabasa na ng gawa mo.
         </div>
       </Panel>
     </CreatorFrame>

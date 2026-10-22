@@ -19,20 +19,20 @@ export function WorksView({ go }: { go: (route: Route) => void }) {
   const { works, hydrated } = useWorks()
 
   return (
-    <CreatorFrame eyebrow="Creator studio / works" title="Your works." go={go}>
+    <CreatorFrame eyebrow="Creator studio / mga gawa" title="Mga gawa mo." go={go}>
       <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-muted-foreground">Drafts and published work live here. Tap one to edit it.</p>
+        <p className="text-sm text-muted-foreground">Dito makikita ang drafts at nailathala mo. Pumili ng isa para i-edit.</p>
         <Button onClick={() => go('/create/works/new')} className="rounded-lg bg-accent text-accent-foreground">
-          <PenLine data-icon="inline-start" /> New work
+          <PenLine data-icon="inline-start" /> Bagong gawa
         </Button>
       </div>
 
       {!hydrated ? null : works.length === 0 ? (
         <EmptyState
           icon={<BookOpen />}
-          title="No works yet"
-          message="Create your first Story or Comic and it will appear in this private workspace."
-          action="Create your first work"
+          title="Wala ka pang gawa rito"
+          message="Gumawa ng unang Story o Comic mo; dito ito lalabas sa private workspace mo."
+          action="Gumawa ng unang obra"
           onAction={() => go('/create/works/new')}
         />
       ) : (

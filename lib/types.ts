@@ -44,15 +44,24 @@ export type Work = {
   coCreatorRole?: 'writer' | 'artist'
 }
 
-// A Community post — separate from Works (stories/comics). Every post in
-// this prototype is authored by "you" (the simulated account), since
-// there's no multi-user backend yet; `authorRole` is whichever creator
-// badge was active when it was posted.
+export type CommunityPostType =
+  | 'update'
+  | 'recommendation'
+  | 'work-in-progress'
+  | 'collaborator'
+  | 'feedback'
+  | 'poll'
+
 export type Post = {
   id: string
+  authorName?: string
   authorRole: 'writer' | 'artist'
+  type?: CommunityPostType
   content: string
   imageUrl?: string
+  imageUrls?: string[]
+  tags?: string[]
+  lookingFor?: string[]
   createdAt: number
   likes: number
   likedByMe: boolean

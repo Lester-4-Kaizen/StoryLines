@@ -21,13 +21,13 @@ export function UpgradeModal({
             <X className="size-5" />
           </button>
         </div>
-        <p className="mt-4 text-sm leading-6 text-muted-foreground">Add a Writer or Artist badge to open the creator studio.</p>
+        <p className="mt-4 text-sm leading-6 text-muted-foreground">Idagdag ang Writer o Alagad ng sining badge para mabuksan ang creator studio.</p>
         <div className="mt-6 grid gap-3 sm:grid-cols-2">
           <Button onClick={() => onUpgrade('writer')} className="rounded-lg bg-accent text-accent-foreground">
             Add Writer
           </Button>
           <Button onClick={() => onUpgrade('artist')} variant="outline" className="rounded-lg">
-            Add Artist
+            Alagad ng sining
           </Button>
         </div>
       </div>

@@ -56,7 +56,7 @@ export function StoryEditorView({ go }: { go: (route: Route) => void }) {
           <textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            placeholder="Begin writing here..."
+            placeholder="Dito magsimula ang kuwento mo..."
             className="min-h-90 w-full resize-y bg-transparent font-serif text-lg leading-8 outline-none"
           />
           <div className="flex flex-col-reverse gap-3 border-t border-border pt-5 sm:flex-row sm:justify-between">
@@ -64,7 +64,7 @@ export function StoryEditorView({ go }: { go: (route: Route) => void }) {
               Save draft
             </Button>
             <Button onClick={() => publish('Ongoing')} className="rounded-lg bg-accent text-accent-foreground">
-              Publish story
+              I-publish ang story
             </Button>
           </div>
         </div>

@@ -4,40 +4,27 @@ import { useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import { X } from 'lucide-react'
 import { SiteHeader } from '@/components/site-header'
+import { SiteFooter } from '@/components/shared/site-footer'
 import { UpgradeModal } from '@/components/upgrade-modal'
-import { AuthModal } from '@/components/auth-modal'
 import { useAppState } from '@/lib/app-state'
 import type { Route } from '@/lib/types'
 
-// Routes that require an account. Guests can freely browse Home, Browse,
-// Ranking, and Community (viewing) — everything here persists identity or
-// lets you act as a creator, so it's gated.
-const PROTECTED_PREFIXES = ['/create', '/library', '/settings', '/profile', '/collaborate']
-
-function isProtectedPath(pathname: string) {
-  return PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
-}
-
-// Renders around every page via app/layout.tsx. Owns the chrome that used
-// to sit at the bottom of the old monolithic component: header, upgrade
-// modal, auth modal — plus two route guards:
-//  1. Logged-out visitors hitting a protected route get the auth modal
-//     (via requireAuth, which also bounces them to Home underneath it if
-//     they're on a page that only makes sense once logged in).
-//  2. Logged-in accounts without a creator badge hitting /create/* get
+// Renders around every page via app/layout.tsx. Owns the shared chrome and
+// the creator route guard. Authentication redirects are handled by proxy.ts.
+// Logged-in accounts without a creator badge hitting /create/* get
 //     bounced to Home with the upgrade modal open — enforced here at the
 //     route level, not just inside the CREATE button's click handler, so
 //     there's no way to land on /create with the wrong badge and no
 //     warning.
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+  const isAuthPage = ['/login', '/signup', '/forgot-password', '/reset-password'].includes(pathname)
   const {
     creator,
     isLoggedIn,
     hydrated,
     mobileNav,
     upgradeOpen,
-    authOpen,
     notice,
     dismissNotice,
     setMobileNav,
@@ -46,17 +33,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     go,
     create,
     requireAuth,
-    openAuth,
     logout,
   } = useAppState()
 
   useEffect(() => {
     if (!hydrated) return // wait for the persisted login state to load first
-
-    if (!isLoggedIn && isProtectedPath(pathname)) {
-      requireAuth(pathname as Route)
-      return
-    }
 
     if (isLoggedIn && pathname.startsWith('/create') && !creator) {
       setUpgradeOpen(true)
@@ -65,8 +46,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname, isLoggedIn, hydrated, creator])
 
+  if (isAuthPage) return <>{children}</>
+
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="flex min-h-screen flex-col bg-background text-foreground">
       <SiteHeader
         route={(pathname as Route) || '/'}
         creator={creator}
@@ -76,7 +59,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         go={go}
         create={create}
         requireAuth={requireAuth}
-        openAuth={openAuth}
         logout={logout}
       />
       {notice && (
@@ -87,7 +69,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
         </div>
       )}
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:py-12">{children}</main>
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6 lg:py-12">{children}</main>
+      <SiteFooter />
       {upgradeOpen && (
         <UpgradeModal
           onClose={() => setUpgradeOpen(false)}
@@ -97,7 +80,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           }}
         />
       )}
-      {authOpen && <AuthModal />}
     </div>
   )
 }

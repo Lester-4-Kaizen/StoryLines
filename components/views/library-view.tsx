@@ -9,9 +9,9 @@ export function LibraryView() {
   return (
     <div className="flex flex-col gap-8">
       <div>
-        <span className="eyebrow">Your private shelf</span>
+        <span className="eyebrow">Sarili mong estante</span>
         <h1 className="mt-3 font-serif text-5xl font-bold">Library.</h1>
-        <p className="mt-3 text-sm text-muted-foreground">Keep your saved works and reading history close.</p>
+        <p className="mt-3 text-sm text-muted-foreground">Nandito ang mga sinave mong gawa at mga huli mong binasa.</p>
       </div>
       <div className="flex gap-2 border-b border-border">
         <button
@@ -29,8 +29,8 @@ export function LibraryView() {
       </div>
       <EmptyState
         icon={tab === 'Saved' ? <BookMarked /> : <BookOpen />}
-        title={tab === 'Saved' ? 'Your saved shelf is empty' : 'Your history is private and empty'}
-        message={tab === 'Saved' ? 'Tap the bookmark on a work to keep it here.' : 'Reading history will appear here only for you.'}
+        title={tab === 'Saved' ? 'Wala pang naka-save sa estante mo' : 'Wala pang laman ang reading history mo'}
+        message={tab === 'Saved' ? 'I-tap ang bookmark sa isang gawa para itago rito.' : 'Dito mo makikita ang history ng mga binasa mo.'}
       />
     </div>
   )

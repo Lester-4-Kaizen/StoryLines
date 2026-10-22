@@ -1,9 +1,30 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { safeNextPath } from '@/lib/auth/redirect'
 import { isSupabaseConfigured, supabaseKey, supabaseUrl } from '@/lib/supabase/config'
+
+const PROTECTED_PREFIXES = ['/create', '/library', '/settings', '/profile', '/collaborate']
+
+function isProtectedPath(pathname: string) {
+  return PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+}
+
+function redirectWithCookies(url: URL, response: NextResponse) {
+  const redirect = NextResponse.redirect(url)
+  response.cookies.getAll().forEach(({ name, value, ...options }) => redirect.cookies.set(name, value, options))
+  response.headers.forEach((value, name) => {
+    if (name !== 'location' && name !== 'set-cookie') redirect.headers.set(name, value)
+  })
+  return redirect
+}
 
 export async function updateSession(request: NextRequest) {
   if (!isSupabaseConfigured || !supabaseUrl || !supabaseKey) {
+    if (isProtectedPath(request.nextUrl.pathname)) {
+      const login = new URL('/login', request.url)
+      login.searchParams.set('next', safeNextPath(`${request.nextUrl.pathname}${request.nextUrl.search}`))
+      return NextResponse.redirect(login)
+    }
     return NextResponse.next({ request })
   }
 
@@ -22,8 +43,19 @@ export async function updateSession(request: NextRequest) {
     },
   })
 
-  const { error } = await supabase.auth.getClaims()
+  const { data, error } = await supabase.auth.getClaims()
   if (error && error.name !== 'AuthSessionMissingError') throw error
+
+  const isLoggedIn = Boolean(data?.claims?.sub)
+  if (isLoggedIn && ['/login', '/signup'].includes(request.nextUrl.pathname)) {
+    return redirectWithCookies(new URL('/', request.url), response)
+  }
+
+  if (!isLoggedIn && isProtectedPath(request.nextUrl.pathname)) {
+    const login = new URL('/login', request.url)
+    login.searchParams.set('next', safeNextPath(`${request.nextUrl.pathname}${request.nextUrl.search}`))
+    return redirectWithCookies(login, response)
+  }
 
   return response
 }

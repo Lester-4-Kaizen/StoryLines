@@ -20,7 +20,7 @@ export function CreatorFrame({
           <h1 className="mt-3 font-serif text-5xl font-bold text-balance">{title}</h1>
         </div>
         <Button variant="outline" onClick={() => go('/create')} className="rounded-lg">
-          Creator dashboard
+          Dashboard ng creator
         </Button>
       </div>
       {children}

@@ -6,25 +6,25 @@ import type { Badge } from '@/lib/types'
 
 export function PortfolioView({ badges }: { badges: Badge[] }) {
   return (
-    <CreatorFrame eyebrow="Artist studio / portfolio" title="Your portfolio." go={() => {}}>
+    <CreatorFrame eyebrow="Artist studio / portfolio" title="Portfolio mo." go={() => {}}>
       <Panel>
         <div className="flex items-start gap-4">
           <span className="section-icon">
             <Brush />
           </span>
           <div>
-            <h2 className="font-serif text-2xl font-bold">A portfolio for the visual work</h2>
+            <h2 className="font-serif text-2xl font-bold">Tahanan ng mga visual work mo</h2>
             <p className="mt-1 max-w-xl text-sm leading-6 text-muted-foreground">
-              Add selected artwork, a short bio, and the visual references you want people to remember.
+                Piliin ang artwork na gusto mong ipakita, magdagdag ng maikling bio, at ipakita ang style na tatatak sa kanila.
             </p>
           </div>
         </div>
         <div className="mt-6">
           <EmptyState
             icon={<Brush />}
-            title="No portfolio items yet"
-            message={badges.includes('artist') ? 'Upload your first piece when you are ready.' : 'An Artist badge unlocks portfolio publishing.'}
-            action={!badges.includes('artist') ? 'Unlock Artist badge' : undefined}
+            title="Wala pang laman ang portfolio mo"
+            message={badges.includes('artist') ? 'I-upload ang una mong piece kapag handa ka na.' : 'I-unlock ang Alagad ng sining role para makapag-publish ng portfolio.'}
+            action={!badges.includes('artist') ? 'I-unlock ang Alagad ng sining role' : undefined}
           />
         </div>
       </Panel>

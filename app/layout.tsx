@@ -6,6 +6,7 @@ import { AppStateProvider } from '@/lib/app-state'
 import { WorksProvider } from '@/lib/works-store'
 import { CommunityProvider } from '@/lib/community-store'
 import { AppShell } from '@/components/app-shell'
+import { BackToTop } from '@/components/shared/back-to-top'
 
 const geist = Geist({ subsets: ['latin'], variable: '--font-geist' })
 const dmSerif = DM_Serif_Display({ subsets: ['latin'], weight: '400', variable: '--font-dm-serif' })
@@ -29,6 +30,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <WorksProvider>
             <CommunityProvider>
               <AppShell>{children}</AppShell>
+              <BackToTop />
             </CommunityProvider>
           </WorksProvider>
         </AppStateProvider>

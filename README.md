@@ -1,30 +1,207 @@
 # StoryLines
 
-## Supabase authentication
+## Supabase authentication setup
 
-1. Create a Supabase project and enable **Email** under **Authentication → Providers**.
-2. In the project's **Connect** or **API Keys** settings, copy its project URL and publishable key.
-3. Copy `.env.example` to `.env.local` and fill in the values:
+StoryLines uses Supabase Auth with `@supabase/ssr`. The browser and server use only the Supabase publishable key (or the legacy anon key); never add a `service_role` key to this app or expose one as a `NEXT_PUBLIC_` variable.
 
-   ```powershell
-   Copy-Item .env.example .env.local
-   ```
+### Environment variables
 
-   `NEXT_PUBLIC_SUPABASE_ANON_KEY` is also accepted for projects that still use the legacy anon key. Never use a `service_role` key in this app.
-4. In **Authentication → URL Configuration**, set the local site URL to `http://localhost:3000` and add `http://localhost:3000/auth/callback` to the allowed redirect URLs.
-5. Start or restart the app with `pnpm dev`.
+Set these two variables in `.env.local` for local development:
 
-### Production deployment URL
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<publishable-key>
+```
 
-StoryLines is deployed at **https://story-lines-evangelista.vercel.app**. This is the Vercel-assigned production hostname; it is separate from the Supabase project URL. A custom domain can be added later in **Vercel Dashboard → story-lines → Settings → Domains**.
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` is accepted as a legacy alternative to `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. If both are present, the publishable key takes precedence.
 
-In Supabase **Authentication → URL Configuration**:
+In **Vercel Dashboard → StoryLines → Settings → Environment Variables**, set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` for **Production**, **Preview**, and **Development**, then redeploy. The same public key is suitable for all three; access is restricted by Supabase RLS. No service-role secret, site URL, or Facebook/Google client secret belongs in the Next.js environment.
 
-1. Set the production Site URL to `https://story-lines-evangelista.vercel.app`.
-2. Add both `http://localhost:3000/auth/callback` and `https://story-lines-evangelista.vercel.app/auth/callback` to the allowed Redirect URLs.
+### Supabase URL and provider configuration
 
-The Supabase URL and publishable key are already configured on the Vercel project for Production, Preview, and Development. If you change a key, update `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in **Vercel Dashboard → story-lines → Settings → Environment Variables**, then redeploy.
+In **Supabase → Authentication → URL Configuration**:
 
-Users can register and sign in with email and password. If email confirmation is enabled in Supabase, confirmation links return to the app's `/auth/callback` route, which exchanges the confirmation code for a session and returns the user to the page they were heading to. The selected Reader, Writer, or Artist badge is saved as Supabase user metadata and restored with the authenticated account.
+- Set **Site URL** to `https://story-lines-evangelista.vercel.app`.
+- Add these **Redirect URLs**:
+  - `http://localhost:3000/auth/callback`
+  - `https://story-lines-evangelista.vercel.app/auth/callback`
+  - `https://*.vercel.app/auth/callback` for Vercel preview deployments. If your Vercel project uses a custom preview domain, add that exact callback URL too.
 
-The app's previous demo sign-in was stored only in this browser. It does not create Supabase users; register a real account to use the new authentication flow.
+For a local-only project, set the Site URL to `http://localhost:3000` while developing. Keep the production URL as the Site URL in the production Supabase project.
+
+In **Authentication → Providers**, enable **Email** and configure email confirmation to match the desired signup policy. Enable **Google** and **Facebook** to show working social sign-in:
+
+- In each provider's developer console, register Supabase's callback URL, `https://<project-ref>.supabase.co/auth/v1/callback`, as the provider's OAuth redirect URI.
+- Add the Google and Facebook client IDs and client secrets in the corresponding Supabase provider settings. These secrets stay in Supabase; StoryLines does not need them.
+- For Facebook, configure the app's OAuth redirect URI and required app/domain details in Meta for Developers before switching the app to Live.
+
+Review **Authentication → Rate Limits** for email sends, token verification, and sign-in attempts. Keep Supabase's protections enabled and tune them against expected traffic and email-provider limits. Username checks are served by an app route and are not covered by Supabase Auth rate limits; add request throttling if that endpoint is abused.
+
+Use branded confirmation and password-reset templates under **Authentication → Email Templates**. Include the Supabase `{{ .ConfirmationURL }}` link in the confirmation template and `{{ .ConfirmationURL }}` for recovery; Supabase redirects through `/auth/callback` to exchange the one-time code. Test the templates on localhost and a Vercel preview before publishing.
+
+### Profiles table and row-level security
+
+Run this SQL in **Supabase → SQL Editor** before accepting signups. The auth trigger creates one `profiles` row per new auth user, including Google/Facebook users. OAuth accounts without a username receive a generated username; users can later update it through their profile settings. The final `INSERT` backfills users created before installing the trigger.
+
+```sql
+create table if not exists public.profiles (
+  id uuid primary key references auth.users (id) on delete cascade,
+  display_name text not null,
+  username text not null,
+  roles text[] not null default array['reader']::text[],
+  created_at timestamptz not null default now(),
+  constraint profiles_username_valid
+    check (username ~ '^[a-z0-9_]{3,20}$'),
+  constraint profiles_roles_valid
+    check (
+      cardinality(roles) > 0
+      and roles <@ array['reader', 'writer', 'artist']::text[]
+    )
+);
+
+create unique index if not exists profiles_username_lower_unique
+  on public.profiles (lower(username));
+
+alter table public.profiles enable row level security;
+
+revoke all on table public.profiles from anon, authenticated;
+grant select (id, display_name, username, roles) on public.profiles to anon, authenticated;
+grant update (display_name, username, roles) on public.profiles to authenticated;
+
+drop policy if exists "Profiles are publicly readable" on public.profiles;
+create policy "Profiles are publicly readable"
+  on public.profiles for select
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "Users update their own profile" on public.profiles;
+create policy "Users update their own profile"
+  on public.profiles for update
+  to authenticated
+  using ((select auth.uid()) = id)
+  with check ((select auth.uid()) = id);
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  profile_name text;
+  profile_username text;
+  requested_username text;
+  generated_username text;
+  profile_roles text[];
+begin
+  profile_name := coalesce(
+    nullif(btrim(new.raw_user_meta_data ->> 'display_name'), ''),
+    nullif(btrim(new.raw_user_meta_data ->> 'full_name'), ''),
+    nullif(btrim(new.raw_user_meta_data ->> 'name'), ''),
+    nullif(split_part(coalesce(new.email, ''), '@', 1), ''),
+    'StoryLines reader'
+  );
+
+  requested_username := lower(nullif(btrim(new.raw_user_meta_data ->> 'username'), ''));
+  generated_username := coalesce(
+    nullif(
+      btrim(left(regexp_replace(lower(profile_name), '[^a-z0-9_]+', '_', 'g'), 11), '_'),
+      ''
+    ),
+    'reader'
+  ) || '_' || substr(replace(new.id::text, '-', ''), 1, 8);
+  profile_username := case
+    when requested_username ~ '^[a-z0-9_]{3,20}$' then requested_username
+    else generated_username
+  end;
+
+  select coalesce(
+    array_agg(distinct requested.role),
+    array['reader']::text[]
+  )
+  into profile_roles
+  from jsonb_array_elements_text(
+    case
+      when jsonb_typeof(new.raw_user_meta_data -> 'roles') = 'array'
+        then new.raw_user_meta_data -> 'roles'
+      else '[]'::jsonb
+    end
+  ) as requested(role)
+  where requested.role in ('reader', 'writer', 'artist');
+
+  if cardinality(profile_roles) = 0 then
+    profile_roles := array['reader']::text[];
+  end if;
+
+  insert into public.profiles (id, display_name, username, roles)
+  values (new.id, profile_name, profile_username, profile_roles);
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+with users_with_names as (
+  select
+    u.id,
+    coalesce(
+      nullif(btrim(u.raw_user_meta_data ->> 'display_name'), ''),
+      nullif(btrim(u.raw_user_meta_data ->> 'full_name'), ''),
+      nullif(btrim(u.raw_user_meta_data ->> 'name'), ''),
+      nullif(split_part(coalesce(u.email, ''), '@', 1), ''),
+      'StoryLines reader'
+    ) as display_name,
+    u.raw_user_meta_data
+  from auth.users as u
+),
+profile_rows as (
+  select
+    u.id,
+    u.display_name,
+    case
+      when lower(nullif(btrim(u.raw_user_meta_data ->> 'username'), '')) ~ '^[a-z0-9_]{3,20}$'
+        then lower(btrim(u.raw_user_meta_data ->> 'username'))
+      else coalesce(
+        nullif(
+          btrim(left(regexp_replace(lower(u.display_name), '[^a-z0-9_]+', '_', 'g'), 11), '_'),
+          ''
+        ),
+        'reader'
+      ) || '_' || substr(replace(u.id::text, '-', ''), 1, 8)
+    end as username,
+    coalesce(
+      (
+        select array_agg(distinct requested.role)
+        from jsonb_array_elements_text(
+          case
+            when jsonb_typeof(u.raw_user_meta_data -> 'roles') = 'array'
+              then u.raw_user_meta_data -> 'roles'
+            else '[]'::jsonb
+          end
+        ) as requested(role)
+        where requested.role in ('reader', 'writer', 'artist')
+      ),
+      array['reader']::text[]
+    ) as roles
+  from users_with_names as u
+)
+insert into public.profiles (id, display_name, username, roles)
+select id, display_name, username, roles
+from profile_rows
+on conflict (id) do nothing;
+```
+
+Public users can read only the safe profile columns granted above. Authenticated users can update only their own profile row, and cannot insert/delete rows or change the profile ID. The username unique index is case-insensitive. The signup UI checks username availability, but the database constraint remains authoritative during concurrent signups.
+
+## Auth routes and behavior
+
+- `/login`, `/signup`, `/forgot-password`, and `/reset-password` are standalone pages.
+- `/auth/callback` exchanges confirmation, recovery, and OAuth codes for an SSR session.
+- Protected routes redirect guests to `/login?next=...`; the `next` destination is restricted to same-site relative paths.
+- Email confirmation and resend behavior depends on the Email provider configuration above. New signups show a check-your-inbox state when confirmation is enabled.
+- Social buttons work only after the corresponding Google/Facebook provider is enabled in Supabase.
+- CAPTCHA is not enabled by default. Add Supabase CAPTCHA protection (for example, Cloudflare Turnstile or hCaptcha) only if signup abuse becomes a measured problem; enable it in Supabase Auth and pass the provider token to the relevant Auth calls on both signup and recovery forms.

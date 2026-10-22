@@ -1,24 +1,204 @@
 'use client'
 
-import { useState } from 'react'
-import { Brush, Heart, ImagePlus, MessageCircle, PenLine, Sparkles, X } from 'lucide-react'
+import { useRef, useState } from 'react'
+import {
+  Bookmark,
+  Brush,
+  Check,
+  ChevronDown,
+  Compass,
+  Handshake,
+  Heart,
+  ImagePlus,
+  MessageCircle,
+  PenLine,
+  Plus,
+  Send,
+  Share2,
+  Sparkles,
+  UsersRound,
+  X,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { EmptyState } from '@/components/shared/empty-state'
 import { Panel } from '@/components/shared/panel'
 import { useCommunity } from '@/lib/community-store'
-import type { Badge } from '@/lib/types'
+import type { Badge, CommunityPostType, Post } from '@/lib/types'
 
-const MAX_IMAGE_SIZE = 1024 * 1024
+const MAX_POST_LENGTH = 500
+const MAX_IMAGES = 4
+const MAX_FILE_SIZE = 8 * 1024 * 1024
+const IMAGE_MAX_EDGE = 1280
+const POST_TYPES: { value: CommunityPostType; label: string }[] = [
+  { value: 'update', label: 'Update' },
+  { value: 'recommendation', label: 'Reading reco' },
+  { value: 'work-in-progress', label: 'Work-in-progress' },
+  { value: 'collaborator', label: 'Looking for collaborator' },
+  { value: 'feedback', label: 'Feedback request' },
+  { value: 'poll', label: 'Poll' },
+]
+const COLLABORATOR_ROLES = ['Writer', 'Artist', 'Editor', 'Cover designer', 'Translator']
+
+type FeedTab = 'for-you' | 'following' | 'latest' | 'collaborators'
+type PreviewImage = { name: string; dataUrl: string }
 
 function timeAgo(ts: number) {
-  const seconds = Math.floor((Date.now() - ts) / 1000)
-  if (seconds < 60) return 'Just now'
+  const seconds = Math.max(0, Math.floor((Date.now() - ts) / 1000))
+  if (seconds < 60) return 'Ngayon lang'
   const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes}m ago`
+  if (minutes < 60) return `${minutes} min ang nakalipas`
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.floor(hours / 24)
-  return `${days}d ago`
+  if (hours < 24) return `${hours} oras ang nakalipas`
+  return `${Math.floor(hours / 24)} araw ang nakalipas`
+}
+
+function roleLabel(role: Post['authorRole']) {
+  return role === 'artist' ? 'Alagad ng sining' : 'Writer'
+}
+
+function postTypeLabel(type: CommunityPostType | undefined) {
+  return POST_TYPES.find((item) => item.value === type)?.label ?? 'Update'
+}
+
+async function compressImage(file: File): Promise<string> {
+  if (!file.type.startsWith('image/')) throw new Error('Pumili ng image file.')
+  if (file.size > MAX_FILE_SIZE) throw new Error('Hanggang 8 MB lang ang image bago i-compress.')
+
+  const bitmap = await createImageBitmap(file)
+  const scale = Math.min(1, IMAGE_MAX_EDGE / Math.max(bitmap.width, bitmap.height))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+  const context = canvas.getContext('2d')
+  if (!context) {
+    bitmap.close()
+    throw new Error('Hindi maihanda ang image. Subukan ulit.')
+  }
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  bitmap.close()
+
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.76))
+  if (!blob) throw new Error('Hindi ma-compress ang image. Subukan ang ibang file.')
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Hindi mabasa ang image.'))
+    reader.onerror = () => reject(new Error('Hindi mabasa ang image.'))
+    reader.readAsDataURL(blob)
+  })
+}
+
+function Avatar({ role, large = false }: { role?: 'writer' | 'artist'; large?: boolean }) {
+  const Icon = role === 'artist' ? Brush : role === 'writer' ? PenLine : UsersRound
+  return (
+    <span className={`community-avatar${large ? ' community-avatar-large' : ''}`} aria-hidden="true">
+      <Icon className={large ? 'size-5' : 'size-4'} />
+    </span>
+  )
+}
+
+function FeedPost({
+  post,
+  onLike,
+}: {
+  post: Post
+  onLike: (id: string) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const [shareMessage, setShareMessage] = useState<string | null>(null)
+  const images = post.imageUrls?.length ? post.imageUrls : post.imageUrl ? [post.imageUrl] : []
+  const tags = post.tags ?? []
+
+  const sharePost = async () => {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/community#post-${post.id}`)
+      setShareMessage('Link copied!')
+    } catch {
+      setShareMessage('Hindi makopya ang link sa device na ito.')
+    }
+  }
+
+  return (
+    <article className="community-card">
+      <div className="flex items-start gap-3">
+        <Avatar role={post.authorRole} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-sm font-bold">{post.authorName || 'Ikaw'}</span>
+            <span className="community-role">{roleLabel(post.authorRole)}</span>
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <time dateTime={new Date(post.createdAt).toISOString()}>{timeAgo(post.createdAt)}</time>
+            <span aria-hidden="true">·</span>
+            <span className="community-type">{postTypeLabel(post.type)}</span>
+          </div>
+        </div>
+        <button type="button" className="community-icon-button" aria-label="Post options" title="Post options arrive in a later phase" disabled>
+          <ChevronDown className="size-4" />
+        </button>
+      </div>
+
+      <div className="mt-4">
+        <p className={`whitespace-pre-wrap break-words text-sm leading-6 ${!expanded ? 'community-post-copy' : ''}`}>{post.content}</p>
+        {post.content.length > 260 && (
+          <button type="button" className="mt-1 text-xs font-bold text-accent hover:underline" onClick={() => setExpanded((value) => !value)}>
+            {expanded ? 'See less' : 'See more'}
+          </button>
+        )}
+      </div>
+
+      {post.type === 'collaborator' && post.lookingFor?.length ? (
+        <div className="mt-3 rounded-xl border border-border bg-secondary/55 p-3">
+          <p className="text-xs font-bold text-foreground">Looking for</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {post.lookingFor.map((item) => <span className="community-tag" key={item}>{item}</span>)}
+          </div>
+          <button type="button" className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-lg bg-accent px-3 text-sm font-bold text-accent-foreground hover:brightness-95" disabled title="Reach out opens in a later phase">
+            <Send className="size-4" /> Reach out
+          </button>
+        </div>
+      ) : null}
+
+      {images.length > 0 && (
+        <div className={`community-image-grid community-image-grid-${Math.min(images.length, 4)} mt-4`} aria-label={`${images.length} attached ${images.length === 1 ? 'image' : 'images'}`}>
+          {images.map((src, index) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img key={`${post.id}-${index}`} src={src} alt={`Post attachment ${index + 1}`} loading="lazy" />
+          ))}
+        </div>
+      )}
+
+      {tags.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {tags.map((tag) => <span key={tag} className="community-tag">#{tag}</span>)}
+        </div>
+      )}
+
+      <div className="mt-4 flex items-center justify-between border-b border-border pb-3 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5">
+          <Heart className={`size-3.5 ${post.likedByMe ? 'fill-accent text-accent' : ''}`} />
+          {post.likes} {post.likes === 1 ? 'reaction' : 'reactions'}
+        </span>
+        <span>{shareMessage ?? 'Comments arrive in the next phase'}</span>
+      </div>
+      <div className="grid grid-cols-4 gap-1 pt-2">
+        <button type="button" className={`community-action ${post.likedByMe ? 'community-action-active' : ''}`} aria-pressed={post.likedByMe} onClick={() => onLike(post.id)}>
+          <Heart className={`size-4 ${post.likedByMe ? 'fill-current' : ''}`} /> Like
+        </button>
+        <button type="button" className="community-action" disabled title="Comments arrive in the next phase">
+          <MessageCircle className="size-4" /> Comment
+        </button>
+        <button
+          type="button"
+          className="community-action"
+          onClick={() => void sharePost()}
+        >
+          <Share2 className="size-4" /> Share
+        </button>
+        <button type="button" className="community-action" disabled title="Saving arrives in a later phase">
+          <Bookmark className="size-4" /> Save
+        </button>
+      </div>
+    </article>
+  )
 }
 
 export function CommunityView({
@@ -33,164 +213,355 @@ export function CommunityView({
   onUnlock: () => void
 }) {
   const { posts, hydrated, addPost, toggleLike } = useCommunity()
+  const [composerExpanded, setComposerExpanded] = useState(false)
   const [draft, setDraft] = useState('')
-  const [imageDataUrl, setImageDataUrl] = useState<string | null>(null)
+  const [postType, setPostType] = useState<CommunityPostType>('update')
+  const [tagInput, setTagInput] = useState('')
+  const [tags, setTags] = useState<string[]>([])
+  const [lookingFor, setLookingFor] = useState<string[]>([])
+  const [images, setImages] = useState<PreviewImage[]>([])
   const [imageError, setImageError] = useState<string | null>(null)
+  const [compressing, setCompressing] = useState(false)
+  const [feedTab, setFeedTab] = useState<FeedTab>('for-you')
+  const [composerError, setComposerError] = useState<string | null>(null)
+  const [showAll, setShowAll] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const canPost = isLoggedIn && creator
 
-  const handleImage = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    e.target.value = ''
-    setImageError(null)
+  const visiblePosts = posts
+    .filter((post) => feedTab !== 'collaborators' || post.type === 'collaborator')
+    .filter((post) => feedTab !== 'following')
+    .slice()
+    .sort((a, b) => feedTab === 'latest' ? b.createdAt - a.createdAt : b.createdAt - a.createdAt)
+  const recentCollaborationPosts = posts.filter((post) => post.type === 'collaborator').slice(0, 3)
+  const trendingTags = posts
+    .flatMap((post) => post.tags ?? [])
+    .reduce<{ tag: string; count: number }[]>((counts, tag) => {
+      const found = counts.find((item) => item.tag === tag)
+      if (found) found.count += 1
+      else counts.push({ tag, count: 1 })
+      return counts
+    }, [])
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5)
 
-    if (!file.type.startsWith('image/')) {
-      setImageError('Choose an image file to attach.')
+  const focusComposer = () => {
+    if (!canPost) {
+      onUnlock()
       return
     }
-    if (file.size > MAX_IMAGE_SIZE) {
-      setImageError('Images must be 1 MB or smaller in this demo.')
-      return
-    }
-
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result === 'string') setImageDataUrl(reader.result)
-      else setImageError('This image could not be loaded. Try another file.')
-    }
-    reader.onerror = () => setImageError('This image could not be loaded. Try another file.')
-    reader.readAsDataURL(file)
+    setComposerExpanded(true)
+    requestAnimationFrame(() => textareaRef.current?.focus())
   }
 
-  const submit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    if (!draft.trim()) return
-    const authorRole: 'writer' | 'artist' = role === 'artist' ? 'artist' : 'writer'
-    addPost(draft.trim(), authorRole, imageDataUrl ?? undefined)
+  const addTag = () => {
+    const nextTag = tagInput.trim().replace(/^#/, '').replace(/\s+/g, '-').slice(0, 24)
+    if (!nextTag || tags.includes(nextTag) || tags.length >= 5) return
+    setTags((current) => [...current, nextTag])
+    setTagInput('')
+  }
+
+  const handleImages = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? [])
+    event.target.value = ''
+    if (!files.length) return
+    if (images.length + files.length > MAX_IMAGES) {
+      setImageError('Puwede kang mag-attach ng hanggang 4 na image.')
+      return
+    }
+
+    setImageError(null)
+    setCompressing(true)
+    try {
+      const compressed = await Promise.all(files.map(async (file) => ({ name: file.name, dataUrl: await compressImage(file) })))
+      setImages((current) => [...current, ...compressed])
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : 'Hindi maihanda ang image. Subukan ulit.')
+    } finally {
+      setCompressing(false)
+    }
+  }
+
+  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const content = draft.trim()
+    if (!content) {
+      setComposerError('Magdagdag muna ng maikling mensahe bago mag-post.')
+      textareaRef.current?.focus()
+      return
+    }
+    if (postType === 'collaborator' && !lookingFor.length) {
+      setComposerError('Piliin kung anong collaborator ang hinahanap mo.')
+      return
+    }
+
+    addPost({
+      content,
+      authorRole: role === 'artist' ? 'artist' : 'writer',
+      type: postType,
+      imageUrls: images.map((image) => image.dataUrl),
+      tags,
+      lookingFor: postType === 'collaborator' ? lookingFor : [],
+    })
     setDraft('')
-    setImageDataUrl(null)
-    setImageError(null)
+    setPostType('update')
+    setTags([])
+    setTagInput('')
+    setLookingFor([])
+    setImages([])
+    setComposerError(null)
+    setComposerExpanded(false)
+    setFeedTab('for-you')
   }
+
+  const feedTabs: { id: FeedTab; label: string; disabled?: boolean }[] = [
+    { id: 'for-you', label: 'For you' },
+    { id: 'following', label: 'Following' },
+    { id: 'latest', label: 'Latest' },
+    { id: 'collaborators', label: 'Collaborators' },
+  ]
 
   return (
-    <div className="flex flex-col gap-8">
-      <div className="hero-panel rounded-2xl border border-border px-6 py-8 sm:px-9 sm:py-10">
-        <span className="eyebrow">The town square</span>
-        <h1 className="mt-3 max-w-3xl font-serif text-4xl font-bold text-balance sm:text-5xl">Community, at its gentlest.</h1>
-        <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-          A place for reading recommendations, creator notes, and the small conversations around the work.
-        </p>
-      </div>
-      <div className="grid gap-8 lg:grid-cols-[1fr_280px]">
-        <section aria-label="Community feed" className="flex flex-col gap-5">
-          {creator && isLoggedIn ? (
-            <Panel>
+    <div className="community-layout">
+      <header className="community-heading">
+        <span className="eyebrow">Tambayan ng StoryLines</span>
+        <h1 className="mt-1 font-serif text-2xl font-bold sm:text-3xl">Kuwento, likha, at kuwentuhan.</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Ano'ng ginagawa mo ngayon?</p>
+      </header>
+
+      <div className="community-columns">
+        <aside className="community-left-sidebar" aria-label="Community shortcuts">
+          {isLoggedIn ? (
+            <Panel className="community-profile-card">
+              <Avatar role={creator ? role === 'artist' ? 'artist' : 'writer' : undefined} large />
+              <p className="mt-3 font-serif text-lg font-bold">Your StoryLines</p>
+              <span className="community-role mt-1">{role === 'artist' ? 'Alagad ng sining' : role === 'writer' ? 'Writer' : 'Reader'}</span>
+              <p className="mt-3 text-xs leading-5 text-muted-foreground">Profile details will appear here when community profiles are connected.</p>
+            </Panel>
+          ) : (
+            <Panel className="community-profile-card">
+              <span className="section-icon"><UsersRound className="size-4" /></span>
+              <h2 className="mt-3 font-serif text-lg font-bold">Gawa tayo ng community.</h2>
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">Mag-sign in para makasali sa kuwentuhan at makilala ang kapwa manlilikha.</p>
+              <Button type="button" onClick={onUnlock} className="mt-4 min-h-11 w-full rounded-xl bg-accent text-accent-foreground">Log in to join</Button>
+            </Panel>
+          )}
+          <Panel className="community-shortcuts">
+            <p className="community-sidebar-label">Your space</p>
+            <button className="community-shortcut community-shortcut-active" type="button" onClick={() => setFeedTab('for-you')}><Compass /> Feed</button>
+            <button className="community-shortcut" type="button" disabled title="Following feed arrives in a later phase"><UsersRound /> Following</button>
+            <button className="community-shortcut" type="button" disabled title="Saved posts arrive in a later phase"><Bookmark /> Saved</button>
+            <button className="community-shortcut" type="button" disabled title="Your posts view arrives in a later phase"><PenLine /> My Posts</button>
+            <button className="community-shortcut" type="button" onClick={() => setFeedTab('collaborators')}><Handshake /> Collaboration Board</button>
+          </Panel>
+        </aside>
+
+        <section className="community-feed" aria-label="Community feed">
+          <section className="community-card community-composer" aria-label="Create a post">
+            {!canPost ? (
+              <>
+                <div className="flex items-center gap-3">
+                  <Avatar role={isLoggedIn && role === 'artist' ? 'artist' : isLoggedIn && role === 'writer' ? 'writer' : undefined} />
+                  <button type="button" onClick={onUnlock} className="community-composer-prompt">
+                    {isLoggedIn ? 'Reader ka ngayon—gusto mo bang magbahagi?' : "Ano'ng ginagawa mo ngayon? Log in to post."}
+                  </button>
+                </div>
+                <p className="mt-3 pl-12 text-xs leading-5 text-muted-foreground">
+                  {isLoggedIn
+                    ? 'Kailangan ng Writer o Alagad ng sining badge para makapag-post. Puwede mo itong i-request sa account settings.'
+                    : 'Sumali sa kuwentuhan at magbahagi ng ginagawa mong likha.'}
+                </p>
+                <Button type="button" variant="outline" onClick={onUnlock} className="mt-4 min-h-11 w-full rounded-xl">
+                  {isLoggedIn ? 'Alamin kung paano makakuha ng badge' : 'Log in to post'}
+                </Button>
+              </>
+            ) : !composerExpanded ? (
+              <>
+                <div className="flex items-center gap-3">
+                  <Avatar role={role === 'artist' ? 'artist' : 'writer'} />
+                  <button type="button" onClick={focusComposer} className="community-composer-prompt">
+                    Ano'ng ginagawa mo ngayon?
+                  </button>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-3">
+                  <button type="button" onClick={focusComposer} className="community-composer-action"><ImagePlus /> Photo</button>
+                  <button type="button" onClick={() => { setPostType('work-in-progress'); focusComposer() }} className="community-composer-action"><PenLine /> Work-in-progress</button>
+                  <button type="button" onClick={() => { setPostType('collaborator'); focusComposer() }} className="community-composer-action"><Handshake /> Find a collaborator</button>
+                </div>
+              </>
+            ) : (
               <form onSubmit={submit}>
-                <label htmlFor="community-post" className="sr-only">Share an update</label>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <Avatar role={role === 'artist' ? 'artist' : 'writer'} />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold">Your StoryLines</p>
+                      <span className="community-role">{roleLabel(role === 'artist' ? 'artist' : 'writer')}</span>
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => setComposerExpanded(false)} className="community-icon-button" aria-label="Close composer"><X className="size-4" /></button>
+                </div>
+                <label htmlFor="community-post" className="sr-only">Your post</label>
                 <textarea
+                  ref={textareaRef}
                   id="community-post"
                   value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  placeholder="What are you reading, writing, or dreaming up?"
-                  className="min-h-28 w-full resize-none bg-transparent text-sm leading-6 outline-none placeholder:text-muted-foreground/75"
+                  maxLength={MAX_POST_LENGTH}
+                  onChange={(event) => { setDraft(event.target.value); setComposerError(null) }}
+                  placeholder="Ano'ng ginagawa mo ngayon? Share your progress, a reading reco, or an idea."
+                  className="community-composer-textarea mt-4"
                 />
-                {imageDataUrl && (
-                  <div className="relative mt-2 inline-block">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={imageDataUrl} alt="Selected attachment preview" className="max-h-48 rounded-lg border border-border object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setImageDataUrl(null)
-                        setImageError(null)
-                      }}
-                      aria-label="Remove image"
-                      className="absolute -right-2 -top-2 rounded-full border border-border bg-card p-1 shadow focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-                    >
-                      <X className="size-3.5" />
-                    </button>
+                <div className="flex justify-end text-xs text-muted-foreground"><span>{draft.length}/{MAX_POST_LENGTH}</span></div>
+
+                <div className="mt-3">
+                  <label htmlFor="community-post-type" className="mb-1.5 block text-xs font-bold">Post type</label>
+                  <select id="community-post-type" value={postType} onChange={(event) => { setPostType(event.target.value as CommunityPostType); setComposerError(null) }} className="community-select">
+                    {POST_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                  </select>
+                </div>
+
+                {postType === 'collaborator' && (
+                  <fieldset className="mt-3">
+                    <legend className="mb-2 text-xs font-bold">I&apos;m looking for</legend>
+                    <div className="flex flex-wrap gap-2">
+                      {COLLABORATOR_ROLES.map((item) => {
+                        const checked = lookingFor.includes(item)
+                        return (
+                          <button type="button" key={item} aria-pressed={checked} onClick={() => setLookingFor((current) => checked ? current.filter((roleItem) => roleItem !== item) : [...current, item])} className={`community-chip ${checked ? 'community-chip-selected' : ''}`}>
+                            {checked && <Check className="size-3.5" />}{item}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </fieldset>
+                )}
+
+                <div className="mt-3">
+                  <label htmlFor="community-tag" className="mb-1.5 block text-xs font-bold">Tags <span className="font-normal text-muted-foreground">(up to 5)</span></label>
+                  <div className="flex gap-2">
+                    <input id="community-tag" value={tagInput} maxLength={24} onChange={(event) => setTagInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addTag() } }} placeholder="e.g. fantasy, writing" className="community-text-input min-w-0 flex-1" />
+                    <Button type="button" variant="outline" disabled={!tagInput.trim() || tags.length >= 5} onClick={addTag} className="min-h-11 rounded-xl px-3"><Plus className="size-4" /><span className="sr-only">Add tag</span></Button>
+                  </div>
+                  {tags.length > 0 && <div className="mt-2 flex flex-wrap gap-2">{tags.map((tag) => <button type="button" key={tag} onClick={() => setTags((current) => current.filter((item) => item !== tag))} className="community-tag">#{tag}<X className="ml-1 size-3" /></button>)}</div>}
+                </div>
+
+                {images.length > 0 && (
+                  <div className="community-image-grid community-image-grid-composer mt-3">
+                    {images.map((image, index) => (
+                      <div className="relative" key={`${image.name}-${index}`}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={image.dataUrl} alt={`Selected attachment ${index + 1}`} />
+                        <button type="button" onClick={() => setImages((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="community-remove-image" aria-label={`Remove ${image.name}`}><X className="size-4" /></button>
+                      </div>
+                    ))}
                   </div>
                 )}
                 {imageError && <p role="alert" className="mt-2 text-xs font-medium text-destructive">{imageError}</p>}
-                <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4">
-                  <label className="flex cursor-pointer items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-foreground">
-                    <ImagePlus className="size-4" />
-                    Add image
-                    <input type="file" accept="image/*" className="sr-only" onChange={handleImage} />
+                {composerError && <p role="alert" className="mt-2 text-xs font-medium text-destructive">{composerError}</p>}
+
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+                  <label className={`community-composer-action ${images.length >= MAX_IMAGES || compressing ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}>
+                    <ImagePlus /> Add photos
+                    <input type="file" accept="image/*" multiple disabled={images.length >= MAX_IMAGES || compressing} className="sr-only" onChange={(event) => void handleImages(event)} />
                   </label>
-                  <Button type="submit" disabled={!draft.trim()} className="rounded-lg bg-accent text-accent-foreground">
-                    Post update
+                  <span className="text-xs text-muted-foreground">{compressing ? 'Preparing photos…' : `${images.length}/${MAX_IMAGES} photos`}</span>
+                  <Button type="submit" disabled={!draft.trim() || compressing} className="min-h-11 rounded-xl bg-accent px-5 text-accent-foreground">
+                    <Send className="size-4" /> Post
                   </Button>
                 </div>
-                <p className="mt-2 text-right text-[11px] text-muted-foreground">Images are limited to 1 MB.</p>
+                <p className="mt-3 text-[11px] leading-5 text-muted-foreground">Maging mabait sa kapwa manlilikha. Posts are saved on this device for now.</p>
               </form>
-            </Panel>
-          ) : (
-            <Panel className="hero-panel">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <h2 className="font-serif text-xl font-bold">{isLoggedIn ? 'Want to share a note?' : 'Join the conversation'}</h2>
-                  <p className="mt-1 text-sm leading-5 text-muted-foreground">
-                    {isLoggedIn
-                      ? 'Choose a Writer or Artist badge to share updates with the community.'
-                      : 'Sign in and choose a Writer or Artist badge to share your own updates.'}
-                  </p>
-                </div>
-                <Button variant="outline" onClick={onUnlock} className="shrink-0 rounded-lg">
-                  {isLoggedIn ? 'Unlock posting' : 'Sign in to post'}
-                </Button>
-              </div>
-            </Panel>
-          )}
+            )}
+          </section>
 
-          {!hydrated ? null : posts.length === 0 ? (
-            <EmptyState icon={<MessageCircle />} title="No conversation yet" message="Be the first to share a reading recommendation or a little note from your creative process." />
+          <nav className="community-feed-tabs" aria-label="Feed filter">
+            {feedTabs.map((tab) => (
+              <button key={tab.id} type="button" aria-current={feedTab === tab.id ? 'page' : undefined} onClick={() => setFeedTab(tab.id)} className={`community-feed-tab ${feedTab === tab.id ? 'community-feed-tab-active' : ''}`}>
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+
+          {!hydrated ? (
+            <div className="flex flex-col gap-3" aria-label="Loading community posts" aria-busy="true">
+              {[0, 1].map((item) => <div key={item} className="community-card h-44 animate-pulse bg-secondary/45" />)}
+            </div>
+          ) : feedTab === 'following' ? (
+            <div className="community-empty">
+              <span className="empty-icon"><UsersRound className="size-5" /></span>
+              <h2 className="mt-4 font-serif text-xl font-bold">Your Following feed is coming soon</h2>
+              <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">Soon, makikita rito ang bagong gawa at updates ng mga creator na sinusubaybayan mo.</p>
+            </div>
+          ) : visiblePosts.length === 0 ? (
+            <div className="community-empty">
+              <span className="empty-icon"><MessageCircle className="size-5" /></span>
+              <h2 className="mt-4 font-serif text-xl font-bold">{feedTab === 'collaborators' ? 'Wala pang naghahanap ng ka-collab' : 'Wala pang kuwentuhan dito'}</h2>
+              <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+                {feedTab === 'collaborators'
+                  ? 'Baka ikaw ang unang mag-post ng collaboration request at makahanap ng kaagapay.'
+                  : 'Walang pang post, ikaw na ang mauna! Ibahagi ang ginagawa mo o ang kuwentong tumatak sa iyo.'}
+              </p>
+              {canPost && <Button type="button" onClick={focusComposer} className="mt-4 min-h-11 rounded-xl bg-accent text-accent-foreground">Start a post</Button>}
+            </div>
           ) : (
-            <div className="flex flex-col gap-4">
-              {posts.map((post) => (
-                <Panel key={post.id} className="transition-shadow hover:shadow-[0_5px_18px_rgba(68,45,31,0.08)]">
-                  <div className="flex items-start gap-3">
-                    <span className="section-icon" aria-hidden="true">{post.authorRole === 'artist' ? <Brush className="size-4" /> : <PenLine className="size-4" />}</span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold">{post.authorRole === 'artist' ? 'Artist' : 'Writer'}</span>
-                        <span className="text-xs text-muted-foreground">· {timeAgo(post.createdAt)}</span>
-                      </div>
-                      <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{post.content}</p>
-                      {post.imageUrl && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={post.imageUrl} alt="Image shared with this update" className="mt-3 max-h-72 w-full rounded-lg border border-border object-cover" />
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => toggleLike(post.id)}
-                        aria-pressed={post.likedByMe}
-                        aria-label={`${post.likedByMe ? 'Unlike' : 'Like'} update${post.likes > 0 ? `, ${post.likes} ${post.likes === 1 ? 'like' : 'likes'}` : ''}`}
-                        className={`mt-3 flex items-center gap-1.5 rounded px-1 py-1 text-xs font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${post.likedByMe ? 'text-accent' : 'text-muted-foreground hover:text-foreground'}`}
-                      >
-                        <Heart className={`size-3.5 ${post.likedByMe ? 'fill-accent' : ''}`} />
-                        {post.likes > 0 ? post.likes : 'Like'}
-                      </button>
-                    </div>
-                  </div>
-                </Panel>
-              ))}
+            <div className="flex flex-col gap-3">
+              {(showAll ? visiblePosts : visiblePosts.slice(0, 10)).map((post) => <div id={`post-${post.id}`} key={post.id}><FeedPost post={post} onLike={toggleLike} /></div>)}
+              {visiblePosts.length > 10 && <Button type="button" variant="outline" onClick={() => setShowAll((value) => !value)} className="min-h-11 w-full rounded-xl">{showAll ? 'Show fewer posts' : 'Load more posts'}</Button>}
             </div>
           )}
         </section>
-        <Panel className="h-fit lg:sticky lg:top-24">
-          <span className="section-icon"><Sparkles className="size-4" /></span>
-          <h2 className="mt-4 font-serif text-xl font-bold">Community notes</h2>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">A slower, kinder corner for discussing the work and finding your next favorite story.</p>
-          <div className="mt-5 border-t border-border pt-4">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">A good place for</h3>
-            <ul className="mt-3 flex flex-col gap-2 text-sm">
-              <li className="flex items-center gap-2"><span className="size-1.5 rounded-full bg-accent" /> Reading recommendations</li>
-              <li className="flex items-center gap-2"><span className="size-1.5 rounded-full bg-accent" /> Work-in-progress notes</li>
-              <li className="flex items-center gap-2"><span className="size-1.5 rounded-full bg-accent" /> Kind, thoughtful feedback</li>
+
+        <aside className="community-right-sidebar" aria-label="Community information">
+          <Panel>
+            <span className="section-icon"><Sparkles className="size-4" /></span>
+            <h2 className="mt-3 font-serif text-lg font-bold">Community notes</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">Isang mahinahon at mabait na tambayan para pag-usapan ang mga likha at tumuklas ng susunod mong paborito.</p>
+            <ul className="mt-4 flex flex-col gap-2 border-t border-border pt-4 text-xs leading-5">
+              <li>Mga reading reco</li>
+              <li>Updates sa ginagawa mong likha</li>
+              <li>Mabait at makabuluhang feedback</li>
             </ul>
-          </div>
-        </Panel>
+            <a href="/guidelines" className="mt-4 inline-flex min-h-11 items-center text-xs font-bold text-accent hover:underline">Read community guidelines</a>
+          </Panel>
+
+          <Panel>
+            <div className="flex items-center gap-2">
+              <span className="section-icon"><Handshake className="size-4" /></span>
+              <h2 className="font-serif text-lg font-bold">Looking for collaborators</h2>
+            </div>
+            {recentCollaborationPosts.length ? (
+              <ul className="mt-3 flex flex-col gap-3">
+                {recentCollaborationPosts.map((post) => (
+                  <li key={post.id} className="border-t border-border pt-3">
+                    <p className="line-clamp-2 text-xs leading-5">{post.content}</p>
+                    <span className="mt-1 block text-[11px] text-muted-foreground">{(post.lookingFor ?? []).join(', ')}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="mt-3 text-xs leading-5 text-muted-foreground">Open calls from the feed will show up here.</p>}
+            <button type="button" onClick={() => setFeedTab('collaborators')} className="mt-3 inline-flex min-h-11 items-center text-xs font-bold text-accent hover:underline">Open collaboration board</button>
+          </Panel>
+
+          <Panel>
+            <h2 className="font-serif text-lg font-bold">Trending tags</h2>
+            {trendingTags.length ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {trendingTags.map(({ tag }) => <span className="community-tag community-tag-muted" key={tag}>#{tag}</span>)}
+              </div>
+            ) : <p className="mt-2 text-xs leading-5 text-muted-foreground">Post tags will trend here as the community grows.</p>}
+          </Panel>
+
+          <Panel>
+            <h2 className="font-serif text-lg font-bold">Suggested creators</h2>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">Creator suggestions will appear here when profiles and follows are available.</p>
+          </Panel>
+        </aside>
       </div>
+      {canPost && (
+        <button type="button" className="community-floating-post" onClick={focusComposer}>
+          <Plus className="size-4" /> Post
+        </button>
+      )}
     </div>
   )
 }

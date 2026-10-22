@@ -2,12 +2,19 @@
 
 import { createContext, useContext, type ReactNode } from 'react'
 import { useLocalStorageList } from '@/lib/use-local-storage-list'
-import type { Post } from '@/lib/types'
+import type { CommunityPostType, Post } from '@/lib/types'
 
 type CommunityState = {
   posts: Post[]
   hydrated: boolean
-  addPost: (content: string, authorRole: 'writer' | 'artist', imageUrl?: string) => void
+  addPost: (post: {
+    content: string
+    authorRole: 'writer' | 'artist'
+    type: CommunityPostType
+    imageUrls: string[]
+    tags: string[]
+    lookingFor: string[]
+  }) => void
   toggleLike: (id: string) => void
 }
 
@@ -17,8 +24,15 @@ const STORAGE_KEY = 'storylines-community-posts'
 export function CommunityProvider({ children }: { children: ReactNode }) {
   const [posts, setPosts, hydrated] = useLocalStorageList<Post>(STORAGE_KEY)
 
-  const addPost = (content: string, authorRole: 'writer' | 'artist', imageUrl?: string) => {
-    const post: Post = { id: crypto.randomUUID(), authorRole, content, imageUrl, createdAt: Date.now(), likes: 0, likedByMe: false }
+  const addPost = (input: Parameters<CommunityState['addPost']>[0]) => {
+    const post: Post = {
+      id: crypto.randomUUID(),
+      authorName: 'Ikaw',
+      ...input,
+      createdAt: Date.now(),
+      likes: 0,
+      likedByMe: false,
+    }
     setPosts((current) => [post, ...current])
   }
 
