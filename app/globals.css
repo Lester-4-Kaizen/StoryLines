@@ -65,7 +65,7 @@ button { cursor: pointer; }
 .hero-panel { background: linear-gradient(120deg, color-mix(in oklch, var(--card) 92%, transparent), color-mix(in oklch, var(--secondary) 65%, transparent)); }
 .eyebrow { color: var(--accent); font-size: .68rem; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
 .brand-mark, .section-icon, .card-icon, .empty-icon { display: inline-flex; align-items: center; justify-content: center; }
-.brand-mark { color: var(--primary); background: var(--accent); border-radius: .45rem; padding: .4rem; }
+.brand-mark { width: 2.5rem; height: 2.5rem; flex-shrink: 0; overflow: hidden; border: 1px solid color-mix(in oklch, var(--primary-foreground) 65%, transparent); border-radius: 50%; background: #fff; box-shadow: 0 2px 5px color-mix(in oklch, var(--primary) 25%, transparent); }
 .section-icon { color: var(--accent); border-radius: .6rem; background: var(--secondary); padding: .65rem; }
 .card-icon { color: var(--accent); border-radius: .6rem; background: var(--secondary); padding: .65rem; }
 .empty-icon { color: var(--accent); border: 1px dashed var(--border); border-radius: 50%; padding: .85rem; }

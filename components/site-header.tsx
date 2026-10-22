@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { BookMarked, BookOpen, ChevronDown, Inbox, Library, LogOut, Menu, Search, Settings, UserRound, X } from 'lucide-react'
+import Image from 'next/image'
+import { BookMarked, ChevronDown, Inbox, Library, LogOut, Menu, Search, Settings, UserRound, X } from 'lucide-react'
 import type { Route } from '@/lib/types'
 
 // Detects a click/tap outside the returned ref and calls onOutside. Used
@@ -248,7 +249,14 @@ export function SiteHeader({
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-5 px-4 sm:px-6">
         <button onClick={() => go('/')} className="flex shrink-0 items-center gap-2" aria-label="StoryLines home">
           <span className="brand-mark">
-            <BookOpen className="size-5" />
+            <Image
+              src="/storylines-logo.png"
+              alt=""
+              aria-hidden="true"
+              width={40}
+              height={40}
+              className="size-full object-contain"
+            />
           </span>
           <span className="font-serif text-xl font-bold tracking-tight">StoryLines</span>
         </button>
