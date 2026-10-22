@@ -14,6 +14,9 @@ export const metadata: Metadata = {
   title: 'StoryLines — A home for the stories you carry',
   description: 'Read, write, and share stories and illustrated work with your creative community.',
   generator: 'v0.app',
+  icons: {
+    icon: '/favicon.svg',
+  },
 }
 
 export const viewport: Viewport = {
