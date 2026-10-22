@@ -249,14 +249,17 @@ export function SiteHeader({
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-5 px-4 sm:px-6">
         <button onClick={() => go('/')} className="flex shrink-0 items-center gap-2" aria-label="StoryLines home">
           <span className="brand-mark">
-            <Image
-              src="/storylines-logo.png"
-              alt=""
-              aria-hidden="true"
-              width={40}
-              height={40}
-              className="size-full object-contain"
-            />
+            <picture className="size-full">
+              <source media="(prefers-color-scheme: dark)" srcSet="/storylines-logo-dark.png" />
+              <Image
+                src="/storylines-logo.png"
+                alt=""
+                aria-hidden="true"
+                width={40}
+                height={40}
+                className="size-full object-contain"
+              />
+            </picture>
           </span>
           <span className="font-serif text-xl font-bold tracking-tight">StoryLines</span>
         </button>
