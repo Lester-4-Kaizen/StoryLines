@@ -1,0 +1,80 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --font-sans: 'Geist', 'Geist Fallback';
+  --font-serif: 'DM Serif Display', 'DM Serif Display Fallback';
+  --radius-sm: calc(var(--radius) * .6);
+  --radius-md: calc(var(--radius) * .8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+}
+
+:root {
+  color-scheme: light;
+  --background: oklch(0.95 0.025 82);
+  --foreground: oklch(0.25 0.035 55);
+  --card: oklch(0.985 0.012 82);
+  --card-foreground: oklch(0.25 0.035 55);
+  --popover: oklch(0.985 0.012 82);
+  --popover-foreground: oklch(0.25 0.035 55);
+  --primary: oklch(0.31 0.055 47);
+  --primary-foreground: oklch(0.97 0.025 82);
+  --secondary: oklch(0.9 0.04 82);
+  --secondary-foreground: oklch(0.31 0.055 47);
+  --muted: oklch(0.91 0.035 80);
+  --muted-foreground: oklch(0.5 0.035 58);
+  --accent: oklch(0.58 0.12 38);
+  --accent-foreground: oklch(0.98 0.02 82);
+  --destructive: oklch(0.55 0.16 26);
+  --border: oklch(0.81 0.045 72);
+  --input: oklch(0.75 0.045 72);
+  --ring: oklch(0.58 0.12 38);
+  --radius: 0.75rem;
+}
+
+* { @apply border-border outline-ring/50; }
+html { @apply bg-background; }
+body { @apply bg-background text-foreground font-sans; background-image: radial-gradient(oklch(0.4 0.03 60 / 0.045) .65px, transparent .65px); background-size: 7px 7px; }
+button, input { font: inherit; }
+button { cursor: pointer; }
+
+.font-serif { font-family: 'DM Serif Display', Georgia, serif; }
+.paper-panel { border: 1px solid var(--border); border-radius: 1rem; background: color-mix(in oklch, var(--card) 86%, transparent); box-shadow: 0 2px 0 color-mix(in oklch, var(--primary) 12%, transparent), 0 14px 35px color-mix(in oklch, var(--primary) 7%, transparent); }
+.hero-panel { background: linear-gradient(120deg, color-mix(in oklch, var(--card) 92%, transparent), color-mix(in oklch, var(--secondary) 65%, transparent)); }
+.eyebrow { color: var(--accent); font-size: .68rem; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
+.brand-mark, .section-icon, .card-icon, .empty-icon { display: inline-flex; align-items: center; justify-content: center; }
+.brand-mark { color: var(--primary); background: var(--accent); border-radius: .45rem; padding: .4rem; }
+.section-icon { color: var(--accent); border-radius: .6rem; background: var(--secondary); padding: .65rem; }
+.card-icon { color: var(--accent); border-radius: .6rem; background: var(--secondary); padding: .65rem; }
+.empty-icon { color: var(--accent); border: 1px dashed var(--border); border-radius: 50%; padding: .85rem; }
+.avatar-placeholder { display: inline-flex; align-items: center; justify-content: center; size: 2rem; width: 2rem; height: 2rem; border: 1px solid color-mix(in oklch, var(--primary-foreground) 35%, transparent); border-radius: 50%; color: var(--primary-foreground); }
+.notification-dot { position: absolute; right: 1px; top: 1px; min-width: 1rem; border-radius: 999px; background: var(--accent); padding: 1px 4px; color: var(--accent-foreground); font-size: 9px; font-weight: 800; text-align: center; }
+.profile-banner { height: 10rem; background: linear-gradient(135deg, var(--primary), color-mix(in oklch, var(--accent) 70%, var(--primary))); opacity: .94; }
+.profile-avatar { display: inline-flex; align-items: center; justify-content: center; width: 5.5rem; height: 5.5rem; margin-top: -3.5rem; border: 5px solid var(--card); border-radius: 50%; background: var(--secondary); color: var(--accent); }
+.badge { display: inline-flex; align-items: center; gap: .3rem; border-radius: 999px; padding: .25rem .55rem; font-size: .65rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+.badge-reader { background: var(--secondary); color: var(--primary); }
+.toggle { accent-color: var(--accent); width: 1.1rem; height: 1.1rem; }
+.dev-toggle { position: fixed; bottom: 1rem; left: 1rem; z-index: 40; width: 160px; overflow: hidden; border: 1px solid color-mix(in oklch, var(--accent) 60%, var(--border)); border-radius: .6rem; background: var(--primary); color: var(--primary-foreground); box-shadow: 0 5px 20px color-mix(in oklch, var(--primary) 20%, transparent); }
+.dev-toggle summary { cursor: pointer; padding: .55rem .7rem; font-size: .65rem; font-weight: 800; letter-spacing: .09em; }
