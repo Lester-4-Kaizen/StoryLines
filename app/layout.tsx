@@ -13,7 +13,6 @@ const dmSerif = DM_Serif_Display({ subsets: ['latin'], weight: '400', variable: 
 export const metadata: Metadata = {
   title: 'StoryLines — A home for the stories you carry',
   description: 'Read, write, and share stories and illustrated work with your creative community.',
-  generator: 'v0.app',
 }
 
 export const viewport: Viewport = {
