@@ -97,6 +97,25 @@ function profileLoadError(error: unknown) {
   return 'Hindi ma-load ang profile ngayon. Tingnan ang connection at subukan ulit.'
 }
 
+function profileLoadErrorDetails(error: unknown) {
+  if (error instanceof Error) {
+    return { name: error.name, message: error.message, stack: error.stack }
+  }
+
+  if (typeof error === 'object' && error !== null) {
+    const getField = (field: string) => field in error ? Reflect.get(error, field) : undefined
+    return {
+      name: getField('name'),
+      message: getField('message'),
+      code: getField('code'),
+      details: getField('details'),
+      hint: getField('hint'),
+    }
+  }
+
+  return { message: String(error) }
+}
+
 function emptyProfilePageData(error: string | null = null): ProfilePageData {
   return {
     profile: null,
@@ -307,7 +326,7 @@ export async function getProfilePageData(profileId?: string): Promise<ProfilePag
       error: null,
     }
   } catch (error) {
-    console.error('Failed to load profile data', error)
+    console.error('Failed to load profile data', profileLoadErrorDetails(error))
     return emptyProfilePageData(profileLoadError(error))
   }
 }
