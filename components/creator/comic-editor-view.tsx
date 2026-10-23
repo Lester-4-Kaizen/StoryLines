@@ -9,7 +9,7 @@ import { FieldSelect } from '@/components/shared/field-select'
 import { Panel } from '@/components/shared/panel'
 import { WorkMoodSelector } from '@/components/shared/work-mood-selector'
 import { useWorks } from '@/lib/works-store'
-import { WORK_GENRES, WORK_LANGUAGES } from '@/lib/work-taxonomy'
+import { normalizeWorkLanguage, WORK_GENRES, WORK_LANGUAGES } from '@/lib/work-taxonomy'
 import type { ComicPage, Route, Work } from '@/lib/types'
 
 type ReadingDirection = NonNullable<Work['comicReadingDirection']>
@@ -29,7 +29,7 @@ export function ComicEditorView({ go, work }: { go: (route: Route) => void; work
   const [synopsis, setSynopsis] = useState(work?.synopsis ?? draft?.synopsis ?? '')
   const [genre, setGenre] = useState(work?.genre ?? draft?.genre ?? 'Select genre')
   const [moods, setMoods] = useState(work?.moods ?? draft?.moods ?? [])
-  const [language, setLanguage] = useState(work?.language ?? draft?.language ?? 'English')
+  const [language, setLanguage] = useState(normalizeWorkLanguage(work?.language ?? draft?.language))
   const [rating, setRating] = useState(work?.rating ?? draft?.rating ?? 'All ages')
   const [warnings, setWarnings] = useState(work?.contentWarnings ?? [])
   const [direction, setDirection] = useState<ReadingDirection>(work?.comicReadingDirection ?? 'vertical')
@@ -426,7 +426,16 @@ export function ComicEditorView({ go, work }: { go: (route: Route) => void; work
           {error && <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}
           <Panel className="flex flex-col gap-2 p-4">
             <Button type="button" variant="outline" disabled={busy || uploading} onClick={() => void saveDraft()} className="min-h-11 rounded-full">Save draft</Button>
-            <Button type="button" disabled={busy || uploading || pages.length === 0} onClick={() => void publish()} className="min-h-11 rounded-full bg-accent text-accent-foreground">{busy ? 'Saving…' : 'Publish…'}</Button>
+            <div className="rounded-lg bg-muted/40 p-3 text-xs leading-5 text-muted-foreground">
+              <p className="font-bold text-foreground">Kailangan bago i-publish:</p>
+              <ul className="mt-1 list-inside list-disc">
+                <li>Episode title</li>
+                <li>Kahit isang comic page</li>
+                <li>Alt text para sa bawat page</li>
+              </ul>
+              <p className="mt-1">Puwedeng i-save bilang draft kahit wala pang pages. Kailangan ang comic pages para i-publish.</p>
+            </div>
+            <Button type="button" disabled={busy || uploading} onClick={() => void publish()} className="min-h-11 rounded-full bg-accent text-accent-foreground">{busy ? 'Saving…' : 'Publish…'}</Button>
             {savedWork && <Button type="button" variant="ghost" onClick={() => router.push(`/works/${savedWork.id}`)} className="min-h-11 rounded-full">Preview as reader</Button>}
           </Panel>
         </aside>

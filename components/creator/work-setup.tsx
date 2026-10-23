@@ -1,14 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronRight, ImageOff } from 'lucide-react'
+import { ChevronRight, ImagePlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { CreatorFrame } from '@/components/shared/creator-frame'
 import { FieldSelect } from '@/components/shared/field-select'
 import { Panel } from '@/components/shared/panel'
 import { WorkMoodSelector } from '@/components/shared/work-mood-selector'
 import { useWorks } from '@/lib/works-store'
-import { WORK_GENRES, WORK_LANGUAGES } from '@/lib/work-taxonomy'
+import { normalizeWorkLanguage, WORK_GENRES, WORK_LANGUAGES } from '@/lib/work-taxonomy'
 import type { Route } from '@/lib/types'
 
 export function WorkSetup({
@@ -25,7 +25,8 @@ export function WorkSetup({
   const [synopsis, setSynopsis] = useState(draft?.synopsis ?? '')
   const [genre, setGenre] = useState(draft?.genre ?? 'Select genre')
   const [moods, setMoods] = useState(draft?.moods ?? [])
-  const [language, setLanguage] = useState(draft?.language ?? 'English')
+  const [language, setLanguage] = useState(normalizeWorkLanguage(draft?.language))
+  const [coverImageUrl, setCoverImageUrl] = useState(draft?.coverImageUrl ?? '')
   const [rating, setRating] = useState(draft?.rating ?? 'All ages')
   const [status, setStatus] = useState<'Draft' | 'Ongoing' | 'Complete'>(draft?.status ?? 'Draft')
   const [saving, setSaving] = useState(false)
@@ -41,6 +42,7 @@ export function WorkSetup({
     moods,
     language,
     rating,
+    coverImageUrl: coverImageUrl.trim() || undefined,
   })
 
   // "Save draft" persists a Work right away (forced to Draft status,
@@ -73,14 +75,14 @@ export function WorkSetup({
         <div className="flex flex-col gap-6">
           <div>
             <label htmlFor="work-title" className="text-sm font-bold">
-              Title <span className="text-accent">*</span>
+              Project title <span className="text-accent">*</span>
             </label>
             <input
               id="work-title"
               value={title}
               maxLength={160}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder={`Untitled ${type}`}
+              placeholder={`Untitled ${type} project`}
               aria-invalid={!title.trim()}
               aria-describedby={!title.trim() ? 'work-title-error' : undefined}
               className="mt-2 min-h-11 w-full rounded-lg border border-input bg-background px-3 py-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -88,10 +90,24 @@ export function WorkSetup({
             {!title.trim() && <p id="work-title-error" className="mt-1 text-xs text-destructive">Maglagay ng title bago magpatuloy.</p>}
           </div>
           <div>
-            <label className="text-sm font-bold">Cover image</label>
-            <div className="mt-2 flex min-h-24 items-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 p-4 text-sm text-muted-foreground">
-              <ImageOff className="size-5 shrink-0" aria-hidden="true" />
-              <p>Cover uploads are not available yet. You can add a cover after Storage upload support is enabled.</p>
+            <label htmlFor="work-cover-url" className="text-sm font-bold">
+              Cover image <span className="font-normal text-muted-foreground">(optional)</span>
+            </label>
+            <div className="mt-2 flex items-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 p-4">
+              <ImagePlus className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <div className="min-w-0 flex-1">
+                <input
+                  id="work-cover-url"
+                  type="url"
+                  value={coverImageUrl}
+                  onChange={(event) => setCoverImageUrl(event.target.value)}
+                  placeholder="Paste an image URL, or leave this blank for now"
+                  className="min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  Puwedeng walang cover habang ginagawa ang project. Hindi ito kailangan para i-save. {type === 'Comic' && 'Kailangan pa rin ng comic pages para i-publish.'}
+                </p>
+              </div>
             </div>
           </div>
           <div>

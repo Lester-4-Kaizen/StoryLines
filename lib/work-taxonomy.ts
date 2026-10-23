@@ -28,4 +28,9 @@ export const WORK_MOODS = [
   'Comfort read',
 ] as const
 
-export const WORK_LANGUAGES = ['Filipino', 'Tagalog', 'English', 'Other'] as const
+export const WORK_LANGUAGES = ['Filipino', 'English', 'Other'] as const
+
+export function normalizeWorkLanguage(language?: string | null) {
+  if (!language) return 'English'
+  return language.trim().toLowerCase() === 'tagalog' ? 'Filipino' : language
+}

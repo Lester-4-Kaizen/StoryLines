@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Panel } from '@/components/shared/panel'
+import { ProfileAvatar } from '@/components/shared/profile-avatar'
 import { ProfilePostCard } from '@/components/profile/profile-post-card'
 import { ProfileConnectionsDialog } from '@/components/profile/profile-connections-dialog'
 import { ShareLinkDialog } from '@/components/shared/share-link-dialog'
@@ -120,6 +121,8 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
   const [shareOpen, setShareOpen] = useState(false)
   const [connectionsDirection, setConnectionsDirection] = useState<'followers' | 'following' | null>(null)
   const [avatarUploading, setAvatarUploading] = useState(false)
+  const [pendingAvatar, setPendingAvatar] = useState<File | null>(null)
+  const [pendingAvatarPreview, setPendingAvatarPreview] = useState<string | null>(null)
   const avatarInputRef = useRef<HTMLInputElement>(null)
   const editProfileButtonRef = useRef<HTMLButtonElement>(null)
   const editProfileCloseRef = useRef<HTMLButtonElement>(null)
@@ -154,6 +157,16 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
   }, [initialData])
 
   useEffect(() => {
+    if (!pendingAvatar) {
+      setPendingAvatarPreview(null)
+      return
+    }
+    const previewUrl = URL.createObjectURL(pendingAvatar)
+    setPendingAvatarPreview(previewUrl)
+    return () => URL.revokeObjectURL(previewUrl)
+  }, [pendingAvatar])
+
+  useEffect(() => {
     if (!editing) {
       if (wasEditingProfile.current) editProfileButtonRef.current?.focus()
       wasEditingProfile.current = false
@@ -185,6 +198,7 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
   }
 
   const profile = data.profile
+  const profileImagePreview = pendingAvatarPreview ?? profile.avatarUrl
   const ownProfile = data.currentUserId === profile.id
   const creatorProfile = profile.roles.some((role) => role === 'writer' || role === 'artist')
   const canPost = ownProfile && creatorProfile
@@ -208,6 +222,7 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
   }
 
   const beginProfileEdit = () => {
+    setPendingAvatar(null)
     setEditable({
       displayName: profile.displayName,
       bio: profile.bio,
@@ -226,6 +241,7 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
   const cancelProfileEdit = () => {
     setProfileError(null)
     setProfileFieldErrors({})
+    setPendingAvatar(null)
     setEditing(false)
   }
 
@@ -685,7 +701,7 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
     }
   }
 
-  const uploadAvatar = async (event: ChangeEvent<HTMLInputElement>) => {
+  const stageAvatar = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0]
     event.currentTarget.value = ''
     if (!file || !ownProfile || !data.currentUserId) return
@@ -698,55 +714,9 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
       return
     }
 
-    setAvatarUploading(true)
+    setPendingAvatar(file)
     setProfileError(null)
-    const supabase = getSupabaseClient()
-    const extension = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/png' ? 'png' : 'webp'
-    const avatarPath = `${data.currentUserId}/${crypto.randomUUID()}.${extension}`
-    try {
-      const { error: uploadError } = await supabase.storage.from('avatars').upload(avatarPath, file, {
-        cacheControl: '3600',
-        contentType: file.type,
-        upsert: false,
-      })
-      if (uploadError) throw uploadError
-
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ avatar_path: avatarPath })
-        .eq('id', data.currentUserId)
-      if (updateError) {
-        const { error: cleanupError } = await supabase.storage.from('avatars').remove([avatarPath])
-        if (cleanupError) console.error('Could not clean up a profile photo after its profile update failed', cleanupError)
-        throw updateError
-      }
-
-      const avatarUrl = supabase.storage.from('avatars').getPublicUrl(avatarPath).data.publicUrl
-      const previousAvatarPath = profile.avatarPath
-      setData((current) => ({
-        ...current,
-        profile: current.profile ? { ...current.profile, avatarPath, avatarUrl } : null,
-        posts: current.posts.map((post) => post.authorId === data.currentUserId ? { ...post, authorAvatarUrl: avatarUrl } : post),
-        likedPosts: current.likedPosts.map((post) => post.authorId === data.currentUserId ? { ...post, authorAvatarUrl: avatarUrl } : post),
-        savedPosts: current.savedPosts.map((post) => post.authorId === data.currentUserId ? { ...post, authorAvatarUrl: avatarUrl } : post),
-      }))
-      window.dispatchEvent(new CustomEvent('storylines:profile-avatar-updated', {
-        detail: { userId: data.currentUserId, avatarUrl },
-      }))
-      setNotice('Na-update na ang profile picture mo.')
-
-      if (previousAvatarPath && previousAvatarPath !== avatarPath) {
-        const { error: cleanupError } = await supabase.storage.from('avatars').remove([previousAvatarPath])
-        if (cleanupError) {
-          console.error('Profile photo updated, but the previous photo could not be removed', cleanupError)
-          setProfileError('Na-update ang larawan, pero hindi natanggal ang lumang file. Subukan ulit o makipag-ugnayan sa suporta.')
-        }
-      }
-    } catch (error) {
-      setProfileError(error instanceof Error ? error.message : 'Hindi na-upload ang profile picture. Subukan ulit.')
-    } finally {
-      setAvatarUploading(false)
-    }
+    setNotice('Napili ang bagong profile picture. Pindutin ang Save changes para i-upload ito.')
   }
 
   const editProfile = async (event: FormEvent<HTMLFormElement>) => {
@@ -779,8 +749,25 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
       return
     }
     setSavingProfile(true)
+    setAvatarUploading(Boolean(pendingAvatar))
     setProfileError(null)
+    setNotice(null)
+    const supabase = getSupabaseClient()
+    let uploadedAvatarPath: string | null = null
+    let previousAvatarCleanupFailed = false
     try {
+      if (pendingAvatar) {
+        const extension = pendingAvatar.type === 'image/jpeg' ? 'jpg' : pendingAvatar.type === 'image/png' ? 'png' : 'webp'
+        const nextAvatarPath = `${data.currentUserId}/${crypto.randomUUID()}.${extension}`
+        const { error: uploadError } = await supabase.storage.from('avatars').upload(nextAvatarPath, pendingAvatar, {
+          cacheControl: '3600',
+          contentType: pendingAvatar.type,
+          upsert: false,
+        })
+        if (uploadError) throw uploadError
+        uploadedAvatarPath = nextAvatarPath
+      }
+
       const patch = {
         display_name: displayName,
         bio,
@@ -790,13 +777,19 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
         instagram_url: instagramUrl || null,
         portfolio_url: portfolioUrl || null,
         collaboration_roles: collaborationRoles,
+        ...(uploadedAvatarPath ? { avatar_path: uploadedAvatarPath } : {}),
       }
-      const { error } = await getSupabaseClient().from('profiles').update(patch).eq('id', profile.id)
+      const { error } = await supabase.from('profiles').update(patch).eq('id', profile.id)
       if (error) throw error
+
+      const avatarUrl = uploadedAvatarPath
+        ? supabase.storage.from('avatars').getPublicUrl(uploadedAvatarPath).data.publicUrl
+        : profile.avatarUrl
       setData((current) => ({
         ...current,
         profile: current.profile ? {
           ...current.profile,
+          ...(uploadedAvatarPath ? { avatarPath: uploadedAvatarPath, avatarUrl } : {}),
           displayName,
           bio,
           writingLanguages: patch.writing_languages,
@@ -806,13 +799,39 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
           portfolioUrl: patch.portfolio_url,
           collaborationRoles: patch.collaboration_roles,
         } : null,
+        ...(uploadedAvatarPath ? {
+          posts: current.posts.map((post) => post.authorId === data.currentUserId ? { ...post, authorAvatarUrl: avatarUrl } : post),
+          likedPosts: current.likedPosts.map((post) => post.authorId === data.currentUserId ? { ...post, authorAvatarUrl: avatarUrl } : post),
+          savedPosts: current.savedPosts.map((post) => post.authorId === data.currentUserId ? { ...post, authorAvatarUrl: avatarUrl } : post),
+        } : {}),
       }))
+      if (uploadedAvatarPath) {
+        window.dispatchEvent(new CustomEvent('storylines:profile-avatar-updated', {
+          detail: { userId: data.currentUserId, avatarUrl },
+        }))
+        const previousAvatarPath = profile.avatarPath
+        if (previousAvatarPath && previousAvatarPath !== uploadedAvatarPath) {
+          const { error: cleanupError } = await supabase.storage.from('avatars').remove([previousAvatarPath])
+          if (cleanupError) {
+            console.error('Profile photo updated, but the previous photo could not be removed', cleanupError)
+            previousAvatarCleanupFailed = true
+          }
+        }
+      }
+      setPendingAvatar(null)
       setEditing(false)
-      setNotice('Na-save na ang profile mo.')
+      setNotice(previousAvatarCleanupFailed
+        ? 'Na-save ang profile, pero hindi natanggal ang lumang profile picture.'
+        : uploadedAvatarPath ? 'Na-save na ang profile at profile picture mo.' : 'Na-save na ang profile mo.')
     } catch (error) {
+      if (uploadedAvatarPath) {
+        const { error: cleanupError } = await supabase.storage.from('avatars').remove([uploadedAvatarPath])
+        if (cleanupError) console.error('Could not clean up an uncommitted profile photo', cleanupError)
+      }
       setProfileError(error instanceof Error ? error.message : 'Hindi na-save ang profile. Subukan ulit.')
     } finally {
       setSavingProfile(false)
+      setAvatarUploading(false)
     }
   }
 
@@ -972,15 +991,15 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
                     accept="image/jpeg,image/png,image/webp"
                     aria-label="Choose a profile picture"
                     className="hidden"
-                    onChange={(event) => void uploadAvatar(event)}
+                    onChange={stageAvatar}
                   />
                   <span className="relative flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-accent">
-                    {profile.avatarUrl
-                      ? <Image src={profile.avatarUrl} alt={`${profile.displayName}'s profile picture`} fill sizes="96px" className="object-cover" />
+                    {profileImagePreview
+                      ? <Image src={profileImagePreview} alt={`${profile.displayName}'s profile picture preview`} fill sizes="96px" className="object-cover" unoptimized={Boolean(pendingAvatarPreview) || !isSupabaseStorageImage(profileImagePreview)} />
                       : <UserRound className="size-10" aria-hidden="true" />}
                     <button
                       type="button"
-                      disabled={avatarUploading}
+                      disabled={savingProfile || avatarUploading}
                       onClick={() => avatarInputRef.current?.click()}
                       aria-label={profile.avatarUrl ? 'Change profile picture' : 'Add profile picture'}
                       className="absolute bottom-0 right-0 flex size-9 items-center justify-center rounded-full border-2 border-card bg-background text-foreground shadow focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-60"
@@ -988,7 +1007,10 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
                       <Pencil className="size-4" aria-hidden="true" />
                     </button>
                   </span>
-                  <p className="text-xs leading-5 text-muted-foreground">JPG, PNG, o WEBP · hanggang 5 MB</p>
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    JPG, PNG, o WEBP · hanggang 5 MB.
+                    {pendingAvatar ? ' Napili na; isi-save lang kapag pinindot ang Save changes.' : ' Hindi pa ia-upload hangga’t hindi naka-save ang changes.'}
+                  </p>
                 </div>
               </div>
               <div className="grid gap-2 border-b border-border py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3">
@@ -1251,6 +1273,25 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
         </section>
 
         <aside className="flex min-w-0 flex-col gap-3 sm:gap-4">
+          <Panel className="flex items-center gap-3 p-4">
+            <ProfileAvatar src={profile.avatarUrl} name={profile.displayName} className="size-14" imageSizes="56px" />
+            <div className="min-w-0 flex-1">
+              <p className="eyebrow">{ownProfile ? 'Your StoryLines' : 'StoryLines profile'}</p>
+              <h2 className="mt-1 truncate font-serif text-lg font-bold">{profile.displayName}</h2>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {profile.roles.map((role) => (
+                  <span key={role} className="rounded-full bg-secondary px-2.5 py-1 text-[10px] font-semibold">
+                    {roleLabel(role)}
+                  </span>
+                ))}
+              </div>
+            </div>
+            {ownProfile && (
+              <button type="button" onClick={beginProfileEdit} aria-label="Edit your StoryLines profile" className="inline-flex size-11 shrink-0 items-center justify-center rounded-full border border-border bg-secondary text-accent focus-visible:outline-2 focus-visible:outline-ring">
+                <Pencil className="size-4" aria-hidden="true" />
+              </button>
+            )}
+          </Panel>
           <AboutDetails profile={profile} compact />
           <Panel className="p-4">
             <p className="eyebrow">Open for collaboration</p>

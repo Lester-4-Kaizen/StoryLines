@@ -6,6 +6,7 @@ import type { ReactNode } from 'react'
 import {
   AlignCenter,
   AlignLeft,
+  ArrowLeft,
   ArrowDown,
   ArrowUp,
   ChevronDown,
@@ -31,7 +32,7 @@ import { Panel } from '@/components/shared/panel'
 import { WorkMoodSelector } from '@/components/shared/work-mood-selector'
 import { useAppState } from '@/lib/app-state'
 import { useWorks } from '@/lib/works-store'
-import { WORK_GENRES, WORK_LANGUAGES } from '@/lib/work-taxonomy'
+import { normalizeWorkLanguage, WORK_GENRES, WORK_LANGUAGES } from '@/lib/work-taxonomy'
 import type { Route, Work } from '@/lib/types'
 
 type EditorChapter = { number: number; title: string; body: string; authorNote: string }
@@ -102,22 +103,35 @@ function renderChapterBody(text: string): ReactNode[] {
   })
 }
 
-function makeEditorDraft(draft: Partial<Work> | null, work?: Work): EditorDraft {
-  const chapters = work?.chapters ?? draft?.chapters
+function makeEditorDraft(draft: Partial<Work> | null, work?: Work, initialChapterNumber = 1): EditorDraft {
+  const chapters = [...(work?.chapters ?? draft?.chapters ?? [])]
+  if (!chapters.length) {
+    chapters.push({ number: 1, title: work?.chapterTitle ?? 'Chapter 1', body: work?.chapterBody ?? '', authorNote: '' })
+  }
+  if (initialChapterNumber > chapters.length) {
+    chapters.push({
+      number: initialChapterNumber,
+      title: `Chapter ${initialChapterNumber}`,
+      body: '',
+      authorNote: '',
+    })
+  }
   return {
     title: work?.title ?? draft?.title ?? '',
     blurb: work?.synopsis ?? draft?.synopsis ?? '',
     genre: work?.genre ?? draft?.genre ?? 'Choose genre',
-    language: work?.language ?? draft?.language ?? 'Filipino',
+    language: normalizeWorkLanguage(work?.language ?? draft?.language ?? 'Filipino'),
     rating: work?.rating ?? draft?.rating ?? 'All ages',
     status: work?.status ?? draft?.status ?? 'Draft',
     coverImageUrl: work?.coverImageUrl ?? draft?.coverImageUrl ?? '',
     contentWarnings: work?.contentWarnings ?? draft?.contentWarnings ?? [],
     moods: work?.moods ?? draft?.moods ?? [],
-    chapters: chapters?.length
-      ? chapters.map((chapter) => ({ ...chapter, authorNote: chapter.authorNote ?? '' }))
-      : [{ number: 1, title: work?.chapterTitle ?? 'Chapter 1', body: work?.chapterBody ?? '', authorNote: '' }],
-    selectedChapter: 1,
+    chapters: chapters.map((chapter, index) => ({
+      ...chapter,
+      number: chapter.number ?? index + 1,
+      authorNote: chapter.authorNote ?? '',
+    })),
+    selectedChapter: initialChapterNumber,
   }
 }
 
@@ -130,14 +144,20 @@ function languageCode(language: string) {
 export function StoryEditorView({
   go,
   work,
+  initialChapterNumber = 1,
+  onBack,
+  onSaved,
 }: {
   go: (route: Route) => void
   work?: Work
+  initialChapterNumber?: number
+  onBack?: () => void
+  onSaved?: () => void | Promise<void>
 }) {
   const router = useRouter()
   const { draft, addWork, clearDraft, updateWork, deleteWork: deleteWorkFromStore, refreshWorks } = useWorks()
   const { currentUserId } = useAppState()
-  const [editor, setEditor] = useState(() => makeEditorDraft(draft, work))
+  const [editor, setEditor] = useState(() => makeEditorDraft(draft, work, initialChapterNumber))
   const [style, setStyle] = useState<StyleSettings>({
     font: 'serif',
     textSize: 18,
@@ -195,6 +215,7 @@ export function StoryEditorView({
           setEditor((current) => ({
             ...current,
             ...parsed,
+            selectedChapter: initialChapterNumber,
             chapters: parsed.chapters!.map((chapter, index) => ({
               number: chapter.number ?? index + 1,
               title: chapter.title ?? `Chapter ${index + 1}`,
@@ -357,12 +378,26 @@ export function StoryEditorView({
       return
     }
     if (status !== 'Draft' && editor.chapters.every((chapter) => !chapter.body.trim())) {
-      setError('Magdagdag muna ng laman sa kahit isang kabanata bago i-publish.')
+      setError('Hindi pa puwedeng i-publish. Lagyan ng text ang kahit isang kabanata. Hindi kailangan ang cover image.')
       return
     }
-    if (editor.chapters.some((chapter) => !chapter.title.trim())) {
-      setError('Lagyan ng pamagat ang bawat kabanata.')
+    if (status !== 'Draft' && editor.chapters.some((chapter) => !chapter.title.trim())) {
+      setError('Hindi pa puwedeng i-publish. Lagyan ng pamagat ang bawat kabanata.')
       return
+    }
+    if (status === 'Draft' && editor.chapters.some((chapter) => !chapter.title.trim())) {
+      setError('Lagyan ng pamagat ang bawat kabanata bago i-save ang draft.')
+      return
+    }
+    if (editor.coverImageUrl.trim()) {
+      try {
+        const coverUrl = new URL(editor.coverImageUrl)
+        if (coverUrl.protocol !== 'https:' && coverUrl.protocol !== 'http:') throw new Error()
+      } catch {
+        setError('Hindi valid ang cover image URL. Gumamit ng buong http:// o https:// address, o iwan itong blanko.')
+        setShowDetails(true)
+        return
+      }
     }
 
     setSaving(true)
@@ -388,7 +423,8 @@ export function StoryEditorView({
       if (storageKey) window.localStorage.removeItem(storageKey)
       await refreshWorks()
       setSavedStatus(status === 'Draft' ? 'Draft saved to your account' : 'Published successfully')
-      if (!work) go('/create/works')
+      if (onSaved) await onSaved()
+      else if (!work) go('/create/works')
       else router.push('/create/works')
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Hindi na-save ang story. Subukan ulit.')
@@ -473,6 +509,11 @@ export function StoryEditorView({
   }
   const spacingClasses = { snug: 'leading-6', relaxed: 'leading-8', airy: 'leading-10' }
   const widthClasses = { narrow: 'max-w-xl', medium: 'max-w-3xl', wide: 'max-w-none' }
+  const publicationRequirements = [
+    { label: 'Story title', complete: Boolean(editor.title.trim()) },
+    { label: 'Title for every chapter', complete: editor.chapters.every((chapter) => Boolean(chapter.title.trim())) },
+    { label: 'Text in at least one chapter', complete: editor.chapters.some((chapter) => Boolean(chapter.body.trim())) },
+  ]
 
   return (
     <div className={style.focus ? 'fixed inset-0 z-40 overflow-y-auto bg-background p-4 sm:p-6' : ''}>
@@ -484,6 +525,7 @@ export function StoryEditorView({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p aria-live="polite" className="text-xs text-muted-foreground">{savedStatus}</p>
           <div className="flex flex-wrap gap-2">
+            {onBack && <Button type="button" variant="outline" onClick={onBack} className="min-h-11 rounded-full"><ArrowLeft data-icon="inline-start" /> Back to project</Button>}
             <Button type="button" variant="outline" onClick={() => setPreview((value) => !value)} className="min-h-11 rounded-full">
               <Eye data-icon="inline-start" /> {preview ? 'Back to editor' : 'Preview as reader'}
             </Button>
@@ -498,6 +540,20 @@ export function StoryEditorView({
         </div>
 
         {error && <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</p>}
+
+        <Panel className="p-4">
+          <h2 className="text-sm font-bold">Before you publish</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Complete these story requirements. A cover image is optional—you can add one later.</p>
+          <ul className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
+            {publicationRequirements.map((requirement) => (
+              <li key={requirement.label} className={requirement.complete ? 'text-foreground' : 'text-muted-foreground'}>
+                <span aria-hidden="true" className="mr-2 font-bold">{requirement.complete ? '✓' : '○'}</span>
+                {requirement.label}
+                <span className="sr-only">{requirement.complete ? ' complete' : ' required'}</span>
+              </li>
+            ))}
+          </ul>
+        </Panel>
 
         {style.focus && (
           <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3">
@@ -685,8 +741,8 @@ export function StoryEditorView({
                 <div className="mt-4">
                   <p className="mb-2 text-xs font-semibold">Spellcheck</p>
                   <div className="flex flex-wrap gap-1.5">
-                    {(['Taglish', 'Tagalog', 'English'] as const).map((language) => (
-                      <button key={language} type="button" aria-pressed={editor.language === language || (language === 'Taglish' && editor.language === 'Filipino')} onClick={() => setEditor((current) => ({ ...current, language: language === 'Taglish' ? 'Filipino' : language }))} className={`min-h-10 rounded-full border px-3 text-xs font-bold ${editor.language === language || (language === 'Taglish' && editor.language === 'Filipino') ? 'border-primary bg-primary text-primary-foreground' : 'border-border'}`}>
+                    {(['Filipino', 'English'] as const).map((language) => (
+                      <button key={language} type="button" aria-pressed={normalizeWorkLanguage(editor.language) === language} onClick={() => setEditor((current) => ({ ...current, language }))} className={`min-h-10 rounded-full border px-3 text-xs font-bold ${normalizeWorkLanguage(editor.language) === language ? 'border-primary bg-primary text-primary-foreground' : 'border-border'}`}>
                         {language}
                       </button>
                     ))}

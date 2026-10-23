@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { StoryEditorView } from '@/components/creator/story-editor-view'
+import { StoryProjectView } from '@/components/creator/story-project-view'
 import { WorkEditorView } from '@/components/creator/work-editor-view'
 import { useAppState } from '@/lib/app-state'
 import { useWorks } from '@/lib/works-store'
@@ -35,7 +35,7 @@ export default function Page() {
   }
   if (!work) return null
 
-  if (work.type === 'story') return <StoryEditorView go={go} work={work} />
+  if (work.type === 'story') return <StoryProjectView go={go} work={work} />
   if (work.type === 'comic') return <ComicEditorView go={go} work={work} />
   return <WorkEditorView work={work} go={go} />
 }

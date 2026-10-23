@@ -12,7 +12,7 @@ import { useAppState } from '@/lib/app-state'
 import type { BrowseCreator, BrowsePageData } from '@/lib/browse-data'
 import type { Work } from '@/lib/types'
 import { WorkMoodSelector } from '@/components/shared/work-mood-selector'
-import { WORK_GENRES, WORK_LANGUAGES, WORK_MOODS } from '@/lib/work-taxonomy'
+import { normalizeWorkLanguage, WORK_GENRES, WORK_LANGUAGES, WORK_MOODS } from '@/lib/work-taxonomy'
 
 type BrowseTab = 'Stories' | 'Comics' | 'Authors'
 type WorkSort = 'newest' | 'oldest' | 'title'
@@ -264,7 +264,7 @@ export function BrowseView({ initialData }: { initialData: BrowsePageData }) {
   }, [selectedWorks])
   const languages = useMemo(() => {
     const known = new Set<string>(WORK_LANGUAGES)
-    const additional = Array.from(new Set(selectedWorks.map((work) => work.language).filter((value): value is string => Boolean(value))))
+    const additional = Array.from(new Set(selectedWorks.map((work) => work.language ? normalizeWorkLanguage(work.language) : undefined).filter((value): value is string => Boolean(value))))
       .filter((value) => !known.has(value))
       .sort()
     return [...WORK_LANGUAGES, ...additional]
@@ -274,7 +274,7 @@ export function BrowseView({ initialData }: { initialData: BrowsePageData }) {
   const matchingWorks = useMemo(() => selectedWorks
     .filter((work) => {
       if (genre !== 'All' && work.genre !== genre) return false
-      if (language !== 'All' && work.language !== language) return false
+      if (language !== 'All' && normalizeWorkLanguage(work.language) !== language) return false
       if (status !== 'All' && work.status !== status) return false
       if (selectedMoods.length && !selectedMoods.every((mood) => work.moods?.includes(mood))) return false
       if (!normalizedQuery) return true
@@ -371,7 +371,7 @@ export function BrowseView({ initialData }: { initialData: BrowsePageData }) {
           synopsis: work.synopsis,
           genre: work.genre ?? undefined,
           moods: work.moods ?? [],
-          language: work.language ?? undefined,
+          language: work.language ? normalizeWorkLanguage(work.language) : undefined,
           coverImageUrl: work.cover_image_url ?? undefined,
           authorName: authorNames.get(work.author_id) ?? 'StoryLines creator',
           status: work.status as 'Ongoing' | 'Complete',
@@ -429,7 +429,7 @@ export function BrowseView({ initialData }: { initialData: BrowsePageData }) {
           username: creator.username,
           roles: creator.roles ?? [],
           bio: creator.bio ?? '',
-          writingLanguages: creator.writing_languages ?? [],
+          writingLanguages: Array.from(new Set((creator.writing_languages ?? []).filter(Boolean).map(normalizeWorkLanguage))),
           favoriteGenres: creator.favorite_genres ?? [],
           openForCollaboration: creator.open_for_collaboration ?? false,
           followerCount: stats ? Number(stats.follower_count) : null,

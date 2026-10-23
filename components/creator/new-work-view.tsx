@@ -9,8 +9,8 @@ import { Panel } from '@/components/shared/panel'
 import type { Badge, Route } from '@/lib/types'
 
 const FORMATS: { value: 'story' | 'comic'; label: string; description: string; icon: React.ReactNode; requires: Badge }[] = [
-  { value: 'story', label: 'Story', description: 'Mga salita, kabanata, at mundong mabubuo mo.', icon: <BookOpen />, requires: 'writer' },
-  { value: 'comic', label: 'Comic', description: 'Mga panel, pahina, at kuwentong iginuhit.', icon: <Brush />, requires: 'artist' },
+  { value: 'story', label: 'Story project', description: 'Gumawa ng project, idagdag ang story details, at isulat ang mga kabanata kapag handa ka na.', icon: <BookOpen />, requires: 'writer' },
+  { value: 'comic', label: 'Comic project', description: 'Gumawa ng project, ayusin ang episode details, at idagdag ang mga pahina kapag handa na.', icon: <Brush />, requires: 'artist' },
 ]
 
 export function NewWorkView({ go, badges, activeRole }: { go: (route: Route) => void; badges: Badge[]; activeRole: Badge }) {
@@ -22,9 +22,9 @@ export function NewWorkView({ go, badges, activeRole }: { go: (route: Route) => 
       <Panel className="mx-auto w-full max-w-3xl">
         <div className="flex flex-col gap-6">
           <div>
-            <span className="eyebrow">Choose your format</span>
-            <h2 className="mt-2 font-serif text-3xl font-bold">Ano ang gagawin natin?</h2>
-            <p className="mt-2 text-sm text-muted-foreground">Piliin ang format. Susunod mong ilalagay ang title, blurb, at iba pang detalye; maaari itong i-save bilang draft.</p>
+            <span className="eyebrow">Create a project</span>
+            <h2 className="mt-2 font-serif text-3xl font-bold">Anong project ang sisimulan mo?</h2>
+            <p className="mt-2 text-sm text-muted-foreground">Pumili ng format, ilagay ang mga pangunahing detalye, at ituloy sa editor. Puwedeng gumawa ng draft kahit wala pang cover o laman.</p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             {FORMATS.map((format) => {
@@ -69,7 +69,7 @@ export function NewWorkView({ go, badges, activeRole }: { go: (route: Route) => 
               onClick={() => go(type === 'story' ? '/create/works/new/story' : '/create/works/new/comic')}
               className="min-h-11 rounded-full bg-accent text-accent-foreground"
             >
-              Continue <ChevronRight data-icon="inline-end" />
+              Continue to project details <ChevronRight data-icon="inline-end" />
             </Button>
           </div>
         </div>

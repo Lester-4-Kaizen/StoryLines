@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { isSupabaseConfigured } from '@/lib/supabase/config'
+import { normalizeWorkLanguage } from '@/lib/work-taxonomy'
 import type { Work } from '@/lib/types'
 
 export type BrowseCreator = {
@@ -119,7 +120,7 @@ export async function getBrowsePageData(): Promise<BrowsePageData> {
           username: creator.username,
           roles: creator.roles ?? [],
           bio: creator.bio ?? '',
-          writingLanguages: creator.writing_languages ?? [],
+          writingLanguages: Array.from(new Set((creator.writing_languages ?? []).filter(Boolean).map(normalizeWorkLanguage))),
           favoriteGenres: creator.favorite_genres ?? [],
           openForCollaboration: creator.open_for_collaboration ?? false,
           followerCount: creatorStats ? Number(creatorStats.follower_count) : null,
@@ -137,7 +138,7 @@ export async function getBrowsePageData(): Promise<BrowsePageData> {
         synopsis: work.synopsis,
         genre: work.genre ?? undefined,
         moods: work.moods ?? [],
-        language: work.language ?? undefined,
+        language: work.language ? normalizeWorkLanguage(work.language) : undefined,
         coverImageUrl: work.cover_image_url ?? undefined,
         authorName: authorProfilesResult.data.find((profile) => profile.id === work.author_id)?.display_name ?? 'StoryLines creator',
         status: work.status as 'Ongoing' | 'Complete',

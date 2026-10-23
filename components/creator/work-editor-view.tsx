@@ -9,7 +9,7 @@ import { FieldSelect } from '@/components/shared/field-select'
 import { Panel } from '@/components/shared/panel'
 import { WorkMoodSelector } from '@/components/shared/work-mood-selector'
 import { useWorks } from '@/lib/works-store'
-import { WORK_GENRES, WORK_LANGUAGES } from '@/lib/work-taxonomy'
+import { normalizeWorkLanguage, WORK_GENRES, WORK_LANGUAGES } from '@/lib/work-taxonomy'
 import type { Route, Work } from '@/lib/types'
 
 // One screen for editing an existing Work, story or comic — unlike the
@@ -24,7 +24,7 @@ export function WorkEditorView({ work, go }: { work: Work; go: (route: Route) =>
   const [synopsis, setSynopsis] = useState(work.synopsis ?? '')
   const [genre, setGenre] = useState(work.genre ?? 'Select genre')
   const [moods, setMoods] = useState(work.moods ?? [])
-  const [language, setLanguage] = useState(work.language ?? 'English')
+  const [language, setLanguage] = useState(normalizeWorkLanguage(work.language))
   const [rating, setRating] = useState(work.rating ?? 'All ages')
   const [chapterTitle, setChapterTitle] = useState(work.chapterTitle ?? 'Chapter 1')
   const [chapterBody, setChapterBody] = useState(work.chapterBody ?? '')
