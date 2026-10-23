@@ -25,6 +25,7 @@ import { ProfileConnectionsDialog } from '@/components/profile/profile-connectio
 import { ShareLinkDialog } from '@/components/shared/share-link-dialog'
 import { isSupabaseStorageImage } from '@/lib/is-supabase-storage-image'
 import { getSupabaseClient } from '@/lib/supabase'
+import { normalizeWritingLanguages } from '@/lib/work-taxonomy'
 import type { ProfileCursor, ProfilePageData, ProfilePost, ProfileRecord, ProfileWork } from '@/lib/profile-data'
 import type { Badge, CommunityPostType } from '@/lib/types'
 
@@ -727,7 +728,7 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
     const facebookUrl = editable.facebookUrl.trim()
     const instagramUrl = editable.instagramUrl.trim()
     const portfolioUrl = editable.portfolioUrl.trim()
-    const languages = splitList(editable.writingLanguages)
+    const languages = normalizeWritingLanguages(splitList(editable.writingLanguages))
     const genres = splitList(editable.favoriteGenres)
     const collaborationRoles = splitList(editable.collaborationRoles)
     const nextErrors: ProfileFieldErrors = {}

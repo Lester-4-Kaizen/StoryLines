@@ -21,7 +21,7 @@ const ACCEPTED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
 
 export function ComicEditorView({ go, work }: { go: (route: Route) => void; work?: Work }) {
   const router = useRouter()
-  const { draft, addWork, clearDraft, updateWork } = useWorks()
+  const { draft, addWork, clearDraft, updateWork, deleteWork } = useWorks()
   const [savedWork, setSavedWork] = useState(work ?? null)
   const [pages, setPages] = useState<ComicPage[]>(work?.comicPages ?? [])
   const [episodeTitle, setEpisodeTitle] = useState(work?.title ?? draft?.title ?? 'Episode 1')
@@ -39,6 +39,7 @@ export function ComicEditorView({ go, work }: { go: (route: Route) => void; work
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState(work ? 'Saved just now' : 'Not saved yet')
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const replaceInputRef = useRef<HTMLInputElement>(null)
   const replaceIndexRef = useRef<number | null>(null)
@@ -266,6 +267,20 @@ export function ComicEditorView({ go, work }: { go: (route: Route) => void; work
     router.push(`/works/${result.id}`)
   }
 
+  const removeProject = async () => {
+    if (!savedWork) return
+    setBusy(true)
+    setError(null)
+    try {
+      await deleteWork(savedWork.id)
+      router.push('/create/works')
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Hindi na-delete ang project. Subukan ulit.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const selectStyle = (selected: boolean) => `min-h-11 rounded-full border px-4 text-left text-sm ${selected ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card hover:border-accent'}`
   const title = savedWork?.title ?? draft?.title ?? 'Untitled Comic'
   const previewBackground = { dark: 'bg-stone-950', light: 'bg-white', paper: 'bg-[#f1e3cb]' }[background]
@@ -437,9 +452,25 @@ export function ComicEditorView({ go, work }: { go: (route: Route) => void; work
             </div>
             <Button type="button" disabled={busy || uploading} onClick={() => void publish()} className="min-h-11 rounded-full bg-accent text-accent-foreground">{busy ? 'Saving…' : 'Publish…'}</Button>
             {savedWork && <Button type="button" variant="ghost" onClick={() => router.push(`/works/${savedWork.id}`)} className="min-h-11 rounded-full">Preview as reader</Button>}
+            {savedWork && <Button type="button" variant="destructive" disabled={busy || uploading} onClick={() => setDeleteOpen(true)} className="min-h-11 rounded-full"><Trash2 data-icon="inline-start" /> Delete project</Button>}
           </Panel>
         </aside>
       </div>
+      {deleteOpen && savedWork && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setDeleteOpen(false) }}>
+          <section role="alertdialog" aria-modal="true" aria-labelledby="delete-comic-project-title" className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl">
+            <h2 id="delete-comic-project-title" className="font-serif text-xl font-bold">Delete this project?</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">Permanent na mabubura ang “{savedWork.title}” at lahat ng comic pages nito. Hindi ito maibabalik.</p>
+            {error && <p role="alert" className="mt-3 text-sm text-destructive">{error}</p>}
+            <div className="mt-5 flex justify-end gap-2">
+              <Button type="button" variant="outline" disabled={busy} onClick={() => setDeleteOpen(false)} className="min-h-11">Cancel</Button>
+              <Button type="button" variant="destructive" disabled={busy} onClick={() => void removeProject()} className="min-h-11">
+                {busy ? 'Deleting…' : 'Delete project'}
+              </Button>
+            </div>
+          </section>
+        </div>
+      )}
     </CreatorFrame>
   )
 }

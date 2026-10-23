@@ -1,12 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronRight, ImagePlus } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { CreatorFrame } from '@/components/shared/creator-frame'
+import { CoverImageField } from '@/components/shared/cover-image-field'
 import { FieldSelect } from '@/components/shared/field-select'
 import { Panel } from '@/components/shared/panel'
 import { WorkMoodSelector } from '@/components/shared/work-mood-selector'
+import { deleteCreatorCoverByUrl, uploadCreatorCover } from '@/lib/creator-image-upload'
 import { useWorks } from '@/lib/works-store'
 import { normalizeWorkLanguage, WORK_GENRES, WORK_LANGUAGES } from '@/lib/work-taxonomy'
 import type { Route } from '@/lib/types'
@@ -20,21 +23,20 @@ export function WorkSetup({
   go: (route: Route) => void
   children?: React.ReactNode
 }) {
-  const { addWork, draft, setDraft } = useWorks()
+  const router = useRouter()
+  const { addWork, draft, clearDraft } = useWorks()
   const [title, setTitle] = useState(draft?.title ?? '')
   const [synopsis, setSynopsis] = useState(draft?.synopsis ?? '')
   const [genre, setGenre] = useState(draft?.genre ?? 'Select genre')
   const [moods, setMoods] = useState(draft?.moods ?? [])
   const [language, setLanguage] = useState(normalizeWorkLanguage(draft?.language))
   const [coverImageUrl, setCoverImageUrl] = useState(draft?.coverImageUrl ?? '')
+  const [coverFile, setCoverFile] = useState<File | null>(null)
   const [rating, setRating] = useState(draft?.rating ?? 'All ages')
-  const [status, setStatus] = useState<'Draft' | 'Ongoing' | 'Complete'>(draft?.status ?? 'Draft')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const editorRoute: Route = type === 'Story' ? '/create/works/new/story/editor' : '/create/works/new/comic/editor'
-
-  const fields = () => ({
+  const fields = (coverUrl: string) => ({
     title: title.trim() || `Untitled ${type}`,
     type: (type === 'Story' ? 'story' : 'comic') as 'story' | 'comic',
     synopsis,
@@ -42,31 +44,37 @@ export function WorkSetup({
     moods,
     language,
     rating,
-    coverImageUrl: coverImageUrl.trim() || undefined,
+    coverImageUrl: coverUrl.trim() || undefined,
   })
 
-  // "Save draft" persists a Work right away (forced to Draft status,
-  // regardless of what the Status dropdown says — clicking this explicitly
-  // means "I'm not ready to write yet"). "Continue to editor" instead
-  // hands these fields off via the Works draft slot, since the actual
-  // content (chapter text / page count) only exists once you're in the
-  // Story/Comic editor on the next page.
-  const saveDraft = async () => {
+  const createProject = async (openProject: boolean) => {
+    if (saving) return
     setSaving(true)
     setError(null)
+    let uploadedCoverUrl: string | null = null
     try {
-      await addWork({ ...fields(), authorId: 'me', status: 'Draft' })
-      go('/create/works')
+      const uploadedCover = coverFile ? await uploadCreatorCover(coverFile) : null
+      uploadedCoverUrl = uploadedCover?.imageUrl ?? null
+      const work = await addWork({ ...fields(uploadedCover?.imageUrl ?? coverImageUrl), authorId: 'me', status: 'Draft' })
+      clearDraft()
+      if (openProject) router.push(`/create/works/${work.id}`)
+      else router.push('/create/works')
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Hindi na-save ang draft. Subukan ulit.')
+      if (uploadedCoverUrl) {
+        try {
+          await deleteCreatorCoverByUrl(uploadedCoverUrl)
+        } catch (cleanupError) {
+          console.error('Could not clean up an unsaved cover image', cleanupError)
+        }
+      }
+      setError(saveError instanceof Error ? saveError.message : 'Hindi nagawa ang project. Subukan ulit.')
     } finally {
       setSaving(false)
     }
   }
 
-  const continueToEditor = () => {
-    setDraft({ ...fields(), status })
-    go(editorRoute)
+  const saveDraft = async () => {
+    await createProject(false)
   }
 
   return (
@@ -89,27 +97,7 @@ export function WorkSetup({
             />
             {!title.trim() && <p id="work-title-error" className="mt-1 text-xs text-destructive">Maglagay ng title bago magpatuloy.</p>}
           </div>
-          <div>
-            <label htmlFor="work-cover-url" className="text-sm font-bold">
-              Cover image <span className="font-normal text-muted-foreground">(optional)</span>
-            </label>
-            <div className="mt-2 flex items-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 p-4">
-              <ImagePlus className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
-              <div className="min-w-0 flex-1">
-                <input
-                  id="work-cover-url"
-                  type="url"
-                  value={coverImageUrl}
-                  onChange={(event) => setCoverImageUrl(event.target.value)}
-                  placeholder="Paste an image URL, or leave this blank for now"
-                  className="min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                />
-                <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                  Puwedeng walang cover habang ginagawa ang project. Hindi ito kailangan para i-save. {type === 'Comic' && 'Kailangan pa rin ng comic pages para i-publish.'}
-                </p>
-              </div>
-            </div>
-          </div>
+          <CoverImageField imageUrl={coverImageUrl} pendingFile={coverFile} onFileChange={setCoverFile} onRemove={() => setCoverImageUrl('')} />
           <div>
             <div className="flex items-center justify-between">
               <label htmlFor="work-synopsis" className="text-sm font-bold">Synopsis</label>
@@ -129,17 +117,16 @@ export function WorkSetup({
             <FieldSelect label="Genre" value={genre} onChange={setGenre} options={['Select genre', ...WORK_GENRES]} />
             <FieldSelect label="Language" value={language} onChange={setLanguage} options={[...WORK_LANGUAGES]} />
             <FieldSelect label="Rating" value={rating} onChange={setRating} options={['All ages', 'Teen', 'Mature']} />
-            <FieldSelect label="Status" value={status} onChange={(v) => setStatus(v as typeof status)} options={['Draft', 'Ongoing', 'Complete']} />
           </div>
           <WorkMoodSelector selected={moods} onChange={setMoods} />
           {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           {children}
           <div className="flex flex-col-reverse gap-3 border-t border-border pt-5 sm:flex-row sm:justify-between">
             <Button type="button" variant="outline" disabled={!title.trim() || saving} onClick={() => void saveDraft()} className="min-h-11 rounded-lg">
-              {saving ? 'Saving…' : 'Save draft'}
+              {saving ? 'Creating…' : 'Save as draft'}
             </Button>
-            <Button type="button" disabled={!title.trim() || saving} onClick={continueToEditor} className="min-h-11 rounded-lg bg-accent text-accent-foreground">
-              Magpatuloy sa editor <ChevronRight data-icon="inline-end" />
+            <Button type="button" disabled={!title.trim() || saving} onClick={() => void createProject(true)} className="min-h-11 rounded-lg bg-accent text-accent-foreground">
+              {saving ? 'Creating project…' : 'Create project'} <ChevronRight data-icon="inline-end" />
             </Button>
           </div>
         </div>

@@ -225,7 +225,7 @@ On **Settings → Upgrade account**, Reader is always included. Turn on Writer o
 
 Apply [`supabase/migrations/20261023000800_creator_studio_fields.sql`](./supabase/migrations/20261023000800_creator_studio_fields.sql) after the Library migration to add story ratings, content warnings, and chapter author notes. Apply it from the Supabase SQL Editor by opening the migration, copying its full contents, and running it against the project; existing creator works receive safe defaults. The Creator Studio loads and saves works through Supabase and requires the earlier creator-work, library, and profile migrations to be applied first. Creator analytics currently reports persisted work counts only; read, like, and follower analytics are not yet instrumented. Standalone artwork uploads are not available yet.
 
-Apply [`supabase/migrations/20261023000900_comic_editor.sql`](./supabase/migrations/20261023000900_comic_editor.sql) after migration `00800` to save Comic pages, transcripts, reading direction, reader background/spacing, and episode author notes with owner-only draft access. The Comic editor uses Cloudflare Images Direct Creator Upload so private API credentials stay server-side. In Cloudflare Dashboard → Images, enable Cloudflare Images and create an account-scoped API token with Images edit permission. Configure these server environment variables in local `.env.local` and in Vercel for Production, Preview, and Development:
+Apply [`supabase/migrations/20261023000900_comic_editor.sql`](./supabase/migrations/20261023000900_comic_editor.sql) after migration `00800` to save Comic pages, transcripts, reading direction, reader background/spacing, and episode author notes with owner-only draft access. Comic page images use Cloudflare Images Direct Creator Upload, so private API credentials stay server-side. In Cloudflare Dashboard → Images, enable Cloudflare Images and create an account-scoped API token with Images edit permission. Configure these server environment variables in local `.env.local` and in Vercel for Production, Preview, and Development:
 
 ```env
 CLOUDFLARE_ACCOUNT_ID=<cloudflare-account-id>
@@ -233,7 +233,9 @@ CLOUDFLARE_IMAGES_API_TOKEN=<account-scoped-images-edit-token>
 CLOUDFLARE_IMAGES_DELIVERY_HASH=<images-delivery-hash>
 ```
 
-The dashboard URL is for account management, not an upload or image URL. Never use it as a page image URL or expose the API token in a `NEXT_PUBLIC_` variable. Uploaded page URLs are public Cloudflare Images delivery URLs; work/page metadata and drafts are still protected by Supabase RLS. Apply the Supabase migration before deploying code that reads the new Comic columns and page table.
+The dashboard URL is for account management, not an upload or image URL. Never use it as a page image URL or expose the API token in a `NEXT_PUBLIC_` variable. Uploaded comic page URLs are public Cloudflare Images delivery URLs; work/page metadata and drafts are still protected by Supabase RLS. Apply the Supabase migration before deploying code that reads the new Comic columns and page table.
+
+Apply [`supabase/migrations/20261024000000_work_covers_storage.sql`](./supabase/migrations/20261024000000_work_covers_storage.sql) in Supabase to enable optional Story and Comic cover uploads through Supabase Storage. The public `work-covers` bucket allows authenticated Writers and Artists to upload into their own user-ID folder; no Cloudflare Images configuration is needed for cover images. Covers are staged locally and uploaded only when the project is saved.
 
 Apply [`supabase/migrations/20261023001000_browse_creator_stats.sql`](./supabase/migrations/20261023001000_browse_creator_stats.sql) to power the Browse Authors directory's follower and published-work counts. The function returns aggregate counts only for Writer and Artist profiles and accepts at most 50 profile IDs per call.
 

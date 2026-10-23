@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { isSupabaseConfigured } from '@/lib/supabase/config'
+import { normalizeWorkLanguage, normalizeWritingLanguages } from '@/lib/work-taxonomy'
 import type { Badge, CommunityPostType } from '@/lib/types'
 
 export type ProfileRecord = {
@@ -169,7 +170,7 @@ function mapProfile(profile: {
     avatarUrl: profile.avatar_url,
     roles: (profile.roles ?? []).filter(isBadge),
     bio: profile.bio ?? '',
-    writingLanguages: profile.writing_languages ?? [],
+    writingLanguages: normalizeWritingLanguages(profile.writing_languages ?? []),
     favoriteGenres: profile.favorite_genres ?? [],
     facebookUrl: profile.facebook_url,
     instagramUrl: profile.instagram_url,
@@ -375,7 +376,7 @@ export async function getProfilePageData(profileId?: string): Promise<ProfilePag
       type: work.type === 'comic' || work.type === 'art' ? work.type : 'story',
       synopsis: work.synopsis ?? '',
       genre: work.genre,
-      language: work.language,
+      language: work.language ? normalizeWorkLanguage(work.language) : null,
       status: work.status === 'Complete' ? 'Complete' : 'Ongoing',
       coverImageUrl: work.cover_image_url,
       createdAt: work.created_at,

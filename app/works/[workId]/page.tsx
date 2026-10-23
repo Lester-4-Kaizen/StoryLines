@@ -14,5 +14,5 @@ export default async function Page({
   const data = await getReaderPageData(workId, Number.isFinite(chapterNumber) && chapterNumber > 0 ? chapterNumber : 1)
 
   if (!data.work && !data.error) notFound()
-  return <ReaderView data={data} />
+  return <ReaderView data={data} initialChapterSelected={Boolean(query.chapter)} />
 }

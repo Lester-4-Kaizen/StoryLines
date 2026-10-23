@@ -27,10 +27,12 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { CreatorFrame } from '@/components/shared/creator-frame'
+import { CoverImageField } from '@/components/shared/cover-image-field'
 import { FieldSelect } from '@/components/shared/field-select'
 import { Panel } from '@/components/shared/panel'
 import { WorkMoodSelector } from '@/components/shared/work-mood-selector'
 import { useAppState } from '@/lib/app-state'
+import { deleteCreatorCoverByUrl, uploadCreatorCover } from '@/lib/creator-image-upload'
 import { useWorks } from '@/lib/works-store'
 import { normalizeWorkLanguage, WORK_GENRES, WORK_LANGUAGES } from '@/lib/work-taxonomy'
 import type { Route, Work } from '@/lib/types'
@@ -158,6 +160,7 @@ export function StoryEditorView({
   const { draft, addWork, clearDraft, updateWork, deleteWork: deleteWorkFromStore, refreshWorks } = useWorks()
   const { currentUserId } = useAppState()
   const [editor, setEditor] = useState(() => makeEditorDraft(draft, work, initialChapterNumber))
+  const [coverFile, setCoverFile] = useState<File | null>(null)
   const [style, setStyle] = useState<StyleSettings>({
     font: 'serif',
     textSize: 18,
@@ -389,20 +392,13 @@ export function StoryEditorView({
       setError('Lagyan ng pamagat ang bawat kabanata bago i-save ang draft.')
       return
     }
-    if (editor.coverImageUrl.trim()) {
-      try {
-        const coverUrl = new URL(editor.coverImageUrl)
-        if (coverUrl.protocol !== 'https:' && coverUrl.protocol !== 'http:') throw new Error()
-      } catch {
-        setError('Hindi valid ang cover image URL. Gumamit ng buong http:// o https:// address, o iwan itong blanko.')
-        setShowDetails(true)
-        return
-      }
-    }
-
     setSaving(true)
     setError(null)
+    let uploadedCoverUrl: string | null = null
     try {
+      const uploadedCover = coverFile ? await uploadCreatorCover(coverFile) : null
+      uploadedCoverUrl = uploadedCover?.imageUrl ?? null
+      const nextCoverUrl = uploadedCover?.imageUrl ?? (editor.coverImageUrl || undefined)
       const story = {
         title: editor.title.trim(),
         type: 'story' as const,
@@ -412,13 +408,20 @@ export function StoryEditorView({
         moods: editor.moods,
         language: editor.language,
         rating: editor.rating,
-        coverImageUrl: editor.coverImageUrl || undefined,
+        coverImageUrl: nextCoverUrl,
         contentWarnings: editor.contentWarnings,
         status,
         chapters: editor.chapters.map((chapter, index) => ({ ...chapter, number: index + 1 })),
       }
       if (work) await updateWork(work.id, story)
       else await addWork(story)
+      if (work?.coverImageUrl && work.coverImageUrl !== nextCoverUrl) {
+        try {
+          await deleteCreatorCoverByUrl(work.coverImageUrl)
+        } catch (cleanupError) {
+          console.error('Story saved, but previous cover could not be removed', cleanupError)
+        }
+      }
       if (!work) clearDraft()
       if (storageKey) window.localStorage.removeItem(storageKey)
       await refreshWorks()
@@ -427,6 +430,13 @@ export function StoryEditorView({
       else if (!work) go('/create/works')
       else router.push('/create/works')
     } catch (saveError) {
+      if (uploadedCoverUrl) {
+        try {
+          await deleteCreatorCoverByUrl(uploadedCoverUrl)
+        } catch (cleanupError) {
+          console.error('Could not clean up an unsaved story cover image', cleanupError)
+        }
+      }
       setError(saveError instanceof Error ? saveError.message : 'Hindi na-save ang story. Subukan ulit.')
     } finally {
       setSaving(false)
@@ -599,9 +609,12 @@ export function StoryEditorView({
                     <label className="text-xs font-bold">Story title
                       <input value={editor.title} maxLength={160} onChange={(event) => setEditor((current) => ({ ...current, title: event.target.value }))} className="mt-1 min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm font-normal" />
                     </label>
-                    <label className="text-xs font-bold">Cover image URL
-                      <input type="url" value={editor.coverImageUrl} onChange={(event) => setEditor((current) => ({ ...current, coverImageUrl: event.target.value }))} placeholder="https://…" className="mt-1 min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm font-normal" />
-                    </label>
+                    <CoverImageField
+                      imageUrl={editor.coverImageUrl}
+                      pendingFile={coverFile}
+                      onFileChange={setCoverFile}
+                      onRemove={() => setEditor((current) => ({ ...current, coverImageUrl: '' }))}
+                    />
                     <label className="text-xs font-bold">Blurb
                       <textarea value={editor.blurb} maxLength={500} onChange={(event) => setEditor((current) => ({ ...current, blurb: event.target.value }))} className="mt-1 min-h-24 w-full rounded-lg border border-input bg-background p-3 text-sm font-normal" />
                     </label>

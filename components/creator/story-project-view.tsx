@@ -2,12 +2,15 @@
 
 import Image from 'next/image'
 import { useEffect, useState } from 'react'
-import { BookOpen, ExternalLink, ImagePlus, Plus } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { BookOpen, ExternalLink, ImagePlus, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { CreatorFrame } from '@/components/shared/creator-frame'
+import { CoverImageField } from '@/components/shared/cover-image-field'
 import { FieldSelect } from '@/components/shared/field-select'
 import { Panel } from '@/components/shared/panel'
 import { StoryEditorView } from '@/components/creator/story-editor-view'
+import { deleteCreatorCoverByUrl, uploadCreatorCover } from '@/lib/creator-image-upload'
 import { getSupabaseClient } from '@/lib/supabase'
 import { useWorks } from '@/lib/works-store'
 import { normalizeWorkLanguage, WORK_GENRES, WORK_LANGUAGES } from '@/lib/work-taxonomy'
@@ -16,7 +19,8 @@ import type { Route, Work } from '@/lib/types'
 type ProjectTab = 'details' | 'contents' | 'notes'
 
 export function StoryProjectView({ work, go }: { work: Work; go: (route: Route) => void }) {
-  const { updateWork } = useWorks()
+  const router = useRouter()
+  const { updateWork, deleteWork } = useWorks()
   const [tab, setTab] = useState<ProjectTab>('contents')
   const [editingChapter, setEditingChapter] = useState<number | null>(null)
   const [title, setTitle] = useState(work.title)
@@ -25,9 +29,11 @@ export function StoryProjectView({ work, go }: { work: Work; go: (route: Route) 
   const [language, setLanguage] = useState(normalizeWorkLanguage(work.language))
   const [rating, setRating] = useState(work.rating ?? 'All ages')
   const [coverImageUrl, setCoverImageUrl] = useState(work.coverImageUrl ?? '')
+  const [coverFile, setCoverFile] = useState<File | null>(null)
   const [storyNotes, setStoryNotes] = useState(work.authorNote ?? '')
   const [saving, setSaving] = useState(false)
   const [loadingNotes, setLoadingNotes] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const chapters = work.chapters ?? []
   const wordCount = chapters.reduce((total, chapter) => (
@@ -41,6 +47,7 @@ export function StoryProjectView({ work, go }: { work: Work; go: (route: Route) 
     setLanguage(normalizeWorkLanguage(work.language))
     setRating(work.rating ?? 'All ages')
     setCoverImageUrl(work.coverImageUrl ?? '')
+    setCoverFile(null)
     setStoryNotes(work.authorNote ?? '')
   }, [work])
 
@@ -76,29 +83,39 @@ export function StoryProjectView({ work, go }: { work: Work; go: (route: Route) 
       setTab('details')
       return
     }
-    if (coverImageUrl.trim()) {
-      try {
-        const coverUrl = new URL(coverImageUrl)
-        if (coverUrl.protocol !== 'http:' && coverUrl.protocol !== 'https:') throw new Error()
-      } catch {
-        setError('Hindi valid ang cover image URL. Gumamit ng http:// o https:// address, o iwan itong blanko.')
-        setTab('details')
-        return
-      }
-    }
-
     setSaving(true)
     setError(null)
+    let uploadedCoverUrl: string | null = null
     try {
+      const uploadedCover = coverFile ? await uploadCreatorCover(coverFile) : null
+      uploadedCoverUrl = uploadedCover?.imageUrl ?? null
+      const nextCoverUrl = uploadedCover?.imageUrl ?? (coverImageUrl.trim() || undefined)
       await updateWork(work.id, {
         title: title.trim(),
         synopsis,
         genre: genre === 'Select genre' ? undefined : genre,
         language,
         rating,
-        coverImageUrl: coverImageUrl.trim() || undefined,
+        coverImageUrl: nextCoverUrl,
       })
+      setCoverFile(null)
+      setCoverImageUrl(nextCoverUrl ?? '')
+      if (work.coverImageUrl && work.coverImageUrl !== nextCoverUrl) {
+        try {
+          await deleteCreatorCoverByUrl(work.coverImageUrl)
+        } catch (cleanupError) {
+          console.error('Story details saved, but previous cover could not be removed', cleanupError)
+          setError('Na-save ang details, pero hindi natanggal ang lumang cover image.')
+        }
+      }
     } catch (saveError) {
+      if (uploadedCoverUrl) {
+        try {
+          await deleteCreatorCoverByUrl(uploadedCoverUrl)
+        } catch (cleanupError) {
+          console.error('Could not clean up an unsaved story cover image', cleanupError)
+        }
+      }
       setError(saveError instanceof Error ? saveError.message : 'Hindi na-save ang project details. Subukan ulit.')
     } finally {
       setSaving(false)
@@ -125,6 +142,18 @@ export function StoryProjectView({ work, go }: { work: Work; go: (route: Route) 
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Hindi na-save ang story notes. Subukan ulit.')
     } finally {
+      setSaving(false)
+    }
+  }
+
+  const removeProject = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      await deleteWork(work.id)
+      router.push('/create/works')
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Hindi na-delete ang project. Subukan ulit.')
       setSaving(false)
     }
   }
@@ -181,6 +210,9 @@ export function StoryProjectView({ work, go }: { work: Work; go: (route: Route) 
             <a href={`/works/${work.id}`} target="_blank" rel="noreferrer" className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-accent underline underline-offset-4">
               View as reader <ExternalLink className="size-4" aria-hidden="true" />
             </a>
+            <Button type="button" variant="destructive" onClick={() => setDeleteOpen(true)} className="mt-3 min-h-11 w-full rounded-lg">
+              <Trash2 data-icon="inline-start" /> Delete project
+            </Button>
           </Panel>
         </aside>
 
@@ -234,10 +266,7 @@ export function StoryProjectView({ work, go }: { work: Work; go: (route: Route) 
                 Description <span className="text-xs font-normal text-muted-foreground">(optional)</span>
                 <textarea value={synopsis} maxLength={500} onChange={(event) => setSynopsis(event.target.value)} className="mt-1 min-h-28 w-full rounded-lg border border-input bg-background p-3 font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring" />
               </label>
-              <label className="text-sm font-semibold">
-                Cover image URL <span className="text-xs font-normal text-muted-foreground">(optional)</span>
-                <input type="url" value={coverImageUrl} onChange={(event) => setCoverImageUrl(event.target.value)} placeholder="Paste an https:// image link, or leave blank" className="mt-1 min-h-11 w-full rounded-lg border border-input bg-background px-3 font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-              </label>
+              <CoverImageField imageUrl={coverImageUrl} pendingFile={coverFile} onFileChange={setCoverFile} onRemove={() => setCoverImageUrl('')} />
               <div className="grid gap-4 sm:grid-cols-2">
                 <FieldSelect label="Genre" value={genre} onChange={setGenre} options={['Select genre', ...WORK_GENRES]} />
                 <FieldSelect label="Language" value={language} onChange={setLanguage} options={[...WORK_LANGUAGES]} />
@@ -310,6 +339,21 @@ export function StoryProjectView({ work, go }: { work: Work; go: (route: Route) 
           )}
         </Panel>
       </div>
+      {deleteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDeleteOpen(false) }}>
+          <section role="alertdialog" aria-modal="true" aria-labelledby="delete-story-project-title" className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl">
+            <h2 id="delete-story-project-title" className="font-serif text-xl font-bold">Delete this project?</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">Permanent na mabubura ang “{work.title}” at lahat ng kabanata at private notes nito. Hindi ito maibabalik.</p>
+            {error && <p role="alert" className="mt-3 text-sm text-destructive">{error}</p>}
+            <div className="mt-5 flex justify-end gap-2">
+              <Button type="button" variant="outline" disabled={saving} onClick={() => setDeleteOpen(false)} className="min-h-11">Cancel</Button>
+              <Button type="button" variant="destructive" disabled={saving} onClick={() => void removeProject()} className="min-h-11">
+                {saving ? 'Deleting…' : 'Delete project'}
+              </Button>
+            </div>
+          </section>
+        </div>
+      )}
     </CreatorFrame>
   )
 }

@@ -3,6 +3,8 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { getSupabaseClient } from '@/lib/supabase'
 import { isSupabaseConfigured } from '@/lib/supabase/config'
+import { deleteCreatorCoverByUrl } from '@/lib/creator-image-upload'
+import { normalizeWorkLanguage } from '@/lib/work-taxonomy'
 import type { ComicPage, Work } from '@/lib/types'
 
 type WorksState = {
@@ -10,10 +12,7 @@ type WorksState = {
   hydrated: boolean
   loadError: string | null
   refreshWorks: () => Promise<void>
-  // `draft` carries what WorkSetup captures (title, synopsis, genre...)
-  // across the navigation to the Story/Comic editor — those are separate
-  // pages, so this is the in-memory handoff between them. It's cleared
-  // once the editor actually publishes.
+  // `draft` is temporary metadata for editor flows that do not yet have a saved work.
   draft: Partial<Work> | null
   setDraft: (draft: Partial<Work>) => void
   clearDraft: () => void
@@ -183,7 +182,7 @@ export function WorksProvider({ children }: { children: ReactNode }) {
           synopsis: work.synopsis,
           genre: work.genre ?? undefined,
           moods: work.moods ?? [],
-          language: work.language ?? undefined,
+          language: work.language ? normalizeWorkLanguage(work.language) : undefined,
           rating: work.rating ?? undefined,
           contentWarnings: work.content_warnings ?? [],
           comicReadingDirection: work.comic_reading_direction ?? 'vertical',
@@ -376,6 +375,13 @@ export function WorksProvider({ children }: { children: ReactNode }) {
       throw new Error('Hindi ma-delete ang work na ito. I-refresh ang pahina at subukan ulit.')
     }
     setWorks((current) => current.filter((work) => work.id !== id))
+    if (current.coverImageUrl) {
+      try {
+        await deleteCreatorCoverByUrl(current.coverImageUrl)
+      } catch (cleanupError) {
+        console.error('Work deleted, but its cover image could not be removed', cleanupError)
+      }
+    }
   }
 
   return (

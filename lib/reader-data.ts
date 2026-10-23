@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { isSupabaseConfigured } from '@/lib/supabase/config'
+import { normalizeWorkLanguage } from '@/lib/work-taxonomy'
 
 export type ReaderChapter = {
   id: string
@@ -14,6 +15,10 @@ export type ReaderPageData = {
     title: string
     type: 'story' | 'comic'
     synopsis: string
+    genre: string | null
+    language: string | null
+    status: 'Ongoing' | 'Complete'
+    coverImageUrl: string | null
     authorId: string
     authorName: string
     authorUsername: string
@@ -65,7 +70,7 @@ export async function getReaderPageData(workId: string, requestedChapter: number
       supabase.auth.getUser(),
       supabase
         .from('creator_works')
-        .select('id, author_id, title, type, synopsis, author_note, comic_reading_direction, comic_reader_background, comic_page_spacing')
+        .select('id, author_id, title, type, synopsis, genre, language, status, cover_image_url, author_note, comic_reading_direction, comic_reader_background, comic_page_spacing')
         .eq('id', workId)
         .in('type', ['story', 'comic'])
         .neq('status', 'Draft')
@@ -138,6 +143,10 @@ export async function getReaderPageData(workId: string, requestedChapter: number
         title: workResult.data.title,
         type: workResult.data.type as 'story' | 'comic',
         synopsis: workResult.data.synopsis,
+        genre: workResult.data.genre,
+        language: workResult.data.language ? normalizeWorkLanguage(workResult.data.language) : null,
+        status: workResult.data.status as 'Ongoing' | 'Complete',
+        coverImageUrl: workResult.data.cover_image_url,
         authorId: workResult.data.author_id,
         authorName: author?.display_name ?? 'StoryLines creator',
         authorUsername: author?.username ?? '',

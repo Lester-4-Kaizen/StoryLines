@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -8,8 +9,9 @@ import { Panel } from '@/components/shared/panel'
 import { getSupabaseClient } from '@/lib/supabase'
 import type { ReaderPageData } from '@/lib/reader-data'
 
-export function ReaderView({ data }: { data: ReaderPageData }) {
+export function ReaderView({ data, initialChapterSelected = false }: { data: ReaderPageData; initialChapterSelected?: boolean }) {
   const router = useRouter()
+  const [storyTab, setStoryTab] = useState<'about' | 'contents' | 'read'>(initialChapterSelected && data.currentChapter ? 'read' : 'about')
   const [isSaved, setIsSaved] = useState(data.isSaved)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(data.error)
@@ -80,8 +82,14 @@ export function ReaderView({ data }: { data: ReaderPageData }) {
   const chapterIndex = data.currentChapter
     ? data.chapters.findIndex((chapter) => chapter.number === data.currentChapter?.number)
     : -1
+  const workId = data.work.id
   const previousChapter = chapterIndex > 0 ? data.chapters[chapterIndex - 1] : null
   const nextChapter = chapterIndex >= 0 ? data.chapters[chapterIndex + 1] : null
+  const storyTabs: { id: 'about' | 'contents' | 'read'; label: string }[] = [
+    { id: 'about', label: 'About' },
+    { id: 'contents', label: 'Table of Contents' },
+    ...(data.currentChapter ? [{ id: 'read' as const, label: `Chapter ${data.currentChapter.number}` }] : []),
+  ]
   const comicPages = data.comicReadingDirection === 'rtl' ? [...data.comicPages].reverse() : data.comicPages
   const readerBackground = {
     dark: 'bg-stone-950 text-stone-100',
@@ -102,28 +110,103 @@ export function ReaderView({ data }: { data: ReaderPageData }) {
       </Link>
 
       <Panel className="p-5 sm:p-8">
-        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border pb-5">
-          <div className="min-w-0">
-            <span className="eyebrow">{data.work.type === 'story' ? 'Story' : 'Comic'}</span>
-            <h1 className="mt-2 break-words font-serif text-3xl font-bold sm:text-4xl">{data.work.title}</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              by {data.work.authorName}{data.work.authorUsername ? ` · @${data.work.authorUsername}` : ''}
-            </p>
+        <div className="flex flex-col gap-5 border-b border-border pb-5 sm:flex-row">
+          <div className="relative aspect-[3/4] w-full shrink-0 overflow-hidden rounded-xl bg-secondary sm:w-48">
+            {data.work.coverImageUrl
+              ? <Image src={data.work.coverImageUrl} alt={`Cover for ${data.work.title}`} fill sizes="(max-width: 640px) 100vw, 192px" className="object-cover" unoptimized />
+              : <div className="flex size-full items-center justify-center p-5 text-center text-sm text-muted-foreground">{data.work.type === 'story' ? 'Story cover' : 'Comic cover'}</div>}
           </div>
-          <button
-            type="button"
-            onClick={() => void toggleSaved()}
-            disabled={saving}
-            aria-pressed={isSaved}
-            className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-border px-4 text-sm font-bold hover:border-accent hover:text-accent disabled:opacity-60"
-          >
-            {saving ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Bookmark className={`size-4 ${isSaved ? 'fill-current' : ''}`} aria-hidden="true" />}
-            {isSaved ? 'Saved' : 'Save to library'}
-          </button>
+          <div className="flex min-w-0 flex-1 flex-col items-start">
+            <span className="eyebrow">{data.work.type === 'story' ? 'Story' : 'Comic'} · {data.work.status}</span>
+            <h1 className="mt-2 break-words font-serif text-3xl font-bold sm:text-4xl">{data.work.title}</h1>
+            <Link href={`/profile/${encodeURIComponent(data.work.authorId)}`} className="mt-2 min-h-11 text-sm font-semibold text-accent hover:underline">
+              by {data.work.authorName}{data.work.authorUsername ? ` · @${data.work.authorUsername}` : ''}
+            </Link>
+            <p className="mt-1 text-sm text-muted-foreground">{[data.work.genre, data.work.language].filter(Boolean).join(' · ')}</p>
+            <button
+              type="button"
+              onClick={() => void toggleSaved()}
+              disabled={saving}
+              aria-pressed={isSaved}
+              className="mt-auto inline-flex min-h-11 items-center gap-2 rounded-full border border-border px-4 text-sm font-bold hover:border-accent hover:text-accent disabled:opacity-60"
+            >
+              {saving ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Bookmark className={`size-4 ${isSaved ? 'fill-current' : ''}`} aria-hidden="true" />}
+              {isSaved ? 'Saved to library' : 'Add to library'}
+            </button>
+          </div>
         </div>
 
         {message && <p role="alert" className="mt-4 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">{message}</p>}
         {progressError && <p role="status" className="mt-4 text-sm text-muted-foreground">{progressError}</p>}
+
+        {data.work.type === 'story' && (
+          <>
+            <div role="tablist" aria-label="Story information" className="mt-4 flex gap-1 border-b border-border">
+              {storyTabs.map((tab, index) => (
+                <button
+                  key={tab.id}
+                  id={`reader-tab-${tab.id}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={storyTab === tab.id}
+                  aria-controls={`reader-panel-${tab.id}`}
+                  tabIndex={storyTab === tab.id ? 0 : -1}
+                  onClick={() => setStoryTab(tab.id)}
+                  onKeyDown={(event) => {
+                    let nextIndex = index
+                    if (event.key === 'ArrowRight') nextIndex = (index + 1) % storyTabs.length
+                    else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + storyTabs.length) % storyTabs.length
+                    else if (event.key === 'Home') nextIndex = 0
+                    else if (event.key === 'End') nextIndex = storyTabs.length - 1
+                    else return
+                    event.preventDefault()
+                    setStoryTab(storyTabs[nextIndex].id)
+                    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[nextIndex]?.focus()
+                  }}
+                  className={`min-h-12 border-b-2 px-4 text-sm font-semibold ${storyTab === tab.id ? 'border-accent text-accent' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            {storyTab === 'about' && (
+              <section id="reader-panel-about" role="tabpanel" aria-labelledby="reader-tab-about" className="py-6">
+                <h2 className="font-serif text-2xl font-bold">Synopsis</h2>
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">{data.work.synopsis || 'Wala pang synopsis para sa story na ito.'}</p>
+                <div className="mt-6 flex flex-wrap gap-2">
+                  {data.work.genre && <span className="rounded-full bg-secondary px-3 py-1.5 text-xs font-semibold">{data.work.genre}</span>}
+                  {data.work.language && <span className="rounded-full bg-secondary px-3 py-1.5 text-xs font-semibold">{data.work.language}</span>}
+                  <span className="rounded-full bg-secondary px-3 py-1.5 text-xs font-semibold">{data.work.status}</span>
+                </div>
+                {data.currentChapter && (
+                  <button type="button" onClick={() => setStoryTab('read')} className="mt-6 min-h-11 rounded-full bg-accent px-5 text-sm font-bold text-accent-foreground">
+                    Start reading
+                  </button>
+                )}
+              </section>
+            )}
+            {storyTab === 'contents' && (
+              <section id="reader-panel-contents" role="tabpanel" aria-labelledby="reader-tab-contents" className="py-6">
+                <h2 className="font-serif text-2xl font-bold">Table of Contents</h2>
+                {data.chapters.length ? (
+                  <ol className="mt-4 divide-y divide-border rounded-xl border border-border">
+                    {data.chapters.map((chapter) => (
+                      <li key={chapter.id}>
+                        <Link href={`/works/${workId}?chapter=${chapter.number}`} onClick={() => setStoryTab('read')} className="flex min-h-14 items-center gap-3 px-4 py-3 hover:bg-muted/50">
+                          <span className="text-xs font-bold text-accent">{chapter.number}</span>
+                          <span className="font-semibold">{chapter.title}</span>
+                          <ChevronRight className="ml-auto size-4 text-muted-foreground" aria-hidden="true" />
+                        </Link>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="mt-4 rounded-xl border border-dashed border-border p-5 text-sm text-muted-foreground">Wala pang nailathalang kabanata.</p>
+                )}
+              </section>
+            )}
+          </>
+        )}
 
         {data.work.type === 'comic' ? (
           comicPages.length ? (
@@ -162,8 +245,8 @@ export function ReaderView({ data }: { data: ReaderPageData }) {
               <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted-foreground">Subukan ulit mamaya habang inaayos ng artist ang episode.</p>
             </div>
           )
-        ) : data.currentChapter ? (
-          <article className="mx-auto max-w-2xl py-8">
+        ) : data.currentChapter && storyTab === 'read' ? (
+          <article id="reader-panel-read" role="tabpanel" aria-labelledby="reader-tab-read" className="mx-auto max-w-2xl py-8">
             <p className="text-center text-xs font-bold uppercase tracking-widest text-accent">
               Chapter {data.currentChapter.number}
             </p>
@@ -181,7 +264,7 @@ export function ReaderView({ data }: { data: ReaderPageData }) {
           </div>
         )}
 
-        {data.work.type === 'story' && data.currentChapter && (
+        {data.work.type === 'story' && data.currentChapter && storyTab === 'read' && (
           <nav aria-label="Chapter navigation" className="flex items-center justify-between gap-4 border-t border-border pt-4">
             {previousChapter ? (
               <Link href={`/works/${data.work.id}?chapter=${previousChapter.number}`} className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border px-4 text-sm font-bold hover:border-accent">

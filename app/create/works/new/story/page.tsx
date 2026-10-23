@@ -1,9 +1,9 @@
 'use client'
 
-import { StoryEditorView } from '@/components/creator/story-editor-view'
+import { WorkSetup } from '@/components/creator/work-setup'
 import { useAppState } from '@/lib/app-state'
 
 export default function Page() {
   const { go } = useAppState()
-  return <StoryEditorView go={go} />
+  return <WorkSetup type="Story" go={go} />
 }

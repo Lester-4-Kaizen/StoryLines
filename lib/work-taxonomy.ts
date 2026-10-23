@@ -34,3 +34,9 @@ export function normalizeWorkLanguage(language?: string | null) {
   if (!language) return 'English'
   return language.trim().toLowerCase() === 'tagalog' ? 'Filipino' : language
 }
+
+export function normalizeWritingLanguages(languages: string[]) {
+  return [...new Set(languages.map((language) => (
+    language.trim().toLowerCase() === 'tagalog' ? 'Filipino' : language.trim()
+  )).filter(Boolean))]
+}

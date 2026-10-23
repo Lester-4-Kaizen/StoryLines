@@ -1,9 +1,5 @@
-'use client'
-
-import { ComicEditorView } from '@/components/creator/comic-editor-view'
-import { useAppState } from '@/lib/app-state'
+import { redirect } from 'next/navigation'
 
 export default function Page() {
-  const { go } = useAppState()
-  return <ComicEditorView go={go} />
+  redirect('/create/works/new/comic')
 }

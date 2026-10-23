@@ -207,10 +207,11 @@ Deno.serve(async (request: Request) => {
   let mediaCleanupStarted = false
 
   try {
-    const [imageIds, avatarPaths, communityImagePaths] = await Promise.all([
+    const [imageIds, avatarPaths, communityImagePaths, workCoverPaths] = await Promise.all([
       getCloudflareImageIds(admin, userId),
       getStoragePaths(admin, 'avatars', userId),
       getStoragePaths(admin, 'community-post-images', userId),
+      getStoragePaths(admin, 'work-covers', userId),
     ])
 
     if (imageIds.length && (!accountId || !cloudflareToken)) {
@@ -225,10 +226,11 @@ Deno.serve(async (request: Request) => {
       await deleteCloudflareImages(imageIds, accountId, cloudflareToken)
     }
 
-    if (avatarPaths.length || communityImagePaths.length) mediaCleanupStarted = true
+    if (avatarPaths.length || communityImagePaths.length || workCoverPaths.length) mediaCleanupStarted = true
     for (const [bucket, paths] of [
       ['avatars', avatarPaths],
       ['community-post-images', communityImagePaths],
+      ['work-covers', workCoverPaths],
     ] as const) {
       for (let index = 0; index < paths.length; index += 100) {
         const { error } = await admin.storage.from(bucket).remove(paths.slice(index, index + 100))
