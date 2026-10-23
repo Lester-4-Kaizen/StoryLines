@@ -13,6 +13,7 @@ import {
   MessageCircle,
   PenLine,
   Plus,
+  Search,
   Send,
   Share2,
   Sparkles,
@@ -37,8 +38,16 @@ const POST_TYPES: { value: CommunityPostType; label: string }[] = [
   { value: 'poll', label: 'Poll' },
 ]
 const COLLABORATOR_ROLES = ['Writer', 'Artist', 'Editor', 'Cover designer', 'Translator']
+const SUGGESTED_TAGS: Record<CommunityPostType, string[]> = {
+  update: ['writing-progress', 'new-chapter', 'behind-the-scenes', 'creative-life'],
+  recommendation: ['book-recommendation', 'reading-list', 'favorite-story', 'webcomic'],
+  'work-in-progress': ['work-in-progress', 'drafting', 'worldbuilding', 'illustration'],
+  collaborator: ['collaboration', 'looking-for-writer', 'looking-for-artist', 'open-call'],
+  feedback: ['feedback-welcome', 'critique', 'cover-art', 'story-review'],
+  poll: ['community-poll', 'story-ideas', 'character-design', 'choose-for-me'],
+}
 
-type FeedTab = 'for-you' | 'following' | 'latest' | 'collaborators'
+type FeedTab = 'for-you' | 'following' | 'latest' | 'collaborators' | 'authors'
 type PreviewImage = { name: string; dataUrl: string }
 
 function timeAgo(ts: number) {
@@ -124,8 +133,11 @@ function FeedPost({
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="text-sm font-bold">{post.authorName || 'Ikaw'}</span>
             <span className="community-role">{roleLabel(post.authorRole)}</span>
+            {!post.authorId && <span className="community-role">On this device</span>}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            {post.authorUsername && <span>@{post.authorUsername}</span>}
+            {post.authorUsername && <span aria-hidden="true">·</span>}
             <time dateTime={new Date(post.createdAt).toISOString()}>{timeAgo(post.createdAt)}</time>
             <span aria-hidden="true">·</span>
             <span className="community-type">{postTypeLabel(post.type)}</span>
@@ -212,7 +224,7 @@ export function CommunityView({
   role: Badge
   onUnlock: () => void
 }) {
-  const { posts, hydrated, addPost, toggleLike } = useCommunity()
+  const { posts, authors, hydrated, error, refresh, addPost, toggleLike } = useCommunity()
   const [composerExpanded, setComposerExpanded] = useState(false)
   const [draft, setDraft] = useState('')
   const [postType, setPostType] = useState<CommunityPostType>('update')
@@ -224,6 +236,9 @@ export function CommunityView({
   const [compressing, setCompressing] = useState(false)
   const [feedTab, setFeedTab] = useState<FeedTab>('for-you')
   const [composerError, setComposerError] = useState<string | null>(null)
+  const [authorSearch, setAuthorSearch] = useState('')
+  const [selectedAuthorId, setSelectedAuthorId] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
   const [showAll, setShowAll] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const canPost = isLoggedIn && creator
@@ -231,8 +246,13 @@ export function CommunityView({
   const visiblePosts = posts
     .filter((post) => feedTab !== 'collaborators' || post.type === 'collaborator')
     .filter((post) => feedTab !== 'following')
+    .filter((post) => selectedAuthorId === null || post.authorId === selectedAuthorId)
     .slice()
-    .sort((a, b) => feedTab === 'latest' ? b.createdAt - a.createdAt : b.createdAt - a.createdAt)
+    .sort((a, b) => b.createdAt - a.createdAt)
+  const authorQuery = authorSearch.trim().toLowerCase()
+  const matchingAuthors = authors.filter((author) =>
+    `${author.displayName} ${author.username}`.toLowerCase().includes(authorQuery),
+  )
   const recentCollaborationPosts = posts.filter((post) => post.type === 'collaborator').slice(0, 3)
   const trendingTags = posts
     .flatMap((post) => post.tags ?? [])
@@ -254,8 +274,8 @@ export function CommunityView({
     requestAnimationFrame(() => textareaRef.current?.focus())
   }
 
-  const addTag = () => {
-    const nextTag = tagInput.trim().replace(/^#/, '').replace(/\s+/g, '-').slice(0, 24)
+  const addTag = (value = tagInput) => {
+    const nextTag = value.trim().replace(/^#/, '').replace(/\s+/g, '-').slice(0, 24)
     if (!nextTag || tags.includes(nextTag) || tags.length >= 5) return
     setTags((current) => [...current, nextTag])
     setTagInput('')
@@ -282,7 +302,7 @@ export function CommunityView({
     }
   }
 
-  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const content = draft.trim()
     if (!content) {
@@ -295,23 +315,31 @@ export function CommunityView({
       return
     }
 
-    addPost({
-      content,
-      authorRole: role === 'artist' ? 'artist' : 'writer',
-      type: postType,
-      imageUrls: images.map((image) => image.dataUrl),
-      tags,
-      lookingFor: postType === 'collaborator' ? lookingFor : [],
-    })
-    setDraft('')
-    setPostType('update')
-    setTags([])
-    setTagInput('')
-    setLookingFor([])
-    setImages([])
-    setComposerError(null)
-    setComposerExpanded(false)
-    setFeedTab('for-you')
+    setSubmitting(true)
+    try {
+      await addPost({
+        content,
+        authorRole: role === 'artist' ? 'artist' : 'writer',
+        type: postType,
+        imageUrls: images.map((image) => image.dataUrl),
+        tags,
+        lookingFor: postType === 'collaborator' ? lookingFor : [],
+      })
+      setDraft('')
+      setPostType('update')
+      setTags([])
+      setTagInput('')
+      setLookingFor([])
+      setImages([])
+      setComposerError(null)
+      setComposerExpanded(false)
+      setSelectedAuthorId(null)
+      setFeedTab('for-you')
+    } catch (postError) {
+      setComposerError(postError instanceof Error ? postError.message : 'Hindi maibahagi ang post. Subukan ulit.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const feedTabs: { id: FeedTab; label: string; disabled?: boolean }[] = [
@@ -319,6 +347,7 @@ export function CommunityView({
     { id: 'following', label: 'Following' },
     { id: 'latest', label: 'Latest' },
     { id: 'collaborators', label: 'Collaborators' },
+    { id: 'authors', label: 'Authors' },
   ]
 
   return (
@@ -348,11 +377,12 @@ export function CommunityView({
           )}
           <Panel className="community-shortcuts">
             <p className="community-sidebar-label">Your space</p>
-            <button className="community-shortcut community-shortcut-active" type="button" onClick={() => setFeedTab('for-you')}><Compass /> Feed</button>
+            <button className={`community-shortcut ${feedTab === 'for-you' ? 'community-shortcut-active' : ''}`} type="button" onClick={() => setFeedTab('for-you')}><Compass /> Feed</button>
+            <button className={`community-shortcut ${feedTab === 'authors' ? 'community-shortcut-active' : ''}`} type="button" onClick={() => setFeedTab('authors')}><Search /> Authors</button>
             <button className="community-shortcut" type="button" disabled title="Following feed arrives in a later phase"><UsersRound /> Following</button>
             <button className="community-shortcut" type="button" disabled title="Saved posts arrive in a later phase"><Bookmark /> Saved</button>
             <button className="community-shortcut" type="button" disabled title="Your posts view arrives in a later phase"><PenLine /> My Posts</button>
-            <button className="community-shortcut" type="button" onClick={() => setFeedTab('collaborators')}><Handshake /> Collaboration Board</button>
+            <button className={`community-shortcut ${feedTab === 'collaborators' ? 'community-shortcut-active' : ''}`} type="button" onClick={() => setFeedTab('collaborators')}><Handshake /> Collaboration Board</button>
           </Panel>
         </aside>
 
@@ -440,9 +470,19 @@ export function CommunityView({
                   <label htmlFor="community-tag" className="mb-1.5 block text-xs font-bold">Tags <span className="font-normal text-muted-foreground">(up to 5)</span></label>
                   <div className="flex gap-2">
                     <input id="community-tag" value={tagInput} maxLength={24} onChange={(event) => setTagInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addTag() } }} placeholder="e.g. fantasy, writing" className="community-text-input min-w-0 flex-1" />
-                    <Button type="button" variant="outline" disabled={!tagInput.trim() || tags.length >= 5} onClick={addTag} className="min-h-11 rounded-xl px-3"><Plus className="size-4" /><span className="sr-only">Add tag</span></Button>
+                    <Button type="button" variant="outline" disabled={!tagInput.trim() || tags.length >= 5} onClick={() => addTag()} className="min-h-11 rounded-xl px-3"><Plus className="size-4" /><span className="sr-only">Add tag</span></Button>
                   </div>
                   {tags.length > 0 && <div className="mt-2 flex flex-wrap gap-2">{tags.map((tag) => <button type="button" key={tag} onClick={() => setTags((current) => current.filter((item) => item !== tag))} className="community-tag">#{tag}<X className="ml-1 size-3" /></button>)}</div>}
+                  <div className="mt-3">
+                    <p className="mb-2 text-xs font-bold">Suggested tags</p>
+                    <div className="flex flex-wrap gap-2">
+                      {SUGGESTED_TAGS[postType].filter((tag) => !tags.includes(tag)).map((tag) => (
+                        <button key={tag} type="button" disabled={tags.length >= 5} onClick={() => addTag(tag)} className="community-chip disabled:cursor-not-allowed disabled:opacity-50">
+                          + #{tag}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
                 {images.length > 0 && (
@@ -465,11 +505,11 @@ export function CommunityView({
                     <input type="file" accept="image/*" multiple disabled={images.length >= MAX_IMAGES || compressing} className="sr-only" onChange={(event) => void handleImages(event)} />
                   </label>
                   <span className="text-xs text-muted-foreground">{compressing ? 'Preparing photos…' : `${images.length}/${MAX_IMAGES} photos`}</span>
-                  <Button type="submit" disabled={!draft.trim() || compressing} className="min-h-11 rounded-xl bg-accent px-5 text-accent-foreground">
-                    <Send className="size-4" /> Post
+                  <Button type="submit" disabled={!draft.trim() || compressing || submitting} className="min-h-11 rounded-xl bg-accent px-5 text-accent-foreground">
+                    <Send className="size-4" /> {submitting ? 'Posting…' : 'Post'}
                   </Button>
                 </div>
-                <p className="mt-3 text-[11px] leading-5 text-muted-foreground">Maging mabait sa kapwa manlilikha. Posts are saved on this device for now.</p>
+                <p className="mt-3 text-[11px] leading-5 text-muted-foreground">Maging mabait sa kapwa manlilikha. Posts and photos are shared with the community.</p>
               </form>
             )}
           </section>
@@ -482,17 +522,74 @@ export function CommunityView({
             ))}
           </nav>
 
+          {error && (
+            <div role="alert" className="community-card flex flex-wrap items-center justify-between gap-3 text-sm">
+              <p className="min-w-0 flex-1 text-destructive">Hindi ma-load ang community: {error}</p>
+              <Button type="button" variant="outline" onClick={() => void refresh()} className="min-h-10 rounded-xl">Try again</Button>
+            </div>
+          )}
+
           {!hydrated ? (
             <div className="flex flex-col gap-3" aria-label="Loading community posts" aria-busy="true">
               {[0, 1].map((item) => <div key={item} className="community-card h-44 animate-pulse bg-secondary/45" />)}
             </div>
+          ) : feedTab === 'authors' ? (
+            <section className="community-card" aria-label="Search authors">
+              <h2 className="font-serif text-xl font-bold">Find an author</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Maghanap ng writers at artists sa StoryLines.</p>
+              <label htmlFor="community-author-search" className="sr-only">Search authors by name or username</label>
+              <div className="relative mt-4">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                <input
+                  id="community-author-search"
+                  value={authorSearch}
+                  onChange={(event) => setAuthorSearch(event.target.value)}
+                  placeholder="Search name or username"
+                  className="community-text-input pl-10"
+                />
+              </div>
+              {matchingAuthors.length ? (
+                <ul className="mt-3 divide-y divide-border">
+                  {matchingAuthors.map((author) => (
+                    <li key={author.id}>
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedAuthorId(author.id); setFeedTab('for-you') }}
+                        className="flex min-h-16 w-full items-center gap-3 py-3 text-left hover:text-accent"
+                      >
+                        <Avatar role={author.roles.includes('artist') ? 'artist' : 'writer'} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-bold">{author.displayName}</span>
+                          <span className="mt-0.5 block truncate text-xs text-muted-foreground">@{author.username}</span>
+                        </span>
+                        <span className="community-role">{author.roles.includes('writer') ? 'Writer' : 'Artist'}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-4 rounded-xl bg-secondary/55 p-4 text-sm text-muted-foreground">
+                  {authors.length ? 'Walang author na tugma sa search mo.' : 'Wala pang authors na may public posts.'}
+                </p>
+              )}
+            </section>
           ) : feedTab === 'following' ? (
             <div className="community-empty">
               <span className="empty-icon"><UsersRound className="size-5" /></span>
               <h2 className="mt-4 font-serif text-xl font-bold">Your Following feed is coming soon</h2>
               <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">Soon, makikita rito ang bagong gawa at updates ng mga creator na sinusubaybayan mo.</p>
             </div>
-          ) : visiblePosts.length === 0 ? (
+          ) : (
+            <>
+            {selectedAuthorId && (
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3 text-sm">
+                <span>Posts by {authors.find((author) => author.id === selectedAuthorId)?.displayName ?? 'this author'}</span>
+                <button type="button" onClick={() => setSelectedAuthorId(null)} className="inline-flex min-h-10 items-center gap-1 text-xs font-bold text-accent hover:underline">
+                  Clear filter <X className="size-3.5" />
+                </button>
+              </div>
+            )}
+            {visiblePosts.length === 0 ? (
             <div className="community-empty">
               <span className="empty-icon"><MessageCircle className="size-5" /></span>
               <h2 className="mt-4 font-serif text-xl font-bold">{feedTab === 'collaborators' ? 'Wala pang naghahanap ng ka-collab' : 'Wala pang kuwentuhan dito'}</h2>
@@ -508,6 +605,8 @@ export function CommunityView({
               {(showAll ? visiblePosts : visiblePosts.slice(0, 10)).map((post) => <div id={`post-${post.id}`} key={post.id}><FeedPost post={post} onLike={toggleLike} /></div>)}
               {visiblePosts.length > 10 && <Button type="button" variant="outline" onClick={() => setShowAll((value) => !value)} className="min-h-11 w-full rounded-xl">{showAll ? 'Show fewer posts' : 'Load more posts'}</Button>}
             </div>
+          )}
+            </>
           )}
         </section>
 

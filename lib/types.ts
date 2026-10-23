@@ -54,7 +54,9 @@ export type CommunityPostType =
 
 export type Post = {
   id: string
+  authorId?: string
   authorName?: string
+  authorUsername?: string
   authorRole: 'writer' | 'artist'
   type?: CommunityPostType
   content: string
@@ -65,6 +67,13 @@ export type Post = {
   createdAt: number
   likes: number
   likedByMe: boolean
+}
+
+export type CommunityAuthor = {
+  id: string
+  displayName: string
+  username: string
+  roles: Badge[]
 }
 
 export const badgeLabels: Record<Badge, string> = { reader: 'Reader', writer: 'Writer', artist: 'Artist' }

@@ -197,6 +197,12 @@ on conflict (id) do nothing;
 
 Public users can read only the safe profile columns granted above. Authenticated users can update only their own profile row, and cannot insert/delete rows or change the profile ID. The username unique index is case-insensitive. The signup UI checks username availability, but the database constraint remains authoritative during concurrent signups.
 
+### Shared community posts
+
+Community posts are stored in Supabase so they appear to all visitors, rather than only in the browser that created them. Apply [`supabase/migrations/20261023000000_community_posts.sql`](./supabase/migrations/20261023000000_community_posts.sql) in **Supabase → SQL Editor** after creating the `profiles` table above. It creates the public post feed, creator-only insert policy, and public image bucket with per-user upload permissions. The feed also uses the public profile columns to show authors and provide name/username search. Posts saved by the old device-only version remain visible on that device and are labeled **On this device**; they are not silently published to the shared feed.
+
+The migration is additive and safe to run again. After applying it, deploy the app so the community page uses the shared feed.
+
 ## Auth routes and behavior
 
 - `/login`, `/signup`, `/forgot-password`, and `/reset-password` are standalone pages.
