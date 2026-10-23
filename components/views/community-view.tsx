@@ -7,6 +7,7 @@ import {
   Check,
   ChevronDown,
   Compass,
+  Trash2,
   Handshake,
   Heart,
   ImagePlus,
@@ -116,6 +117,8 @@ function FeedPost({
   onLoadComments,
   onAddComment,
   onAuthorClick,
+  canDelete,
+  onDelete,
 }: {
   post: Post
   onLike: (id: string) => void
@@ -126,6 +129,8 @@ function FeedPost({
   onLoadComments: (id: string) => Promise<CommunityComment[]>
   onAddComment: (id: string, content: string) => Promise<CommunityComment>
   onAuthorClick: (id: string) => void
+  canDelete: boolean
+  onDelete: (id: string) => Promise<void>
 }) {
   const [expanded, setExpanded] = useState(false)
   const [shareMessage, setShareMessage] = useState<string | null>(null)
@@ -136,6 +141,8 @@ function FeedPost({
   const [commentError, setCommentError] = useState<string | null>(null)
   const [commentSubmitting, setCommentSubmitting] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const postAuthorId = post.authorId
   const images = post.imageUrls?.length ? post.imageUrls : post.imageUrl ? [post.imageUrl] : []
   const tags = post.tags ?? []
@@ -205,6 +212,19 @@ function FeedPost({
     }
   }
 
+  const deleteOwnPost = async () => {
+    if (!window.confirm('Delete this post? This cannot be undone.')) return
+
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await onDelete(post.id)
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : 'Hindi mabura ang post. Subukan ulit.')
+      setDeleting(false)
+    }
+  }
+
   return (
     <article className="community-card">
       <div className="flex items-start gap-3">
@@ -229,9 +249,22 @@ function FeedPost({
             <span className="community-type">{postTypeLabel(post.type)}</span>
           </div>
         </div>
-        <button type="button" className="community-icon-button" aria-label="Post options" title="Post options arrive in a later phase" disabled>
-          <ChevronDown className="size-4" />
-        </button>
+        {canDelete ? (
+          <button
+            type="button"
+            className="community-icon-button text-destructive"
+            aria-label="Delete your post"
+            title="Delete your post"
+            onClick={() => void deleteOwnPost()}
+            disabled={deleting}
+          >
+            <Trash2 className="size-4" />
+          </button>
+        ) : (
+          <button type="button" className="community-icon-button" aria-label="Post options" title="Post options arrive in a later phase" disabled>
+            <ChevronDown className="size-4" />
+          </button>
+        )}
       </div>
 
       <div className="mt-4">
@@ -310,6 +343,7 @@ function FeedPost({
         </button>
       </div>
       {saveError && <p role="alert" className="mt-2 text-xs text-destructive">{saveError}</p>}
+      {deleteError && <p role="alert" className="mt-2 text-xs text-destructive">{deleteError}</p>}
       {commentsOpen && (
         <section className="mt-3 border-t border-border pt-3" aria-label="Post comments">
           {commentsLoading ? (
@@ -384,11 +418,13 @@ export function CommunityView({
     posts,
     authors,
     savedPostIds,
+    currentUserId,
     hydrated,
     error,
     refresh,
     addPost,
     toggleLike,
+    deletePost,
     toggleSaved,
     loadComments,
     addComment,
@@ -797,12 +833,14 @@ export function CommunityView({
                     post={post}
                     onLike={toggleLike}
                     isSaved={savedPostIds.includes(post.id)}
+                    canDelete={!post.authorId || (currentUserId !== null && post.authorId === currentUserId)}
                     isLoggedIn={isLoggedIn}
                     onUnlock={onUnlock}
                     onSave={toggleSaved}
                     onLoadComments={loadComments}
                     onAddComment={addComment}
                     onAuthorClick={showAuthorPosts}
+                    onDelete={deletePost}
                   />
                 </div>
               ))}

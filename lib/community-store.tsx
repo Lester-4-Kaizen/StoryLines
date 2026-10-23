@@ -10,6 +10,7 @@ type CommunityState = {
   posts: Post[]
   authors: CommunityAuthor[]
   savedPostIds: string[]
+  currentUserId: string | null
   hydrated: boolean
   error: string | null
   refresh: () => Promise<void>
@@ -22,6 +23,7 @@ type CommunityState = {
     lookingFor: string[]
   }) => Promise<void>
   toggleLike: (id: string) => void
+  deletePost: (id: string) => Promise<void>
   toggleSaved: (id: string) => Promise<void>
   loadComments: (postId: string) => Promise<CommunityComment[]>
   addComment: (postId: string, content: string) => Promise<CommunityComment>
@@ -53,6 +55,7 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
   const [devicePosts, setDevicePosts, devicePostsHydrated] = useLocalStorageList<Post>(LEGACY_STORAGE_KEY)
   const [authors, setAuthors] = useState<CommunityAuthor[]>([])
   const [savedPostIds, setSavedPostIds] = useState<string[]>([])
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [hydrated, setHydrated] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const posts = [...devicePosts, ...sharedPosts]
@@ -98,6 +101,7 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
       const authorById = new Map(nextAuthors.map((author) => [author.id, author]))
       let savedIds: string[] = []
       const user = sessionResult.data.session?.user
+      setCurrentUserId(user?.id ?? null)
       if (user) {
         const { data: savedRows, error: savedError } = await supabase
           .from('community_saved_posts')
@@ -219,6 +223,38 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
     )
   }
 
+  const deletePost: CommunityState['deletePost'] = async (postId) => {
+    const localPost = devicePosts.find((post) => post.id === postId)
+    if (localPost) {
+      if (localPost.authorId) throw new Error('You can only delete your own community posts.')
+      setDevicePosts((current) => current.filter((post) => post.id !== postId))
+      return
+    }
+
+    const post = sharedPosts.find((item) => item.id === postId)
+    if (!post) throw new Error('Post not found.')
+
+    const supabase = getSupabaseClient()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError) throw userError
+    if (!user || user.id !== post.authorId) {
+      throw new Error('You can only delete your own community posts.')
+    }
+
+    const { data, error: deleteError } = await supabase
+      .from('community_posts')
+      .delete()
+      .eq('id', postId)
+      .eq('author_id', user.id)
+      .select('id')
+      .single()
+    if (deleteError) throw deleteError
+    if (data.id !== postId) throw new Error('Could not verify the deleted post.')
+
+    setSharedPosts((current) => current.filter((item) => item.id !== postId))
+    setSavedPostIds((current) => current.filter((id) => id !== postId))
+  }
+
   const toggleSaved: CommunityState['toggleSaved'] = async (postId) => {
     const supabase = getSupabaseClient()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -329,11 +365,13 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
         posts,
         authors,
         savedPostIds,
+        currentUserId,
         hydrated: hydrated && devicePostsHydrated,
         error,
         refresh,
         addPost,
         toggleLike,
+        deletePost,
         toggleSaved,
         loadComments,
         addComment,

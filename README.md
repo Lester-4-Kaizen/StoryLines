@@ -207,6 +207,8 @@ The follow-up [`supabase/migrations/20261023000100_add_random_community_post_typ
 
 Apply [`supabase/migrations/20261023000200_community_comments_and_saved_posts.sql`](./supabase/migrations/20261023000200_community_comments_and_saved_posts.sql) to enable public comment reading, signed-in comments, and private saved posts. Saved posts are available from the community **Saved** shortcut. Author names on posts and comments, as well as entries in **Authors**, open that author's posts in the feed.
 
+Apply [`supabase/migrations/20261023000300_allow_owners_to_delete_community_posts.sql`](./supabase/migrations/20261023000300_allow_owners_to_delete_community_posts.sql) to let signed-in authors delete their own shared posts. The delete policy checks the authenticated user ID; device-only legacy posts can be removed from that device.
+
 ## Auth routes and behavior
 
 - `/login`, `/signup`, `/forgot-password`, and `/reset-password` are standalone pages.
