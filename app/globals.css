@@ -54,6 +54,28 @@
   --radius: 0.75rem;
 }
 
+:root.dark {
+  color-scheme: dark;
+  --background: oklch(0.19 0.018 48);
+  --foreground: oklch(0.93 0.018 82);
+  --card: oklch(0.235 0.022 48);
+  --card-foreground: oklch(0.93 0.018 82);
+  --popover: oklch(0.235 0.022 48);
+  --popover-foreground: oklch(0.93 0.018 82);
+  --primary: oklch(0.76 0.045 68);
+  --primary-foreground: oklch(0.2 0.025 48);
+  --secondary: oklch(0.3 0.027 50);
+  --secondary-foreground: oklch(0.9 0.02 78);
+  --muted: oklch(0.28 0.023 50);
+  --muted-foreground: oklch(0.72 0.025 72);
+  --accent: oklch(0.72 0.12 42);
+  --accent-foreground: oklch(0.19 0.025 48);
+  --destructive: oklch(0.68 0.16 25);
+  --border: oklch(0.36 0.025 52);
+  --input: oklch(0.42 0.03 52);
+  --ring: oklch(0.72 0.12 42);
+}
+
 * { @apply border-border outline-ring/50; }
 html { @apply bg-background; }
 body { @apply bg-background text-foreground font-sans; background-image: radial-gradient(oklch(0.4 0.03 60 / 0.045) .65px, transparent .65px); background-size: 7px 7px; }

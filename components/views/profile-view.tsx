@@ -299,6 +299,43 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
     }
   }
 
+  const editPost = async (postId: string, content: string) => {
+    if (!ownProfile || !data.currentUserId) throw new Error('You can only edit your own community posts.')
+    const post = data.posts.find((item) => item.id === postId)
+    if (!post) throw new Error('Post not found.')
+    const { data: updatedRow, error } = await getSupabaseClient()
+      .from('community_posts')
+      .update({ content })
+      .eq('id', postId)
+      .eq('author_id', data.currentUserId)
+      .select('id')
+      .single()
+    if (error) throw error
+    if (updatedRow.id !== postId) throw new Error('Could not verify the updated post.')
+    setData((current) => ({
+      ...current,
+      posts: current.posts.map((item) => item.id === postId ? { ...item, content } : item),
+    }))
+  }
+
+  const deletePost = async (postId: string) => {
+    if (!ownProfile || !data.currentUserId) throw new Error('You can only delete your own community posts.')
+    const { data: deletedRow, error } = await getSupabaseClient()
+      .from('community_posts')
+      .delete()
+      .eq('id', postId)
+      .eq('author_id', data.currentUserId)
+      .select('id')
+      .single()
+    if (error) throw error
+    if (deletedRow.id !== postId) throw new Error('Could not verify the deleted post.')
+    setData((current) => ({
+      ...current,
+      posts: current.posts.filter((item) => item.id !== postId),
+      counts: { ...current.counts, posts: Math.max(0, current.counts.posts - 1) },
+    }))
+  }
+
   const submitPost = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const content = postDraft.trim()
@@ -759,8 +796,11 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
                   displayName={profile.displayName}
                   username={profile.username}
                   currentUserId={data.currentUserId}
+                  isOwnProfile={ownProfile}
                   onLike={toggleLike}
                   onSave={toggleSave}
+                  onEdit={editPost}
+                  onDelete={deletePost}
                   onLoginRequired={askForLogin}
                 />
               ))}

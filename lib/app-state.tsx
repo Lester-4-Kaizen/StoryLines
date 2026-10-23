@@ -10,6 +10,7 @@ import type { Badge, Route } from '@/lib/types'
 type AppState = {
   badges: Badge[]
   role: Badge
+  themeMode: 'light' | 'dark'
   creator: boolean
   isLoggedIn: boolean
   hydrated: boolean
@@ -18,6 +19,7 @@ type AppState = {
   notice: string | null
   setMobileNav: (value: boolean) => void
   setUpgradeOpen: (value: boolean) => void
+  setThemeMode: (mode: 'light' | 'dark') => void
   toggleBadge: (b: Badge) => void
   go: (route: Route) => void
   refreshSession: () => Promise<void>
@@ -29,6 +31,7 @@ type AppState = {
 
 const AppStateContext = createContext<AppState | null>(null)
 const BADGES: Badge[] = ['reader', 'writer', 'artist']
+const THEME_STORAGE_KEY = 'storylines-theme-mode'
 
 function accountFromUser(user: User): { badges: Badge[]; role: Badge } {
   const metadataBadges = user.user_metadata.roles ?? user.user_metadata.badges
@@ -48,6 +51,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [badges, setBadges] = useState<Badge[]>(['reader'])
   const [role, setRole] = useState<Badge>('reader')
+  const [themeMode, setThemeModeState] = useState<'light' | 'dark'>('light')
   const [hydrated, setHydrated] = useState(false)
   const [mobileNav, setMobileNav] = useState(false)
   const [upgradeOpen, setUpgradeOpen] = useState(false)
@@ -77,6 +81,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const remainingQuery = query.toString()
       const cleanUrl = `${window.location.pathname}${remainingQuery ? `?${remainingQuery}` : ''}${window.location.hash}`
       window.history.replaceState(window.history.state, '', cleanUrl)
+    }
+  }, [])
+
+  useEffect(() => {
+    try {
+      const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY)
+      const mode = savedTheme === 'dark' ? 'dark' : 'light'
+      setThemeModeState(mode)
+      document.documentElement.classList.toggle('dark', mode === 'dark')
+    } catch (error) {
+      setNotice(error instanceof Error ? `Could not load your theme preference: ${error.message}` : 'Could not load your theme preference.')
     }
   }, [])
 
@@ -128,9 +143,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    const nextBadges = badges.includes(badge)
+    const selectedBadges = badges.includes(badge)
       ? badges.filter((item) => item !== badge)
       : [...badges, badge]
+    const nextBadges = selectedBadges.length ? selectedBadges : ['reader' as const]
     const nextRole = role === badge && !nextBadges.includes(badge)
       ? nextBadges.find((item) => item !== 'reader') ?? 'reader'
       : badge !== 'reader' ? badge : role
@@ -149,6 +165,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       applyUser(data.user)
     } catch (error) {
       setNotice(error instanceof Error ? `Could not update your badges: ${error.message}` : 'Could not update your badges.')
+    }
+  }
+
+  const setThemeMode = (mode: 'light' | 'dark') => {
+    setThemeModeState(mode)
+    document.documentElement.classList.toggle('dark', mode === 'dark')
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, mode)
+    } catch (error) {
+      setNotice(error instanceof Error ? `Theme changed, but could not save your preference: ${error.message}` : 'Theme changed, but could not save your preference.')
     }
   }
 
@@ -182,6 +208,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       value={{
         badges,
         role,
+        themeMode,
         creator,
         isLoggedIn: user !== null,
         hydrated,
@@ -190,6 +217,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         notice,
         setMobileNav,
         setUpgradeOpen,
+        setThemeMode,
         toggleBadge,
         go,
         refreshSession,

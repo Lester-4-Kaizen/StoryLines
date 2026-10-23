@@ -1,5 +1,6 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
+import Script from 'next/script'
 import { DM_Serif_Display, Geist } from 'next/font/google'
 import './globals.css'
 import { AppStateProvider } from '@/lib/app-state'
@@ -24,8 +25,15 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className="bg-background">
+    <html lang="en" className="bg-background" suppressHydrationWarning>
       <body className={`${geist.variable} ${dmSerif.variable} antialiased`}>
+        <Script id="storylines-theme-init" strategy="beforeInteractive">
+          {`try {
+  document.documentElement.classList.toggle('dark', localStorage.getItem('storylines-theme-mode') === 'dark')
+} catch (error) {
+  console.error('Could not load the saved theme preference.', error)
+}`}
+        </Script>
         <AppStateProvider>
           <WorksProvider>
             <CommunityProvider>
