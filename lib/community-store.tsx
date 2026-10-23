@@ -68,7 +68,7 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
     setHydrated(false)
     try {
       const supabase = getSupabaseClient()
-      const [postsResult, authorsResult, userResult] = await Promise.all([
+      const [postsResult, authorsResult, sessionResult] = await Promise.all([
         supabase
           .from('community_posts')
           .select('id, author_id, author_role, type, content, image_urls, tags, looking_for, created_at')
@@ -80,12 +80,12 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
           .overlaps('roles', ['writer', 'artist'])
           .order('display_name')
           .limit(500),
-        supabase.auth.getUser(),
+        supabase.auth.getSession(),
       ])
 
       if (postsResult.error) throw postsResult.error
       if (authorsResult.error) throw authorsResult.error
-      if (userResult.error) throw userResult.error
+      if (sessionResult.error) throw sessionResult.error
 
       const nextAuthors: CommunityAuthor[] = (authorsResult.data ?? []).map((author) => ({
         id: author.id,
@@ -97,11 +97,12 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
       }))
       const authorById = new Map(nextAuthors.map((author) => [author.id, author]))
       let savedIds: string[] = []
-      if (userResult.data.user) {
+      const user = sessionResult.data.session?.user
+      if (user) {
         const { data: savedRows, error: savedError } = await supabase
           .from('community_saved_posts')
           .select('post_id')
-          .eq('user_id', userResult.data.user.id)
+          .eq('user_id', user.id)
           .limit(500)
         if (savedError) throw savedError
         savedIds = (savedRows ?? []).map((saved) => saved.post_id)
