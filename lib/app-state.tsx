@@ -20,6 +20,7 @@ type AppState = {
   setMobileNav: (value: boolean) => void
   setUpgradeOpen: (value: boolean) => void
   setThemeMode: (mode: 'light' | 'dark') => void
+  saveBadges: (badges: Badge[]) => Promise<void>
   toggleBadge: (b: Badge) => void
   go: (route: Route) => void
   refreshSession: () => Promise<void>
@@ -147,25 +148,30 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       ? badges.filter((item) => item !== badge)
       : [...badges, badge]
     const nextBadges = selectedBadges.length ? selectedBadges : ['reader' as const]
-    const nextRole = role === badge && !nextBadges.includes(badge)
-      ? nextBadges.find((item) => item !== 'reader') ?? 'reader'
-      : badge !== 'reader' ? badge : role
-
     try {
-      const { error: profileError } = await getSupabaseClient()
-        .from('profiles')
-        .update({ roles: nextBadges })
-        .eq('id', user.id)
-      if (profileError) throw profileError
-
-      const { data, error } = await getSupabaseClient().auth.updateUser({
-        data: { ...user.user_metadata, badges: nextBadges, roles: nextBadges, role: nextRole },
-      })
-      if (error) throw error
-      applyUser(data.user)
+      await saveBadges(nextBadges)
     } catch (error) {
       setNotice(error instanceof Error ? `Could not update your badges: ${error.message}` : 'Could not update your badges.')
     }
+  }
+
+  const saveBadges = async (selectedBadges: Badge[]) => {
+    if (!user) {
+      requireAuth('/settings')
+      throw new Error('Log in to save your account roles.')
+    }
+    const nextBadges = Array.from(new Set<Badge>(['reader', ...selectedBadges]))
+    const nextRole = nextBadges.includes(role) ? role : nextBadges.find((badge) => badge !== 'reader') ?? 'reader'
+    const { error: profileError } = await getSupabaseClient()
+      .from('profiles')
+      .update({ roles: nextBadges })
+      .eq('id', user.id)
+    if (profileError) throw profileError
+    const { data, error } = await getSupabaseClient().auth.updateUser({
+      data: { ...user.user_metadata, badges: nextBadges, roles: nextBadges, role: nextRole },
+    })
+    if (error) throw error
+    applyUser(data.user)
   }
 
   const setThemeMode = (mode: 'light' | 'dark') => {
@@ -218,6 +224,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setMobileNav,
         setUpgradeOpen,
         setThemeMode,
+        saveBadges,
         toggleBadge,
         go,
         refreshSession,

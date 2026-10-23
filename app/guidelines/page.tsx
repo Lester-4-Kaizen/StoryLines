@@ -1,9 +1,6 @@
-import { BackButton } from '@/components/shared/back-button'
-
 export default function GuidelinesPage() {
   return (
     <article className="paper-panel mx-auto max-w-3xl p-6 sm:p-10">
-      <BackButton />
       <p className="eyebrow">Para sa ligtas na tambayan</p>
       <h1 className="mt-2 font-serif text-3xl font-bold">Community Guidelines</h1>
       <p className="mt-3 text-sm leading-6 text-muted-foreground">

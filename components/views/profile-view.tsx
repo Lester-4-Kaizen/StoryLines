@@ -19,10 +19,10 @@ import { Panel } from '@/components/shared/panel'
 import { ProfilePostCard } from '@/components/profile/profile-post-card'
 import { isSupabaseStorageImage } from '@/lib/is-supabase-storage-image'
 import { getSupabaseClient } from '@/lib/supabase'
-import type { ProfileCursor, ProfilePageData, ProfileRecord, ProfileWork } from '@/lib/profile-data'
+import type { ProfileCursor, ProfilePageData, ProfilePost, ProfileRecord, ProfileWork } from '@/lib/profile-data'
 import type { Badge, CommunityPostType } from '@/lib/types'
 
-type ProfileTab = 'Posts' | 'Stories' | 'Comics' | 'Art' | 'About'
+type ProfileTab = 'Posts' | 'Stories' | 'Comics' | 'Art' | 'About' | 'Liked' | 'Saved'
 type PostFilter = 'All posts' | 'Updates' | 'Work in progress' | 'Recommendations'
 type EditableProfile = {
   displayName: string
@@ -88,6 +88,8 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
   const pathname = usePathname()
   const [data, setData] = useState(initialData)
   const [activeTab, setActiveTab] = useState<ProfileTab>('Posts')
+  const [activityLoading, setActivityLoading] = useState(false)
+  const [activityError, setActivityError] = useState<string | null>(null)
   const [postFilter, setPostFilter] = useState<PostFilter>('All posts')
   const [postDraft, setPostDraft] = useState('')
   const [posting, setPosting] = useState(false)
@@ -110,6 +112,9 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
   const [messageDraft, setMessageDraft] = useState('')
   const [messageSending, setMessageSending] = useState(false)
   const [messageError, setMessageError] = useState<string | null>(null)
+  const profileTabs: ProfileTab[] = data.currentUserId && data.currentUserId === data.profile?.id
+    ? [...TABS, 'Liked', 'Saved']
+    : TABS
   const [editable, setEditable] = useState<EditableProfile>(() => ({
     displayName: initialData.profile?.displayName ?? '',
     bio: initialData.profile?.bio ?? '',
@@ -156,7 +161,12 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
   const ownProfile = data.currentUserId === profile.id
   const creatorProfile = profile.roles.some((role) => role === 'writer' || role === 'artist')
   const canPost = ownProfile && creatorProfile
-  const visiblePosts = data.posts.filter((post) => {
+  const categoryPosts = activeTab === 'Liked'
+    ? data.likedPosts
+    : activeTab === 'Saved'
+      ? data.savedPosts
+      : data.posts
+  const visiblePosts = categoryPosts.filter((post) => {
     const type = FILTER_TYPES[postFilter]
     return type === null || post.type === type
   })
@@ -171,15 +181,15 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
   }
 
   const selectTabWithKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
-    const currentIndex = TABS.indexOf(activeTab)
+    const currentIndex = profileTabs.indexOf(activeTab)
     let nextIndex = currentIndex
-    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % TABS.length
-    else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + TABS.length) % TABS.length
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % profileTabs.length
+    else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + profileTabs.length) % profileTabs.length
     else if (event.key === 'Home') nextIndex = 0
-    else if (event.key === 'End') nextIndex = TABS.length - 1
+    else if (event.key === 'End') nextIndex = profileTabs.length - 1
     else return
     event.preventDefault()
-    setActiveTab(TABS[nextIndex])
+    setActiveTab(profileTabs[nextIndex])
     event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[nextIndex]?.focus()
   }
 
@@ -246,12 +256,21 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
       askForLogin('Mag-like ng post')
       return
     }
-    const post = data.posts.find((item) => item.id === postId)
+    const post = [...data.posts, ...data.likedPosts, ...data.savedPosts].find((item) => item.id === postId)
     if (!post) return
     const wasLiked = post.likedByMe
+    const previousPosts = data.posts
+    const previousLikedPosts = data.likedPosts
+    const previousSavedPosts = data.savedPosts
     setData((current) => ({
       ...current,
       posts: current.posts.map((item) => item.id === postId
+        ? { ...item, likedByMe: !wasLiked, likes: item.likes + (wasLiked ? -1 : 1) }
+        : item),
+      likedPosts: current.likedPosts.map((item) => item.id === postId
+        ? { ...item, likedByMe: !wasLiked, likes: item.likes + (wasLiked ? -1 : 1) }
+        : item),
+      savedPosts: current.savedPosts.map((item) => item.id === postId
         ? { ...item, likedByMe: !wasLiked, likes: item.likes + (wasLiked ? -1 : 1) }
         : item),
     }))
@@ -261,13 +280,11 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
         ? await supabase.from('community_post_likes').delete().eq('post_id', postId).eq('user_id', data.currentUserId)
         : await supabase.from('community_post_likes').insert({ post_id: postId, user_id: data.currentUserId })
       if (result.error) throw result.error
+      if (wasLiked) {
+        setData((current) => ({ ...current, likedPosts: current.likedPosts.filter((item) => item.id !== postId) }))
+      }
     } catch (error) {
-      setData((current) => ({
-        ...current,
-        posts: current.posts.map((item) => item.id === postId
-          ? { ...item, likedByMe: wasLiked, likes: item.likes + (wasLiked ? 1 : -1) }
-          : item),
-      }))
+      setData((current) => ({ ...current, posts: previousPosts, likedPosts: previousLikedPosts, savedPosts: previousSavedPosts }))
       throw error
     }
   }
@@ -277,12 +294,17 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
       askForLogin('I-save ang post na ito')
       return
     }
-    const post = data.posts.find((item) => item.id === postId)
+    const post = [...data.posts, ...data.likedPosts, ...data.savedPosts].find((item) => item.id === postId)
     if (!post) return
     const wasSaved = post.savedByMe
+    const previousPosts = data.posts
+    const previousLikedPosts = data.likedPosts
+    const previousSavedPosts = data.savedPosts
     setData((current) => ({
       ...current,
       posts: current.posts.map((item) => item.id === postId ? { ...item, savedByMe: !wasSaved } : item),
+      savedPosts: current.savedPosts.map((item) => item.id === postId ? { ...item, savedByMe: !wasSaved } : item),
+      likedPosts: current.likedPosts.map((item) => item.id === postId ? { ...item, savedByMe: !wasSaved } : item),
     }))
     try {
       const supabase = getSupabaseClient()
@@ -290,11 +312,11 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
         ? await supabase.from('community_saved_posts').delete().eq('user_id', data.currentUserId).eq('post_id', postId)
         : await supabase.from('community_saved_posts').insert({ user_id: data.currentUserId, post_id: postId })
       if (result.error) throw result.error
+      if (wasSaved) {
+        setData((current) => ({ ...current, savedPosts: current.savedPosts.filter((item) => item.id !== postId) }))
+      }
     } catch (error) {
-      setData((current) => ({
-        ...current,
-        posts: current.posts.map((item) => item.id === postId ? { ...item, savedByMe: wasSaved } : item),
-      }))
+      setData((current) => ({ ...current, posts: previousPosts, likedPosts: previousLikedPosts, savedPosts: previousSavedPosts }))
       throw error
     }
   }
@@ -315,6 +337,8 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
     setData((current) => ({
       ...current,
       posts: current.posts.map((item) => item.id === postId ? { ...item, content } : item),
+      likedPosts: current.likedPosts.map((item) => item.id === postId ? { ...item, content } : item),
+      savedPosts: current.savedPosts.map((item) => item.id === postId ? { ...item, content } : item),
     }))
   }
 
@@ -332,8 +356,99 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
     setData((current) => ({
       ...current,
       posts: current.posts.filter((item) => item.id !== postId),
+      likedPosts: current.likedPosts.filter((item) => item.id !== postId),
+      savedPosts: current.savedPosts.filter((item) => item.id !== postId),
       counts: { ...current.counts, posts: Math.max(0, current.counts.posts - 1) },
     }))
+  }
+
+  const loadMoreActivity = async (category: 'Liked' | 'Saved') => {
+    if (!data.currentUserId || activityLoading) return
+    const cursor = category === 'Liked' ? data.likedCursor : data.savedCursor
+    if (!cursor) return
+
+    setActivityLoading(true)
+    setActivityError(null)
+    try {
+      const supabase = getSupabaseClient()
+      const activityResult = category === 'Liked'
+        ? await supabase.from('community_post_likes')
+          .select('post_id, created_at')
+          .eq('user_id', data.currentUserId)
+          .or(`created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},post_id.lt.${cursor.id})`)
+          .order('created_at', { ascending: false })
+          .order('post_id', { ascending: false })
+          .limit(10)
+        : await supabase.from('community_saved_posts')
+          .select('post_id, created_at')
+          .eq('user_id', data.currentUserId)
+          .or(`created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},post_id.lt.${cursor.id})`)
+          .order('created_at', { ascending: false })
+          .order('post_id', { ascending: false })
+          .limit(10)
+      const { data: activityRows, error: activityError } = activityResult
+      if (activityError) throw activityError
+      const postIds = (activityRows ?? []).map((row) => row.post_id)
+      if (!postIds.length) {
+        setData((current) => ({ ...current, [category === 'Liked' ? 'likedCursor' : 'savedCursor']: null }))
+        return
+      }
+
+      const { data: postRows, error: postsError } = await supabase
+        .from('community_posts')
+        .select('id, author_id, author_role, type, content, image_urls, tags, looking_for, created_at')
+        .in('id', postIds)
+      if (postsError) throw postsError
+      const authorIds = Array.from(new Set((postRows ?? []).map((post) => post.author_id)))
+      const authorsPromise = authorIds.length
+        ? supabase.from('profiles').select('id, display_name, username').in('id', authorIds)
+        : Promise.resolve({ data: [], error: null })
+      const likesPromise = supabase.rpc('get_community_post_like_counts', { post_ids: postIds })
+      const [authorsResult, likesResult] = await Promise.all([authorsPromise, likesPromise])
+      if (authorsResult.error) throw authorsResult.error
+      if (likesResult.error) throw likesResult.error
+      const authorRows = authorsResult.data
+      const likesRows = likesResult.data
+      const authorsById = new Map((authorRows ?? []).map((author) => [author.id, author]))
+      const likesById = new Map<string, number>()
+      for (const row of likesRows ?? []) {
+        likesById.set(row.post_id, Number(row.like_count))
+      }
+      const nextPosts: ProfilePost[] = (postRows ?? []).map((post) => {
+        const author = authorsById.get(post.author_id)
+        return {
+          id: post.id,
+          content: post.content,
+          type: isCommunityPostType(post.type) ? post.type : 'update',
+          imageUrls: post.image_urls ?? [],
+          tags: post.tags ?? [],
+          lookingFor: post.looking_for ?? [],
+          createdAt: post.created_at,
+          likes: Number(likesById.get(post.id) ?? 0),
+          likedByMe: category === 'Liked',
+          savedByMe: category === 'Saved',
+          authorId: post.author_id,
+          authorDisplayName: author?.display_name ?? 'StoryLines creator',
+          authorUsername: author?.username ?? '',
+        }
+      })
+      const cursorRow = activityRows?.[activityRows.length - 1]
+      setData((current) => category === 'Liked'
+        ? {
+          ...current,
+          likedPosts: [...current.likedPosts, ...nextPosts.filter((post) => !current.likedPosts.some((existing) => existing.id === post.id))],
+          likedCursor: activityRows.length === 10 && cursorRow ? { createdAt: cursorRow.created_at, id: cursorRow.post_id } : null,
+        }
+        : {
+          ...current,
+          savedPosts: [...current.savedPosts, ...nextPosts.filter((post) => !current.savedPosts.some((existing) => existing.id === post.id))],
+          savedCursor: activityRows.length === 10 && cursorRow ? { createdAt: cursorRow.created_at, id: cursorRow.post_id } : null,
+        })
+    } catch (error) {
+      setActivityError(error instanceof Error ? error.message : 'Hindi ma-load ang posts. Subukan ulit.')
+    } finally {
+      setActivityLoading(false)
+    }
   }
 
   const submitPost = async (event: FormEvent<HTMLFormElement>) => {
@@ -368,6 +483,7 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
       if (error) throw error
       const newPost = {
         id: created.id,
+        authorId: profile.id,
         content: created.content,
         type: 'update' as const,
         imageUrls: created.image_urls ?? [],
@@ -647,7 +763,7 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
           <span><strong>{data.counts.posts}</strong> Posts</span>
         </div>
         <div className="flex min-h-12 gap-1 overflow-x-auto border-t border-border px-3" role="tablist" aria-label="Profile content" onKeyDown={selectTabWithKeyboard}>
-          {TABS.map((tab) => (
+          {profileTabs.map((tab) => (
             <button
               key={tab}
               type="button"
@@ -735,9 +851,9 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
           aria-labelledby={`profile-tab-${activeTab.toLowerCase()}`}
           className="flex min-w-0 flex-col gap-3 sm:gap-4"
         >
-          {activeTab === 'Posts' && (
+          {['Posts', 'Liked', 'Saved'].includes(activeTab) && (
             <>
-              <form onSubmit={(event) => void submitPost(event)} className="rounded-2xl border border-border bg-card p-3 shadow-[0_2px_0_rgba(68,45,31,0.05)]">
+              {activeTab === 'Posts' && <form onSubmit={(event) => void submitPost(event)} className="rounded-2xl border border-border bg-card p-3 shadow-[0_2px_0_rgba(68,45,31,0.05)]">
                 <div className="flex items-center gap-3">
                   <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-secondary text-accent" aria-hidden="true">
                     <UserRound className="size-5" />
@@ -763,8 +879,8 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
                   )}
                 </div>
                 {postError && <p role="alert" className="mt-2 text-xs text-destructive">{postError}</p>}
-              </form>
-              <div className="flex flex-wrap gap-2" aria-label="Filter community posts">
+              </form>}
+              {activeTab === 'Posts' && <div className="flex flex-wrap gap-2" aria-label="Filter community posts">
                 {FILTERS.map((filter) => (
                   <button
                     key={filter}
@@ -776,14 +892,20 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
                     {filter}
                   </button>
                 ))}
-              </div>
+              </div>}
               {visiblePosts.length === 0 ? (
                 <div className="rounded-2xl border border-border bg-card p-6 text-center">
                   <MessageCircle className="mx-auto size-6 text-accent" aria-hidden="true" />
                   <p className="mt-3 text-sm font-semibold">
-                    {data.counts.posts === 0 ? 'Wala ka pang community post. Ikaw na ang mauna ngayon!' : `Wala pang ${postFilter.toLocaleLowerCase()} na post.`}
+                    {activeTab === 'Liked'
+                      ? 'Wala ka pang liked na post.'
+                      : activeTab === 'Saved'
+                        ? 'Wala ka pang saved na post.'
+                        : data.counts.posts === 0
+                          ? 'Wala ka pang community post. Ikaw na ang mauna ngayon!'
+                          : `Wala pang ${postFilter.toLocaleLowerCase()} na post.`}
                   </p>
-                  {canPost && data.counts.posts === 0 && (
+                  {activeTab === 'Posts' && canPost && data.counts.posts === 0 && (
                     <button type="button" className="mt-2 min-h-11 px-2 text-xs font-bold text-accent underline underline-offset-2" onClick={() => document.getElementById('profile-post-input')?.focus()}>
                       Gumawa ng post
                     </button>
@@ -793,10 +915,10 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
                 <ProfilePostCard
                   key={post.id}
                   post={post}
-                  displayName={profile.displayName}
-                  username={profile.username}
+                  displayName={post.authorDisplayName ?? profile.displayName}
+                  username={post.authorUsername ?? profile.username}
                   currentUserId={data.currentUserId}
-                  isOwnProfile={ownProfile}
+                  isOwnPost={ownProfile && data.currentUserId === post.authorId}
                   onLike={toggleLike}
                   onSave={toggleSave}
                   onEdit={editPost}
@@ -810,11 +932,22 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
                   <button type="button" className="mt-2 min-h-11 text-xs font-bold text-accent" onClick={() => void loadMorePosts()}>Subukan ulit</button>
                 </div>
               )}
-              {postCursor && (
+              {activeTab === 'Posts' && postCursor && (
                 <Button type="button" variant="outline" disabled={postLoading} className="min-h-11 w-full rounded-xl" onClick={() => void loadMorePosts()}>
                   {postLoading ? 'Naglo-load…' : 'Load more posts'}
                 </Button>
               )}
+              {activeTab === 'Liked' && data.likedCursor && (
+                <Button type="button" variant="outline" disabled={activityLoading} className="min-h-11 w-full rounded-xl" onClick={() => void loadMoreActivity('Liked')}>
+                  {activityLoading ? 'Naglo-load…' : 'Load more liked posts'}
+                </Button>
+              )}
+              {activeTab === 'Saved' && data.savedCursor && (
+                <Button type="button" variant="outline" disabled={activityLoading} className="min-h-11 w-full rounded-xl" onClick={() => void loadMoreActivity('Saved')}>
+                  {activityLoading ? 'Naglo-load…' : 'Load more saved posts'}
+                </Button>
+              )}
+              {activityError && <p role="alert" className="text-sm text-destructive">{activityError}</p>}
             </>
           )}
 

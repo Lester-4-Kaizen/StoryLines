@@ -33,7 +33,7 @@ export function ProfilePostCard({
   displayName,
   username,
   currentUserId,
-  isOwnProfile,
+  isOwnPost,
   onLike,
   onSave,
   onEdit,
@@ -44,7 +44,7 @@ export function ProfilePostCard({
   displayName: string
   username: string
   currentUserId: string | null
-  isOwnProfile: boolean
+  isOwnPost: boolean
   onLike: (postId: string) => Promise<void>
   onSave: (postId: string) => Promise<void>
   onEdit: (postId: string, content: string) => Promise<void>
@@ -68,7 +68,6 @@ export function ProfilePostCard({
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const isOwnPost = isOwnProfile && currentUserId !== null
 
   const loadComments = async () => {
     setCommentsLoading(true)

@@ -29,6 +29,9 @@ export type ProfilePost = {
   likes: number
   likedByMe: boolean
   savedByMe: boolean
+  authorId?: string
+  authorDisplayName?: string
+  authorUsername?: string
 }
 
 export type ProfileWork = {
@@ -52,6 +55,10 @@ export type ProfilePageData = {
   counts: { followers: number; following: number; works: number; posts: number }
   posts: ProfilePost[]
   postCursor: ProfileCursor | null
+  likedPosts: ProfilePost[]
+  likedCursor: ProfileCursor | null
+  savedPosts: ProfilePost[]
+  savedCursor: ProfileCursor | null
   works: ProfileWork[]
   workCursors: Record<ProfileWork['type'], ProfileCursor | null>
   error: string | null
@@ -124,6 +131,10 @@ function emptyProfilePageData(error: string | null = null): ProfilePageData {
     counts: { followers: 0, following: 0, works: 0, posts: 0 },
     posts: [],
     postCursor: null,
+    likedPosts: [],
+    likedCursor: null,
+    savedPosts: [],
+    savedCursor: null,
     works: [],
     workCursors: { story: null, comic: null, art: null },
     error,
@@ -175,7 +186,8 @@ export async function getProfilePageData(profileId?: string): Promise<ProfilePag
     const targetId = profileId ?? currentUserId
     if (!targetId) return { ...emptyProfilePageData(), currentUserId }
 
-    const [profileResult, postsResult, storyWorksResult, comicWorksResult, artWorksResult, followCountsResult, postCountResult, workCountResult] =
+    const isOwnProfile = currentUserId === targetId
+    const [profileResult, postsResult, storyWorksResult, comicWorksResult, artWorksResult, followCountsResult, postCountResult, workCountResult, likedActivityResult, savedActivityResult] =
       await Promise.all([
         supabase
           .from('profiles')
@@ -226,6 +238,12 @@ export async function getProfilePageData(profileId?: string): Promise<ProfilePag
           .select('id', { count: 'exact', head: true })
           .eq('author_id', targetId)
           .neq('status', 'Draft'),
+        isOwnProfile
+          ? supabase.from('community_post_likes').select('post_id, created_at').eq('user_id', targetId).order('created_at', { ascending: false }).order('post_id', { ascending: false }).limit(10)
+          : Promise.resolve({ data: [], error: null }),
+        isOwnProfile
+          ? supabase.from('community_saved_posts').select('post_id, created_at').eq('user_id', targetId).order('created_at', { ascending: false }).order('post_id', { ascending: false }).limit(10)
+          : Promise.resolve({ data: [], error: null }),
       ])
 
     if (profileResult.error) throw profileResult.error
@@ -237,6 +255,8 @@ export async function getProfilePageData(profileId?: string): Promise<ProfilePag
     if (followCountsResult.error) throw followCountsResult.error
     if (postCountResult.error) throw postCountResult.error
     if (workCountResult.error) throw workCountResult.error
+    if (likedActivityResult.error) throw likedActivityResult.error
+    if (savedActivityResult.error) throw savedActivityResult.error
     const followCounts = followCountsResult.data
     if (!hasFollowCounts(followCounts)) {
       throw new Error('Hindi ma-load ang follower counts. Subukan ulit.')
@@ -248,9 +268,15 @@ export async function getProfilePageData(profileId?: string): Promise<ProfilePag
     const comicRows = comicWorksResult.data ?? []
     const artRows = artWorksResult.data ?? []
     const postIds = postRows.map((post) => post.id)
-    const [likesResult, likedResult, savedResult, followResult] = await Promise.all([
-      postIds.length
-        ? supabase.rpc('get_community_post_like_counts', { post_ids: postIds })
+    const likedActivityRows = likedActivityResult.data ?? []
+    const savedActivityRows = savedActivityResult.data ?? []
+    const likedActivityIds = likedActivityRows.map((row) => row.post_id)
+    const savedActivityIds = savedActivityRows.map((row) => row.post_id)
+    const activityIds = Array.from(new Set([...likedActivityIds, ...savedActivityIds]))
+    const allPostIds = Array.from(new Set([...postIds, ...activityIds]))
+    const [likesResult, likedResult, savedResult, followResult, activityRowsResult] = await Promise.all([
+      allPostIds.length
+        ? supabase.rpc('get_community_post_like_counts', { post_ids: allPostIds })
         : Promise.resolve({ data: [], error: null }),
       currentUserId && postIds.length
         ? supabase.from('community_post_likes').select('post_id').eq('user_id', currentUserId).in('post_id', postIds)
@@ -266,20 +292,50 @@ export async function getProfilePageData(profileId?: string): Promise<ProfilePag
           .eq('creator_id', targetId)
           .maybeSingle()
         : Promise.resolve({ data: null, error: null }),
+      activityIds.length
+        ? supabase.from('community_posts')
+          .select('id, author_id, author_role, type, content, image_urls, tags, looking_for, created_at')
+          .in('id', activityIds)
+        : Promise.resolve({ data: [], error: null }),
     ])
     if (likesResult.error) throw likesResult.error
     if (likedResult.error) throw likedResult.error
     if (savedResult.error) throw savedResult.error
     if (followResult.error) throw followResult.error
+    if (activityRowsResult.error) throw activityRowsResult.error
+
+    const activityRows = activityRowsResult.data ?? []
+    const activityAuthorIds = Array.from(new Set(activityRows.map((post) => post.author_id)))
+    const { data: activityAuthors, error: activityAuthorsError } = activityAuthorIds.length
+      ? await supabase.from('profiles').select('id, display_name, username').in('id', activityAuthorIds)
+      : { data: [], error: null }
+    if (activityAuthorsError) throw activityAuthorsError
 
     const likesByPost = new Map<string, number>()
     for (const like of likesResult.data ?? []) {
       likesByPost.set(like.post_id, Number(like.like_count))
     }
-    const likedPostIds = new Set((likedResult.data ?? []).map((like) => like.post_id))
-    const savedPostIds = new Set((savedResult.data ?? []).map((saved) => saved.post_id))
+    const likedPostIds = new Set([...likedActivityIds, ...(likedResult.data ?? []).map((like) => like.post_id)])
+    const savedPostIds = new Set([...savedActivityIds, ...(savedResult.data ?? []).map((saved) => saved.post_id)])
     const posts: ProfilePost[] = postRows.map((post) => {
       const likes = likesByPost.get(post.id)
+      return {
+        id: post.id,
+        authorId: targetId,
+        content: post.content,
+        type: isCommunityPostType(post.type) ? post.type : 'update',
+        imageUrls: post.image_urls ?? [],
+        tags: post.tags ?? [],
+        lookingFor: post.looking_for ?? [],
+        createdAt: post.created_at,
+        likes: likesByPost.get(post.id) ?? 0,
+        likedByMe: likedPostIds.has(post.id),
+        savedByMe: savedPostIds.has(post.id),
+      }
+    })
+    const activityAuthorById = new Map((activityAuthors ?? []).map((author) => [author.id, author]))
+    const activityPosts: ProfilePost[] = activityRows.map((post) => {
+      const author = activityAuthorById.get(post.author_id)
       return {
         id: post.id,
         content: post.content,
@@ -291,6 +347,9 @@ export async function getProfilePageData(profileId?: string): Promise<ProfilePag
         likes: likesByPost.get(post.id) ?? 0,
         likedByMe: likedPostIds.has(post.id),
         savedByMe: savedPostIds.has(post.id),
+        authorId: post.author_id,
+        authorDisplayName: author?.display_name ?? 'StoryLines creator',
+        authorUsername: author?.username ?? '',
       }
     })
     const works: ProfileWork[] = [...storyRows, ...comicRows, ...artRows].map((work) => ({
@@ -317,6 +376,16 @@ export async function getProfilePageData(profileId?: string): Promise<ProfilePag
       },
       posts,
       postCursor: postRows.length === 10 ? { createdAt: postRows[9].created_at, id: postRows[9].id } : null,
+      likedPosts: likedActivityIds.flatMap((id) => {
+        const post = activityPosts.find((item) => item.id === id)
+        return post ? [post] : []
+      }),
+      likedCursor: likedActivityRows.length === 10 ? { createdAt: likedActivityRows[9].created_at, id: likedActivityRows[9].post_id } : null,
+      savedPosts: savedActivityIds.flatMap((id) => {
+        const post = activityPosts.find((item) => item.id === id)
+        return post ? [post] : []
+      }),
+      savedCursor: savedActivityRows.length === 10 ? { createdAt: savedActivityRows[9].created_at, id: savedActivityRows[9].post_id } : null,
       works,
       workCursors: {
         story: storyRows.length === 10 ? { createdAt: storyRows[9].created_at, id: storyRows[9].id } : null,

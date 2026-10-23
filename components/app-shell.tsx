@@ -6,6 +6,7 @@ import { X } from 'lucide-react'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/shared/site-footer'
 import { UpgradeModal } from '@/components/upgrade-modal'
+import { BackButton } from '@/components/shared/back-button'
 import { useAppState } from '@/lib/app-state'
 import type { Route } from '@/lib/types'
 
@@ -69,7 +70,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
         </div>
       )}
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6 lg:py-12">{children}</main>
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6 lg:py-12">
+        <div className="mb-4">
+          <BackButton fallbackHref="/" />
+        </div>
+        {children}
+      </main>
       <SiteFooter />
       {upgradeOpen && (
         <UpgradeModal

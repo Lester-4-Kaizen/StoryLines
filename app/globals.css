@@ -200,7 +200,11 @@ html {
 .badge { display: inline-flex; align-items: center; gap: .3rem; border-radius: 999px; padding: .25rem .55rem; font-size: .65rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
 .badge-reader { background: var(--secondary); color: var(--primary); }
 .badge-writer { background: color-mix(in oklch, var(--accent) 12%, var(--card)); color: var(--accent); }
-.toggle { accent-color: var(--accent); width: 1.1rem; height: 1.1rem; }
+.toggle { position: relative; width: 2.75rem; height: 1.5rem; flex: 0 0 auto; appearance: none; border: 1px solid var(--input); border-radius: 999px; background: var(--input); cursor: pointer; transition: background-color .15s ease, border-color .15s ease; }
+.toggle::before { position: absolute; top: .16rem; left: .16rem; width: 1.05rem; height: 1.05rem; border-radius: 50%; background: var(--card); content: ''; transition: transform .15s ease; }
+.toggle:checked { border-color: var(--accent); background: var(--accent); }
+.toggle:checked::before { transform: translateX(1.25rem); }
+.toggle:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 .back-to-top { position: fixed; right: 1rem; bottom: max(1rem, env(safe-area-inset-bottom)); z-index: 35; display: inline-flex; width: 3rem; height: 3rem; align-items: center; justify-content: center; border: 1px solid color-mix(in oklch, var(--primary-foreground) 30%, transparent); border-radius: 999px; background: var(--accent); color: var(--accent-foreground); box-shadow: 0 5px 18px color-mix(in oklch, var(--primary) 25%, transparent); opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(.6rem) scale(.88); transition: opacity .2s ease, visibility .2s ease, transform .2s ease, background-color .18s ease, box-shadow .18s ease; }
 .back-to-top-visible { opacity: 1; visibility: visible; pointer-events: auto; transform: translateY(0) scale(1); }
 .back-to-top:hover { transform: translateY(-3px); background: color-mix(in oklch, var(--accent) 88%, var(--primary)); box-shadow: 0 8px 22px color-mix(in oklch, var(--primary) 30%, transparent); }
