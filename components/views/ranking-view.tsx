@@ -1,33 +1,30 @@
 'use client'
 
 import { useState } from 'react'
-import { ArrowRight, BookOpen, Crown, Feather, Heart, Palette, Sparkles, Trophy } from 'lucide-react'
+import { ArrowRight, BookOpen, Feather, Heart, Palette, Sparkles } from 'lucide-react'
 import { useAppState } from '@/lib/app-state'
 
 type Category = 'Stories' | 'Comics' | 'Creators'
 type Period = 'Today' | 'This week' | 'This month' | 'All time'
 
-const CATEGORIES: { label: Category; filipino: string; icon: typeof BookOpen; description: string; firstPlace: string }[] = [
+const CATEGORIES: { label: Category; filipino: string; icon: typeof BookOpen; description: string }[] = [
   {
     label: 'Stories',
     filipino: 'Mga kuwento',
     icon: BookOpen,
     description: 'Mga kuwentong binabasa at minamahal ng community.',
-    firstPlace: 'unang kuwento',
   },
   {
     label: 'Comics',
     filipino: 'Komiks',
     icon: Palette,
     description: 'Mga komiks na nagdadala sa atin sa ibang mundo.',
-    firstPlace: 'unang komiks',
   },
   {
     label: 'Creators',
     filipino: 'Mga creator',
     icon: Feather,
     description: 'Mga creator na nagbibigay-buhay sa StoryLines.',
-    firstPlace: 'unang creator',
   },
 ]
 
@@ -36,12 +33,6 @@ const PERIODS: { label: Period; display: string }[] = [
   { label: 'This week', display: 'Ngayong linggo' },
   { label: 'This month', display: 'Ngayong buwan' },
   { label: 'All time', display: 'All time' },
-]
-
-const PODIUM = [
-  { place: 2, color: 'podium-second', hint: 'Ikalawang puwesto' },
-  { place: 1, color: 'podium-first', hint: 'Unang puwesto', featured: true },
-  { place: 3, color: 'podium-third', hint: 'Ikatlong puwesto' },
 ]
 
 export function RankingView() {
@@ -100,52 +91,14 @@ export function RankingView() {
         })}
       </nav>
 
-      <section aria-labelledby="leaderboard-title">
-        <div className="mb-4 flex items-center gap-3">
-          <span className="section-icon"><Trophy className="size-4" /></span>
-          <div>
-            <h2 id="leaderboard-title" className="font-serif text-xl font-bold">Mga nangunguna</h2>
-            <p className="text-xs text-muted-foreground">{selectedCategory.description} · {PERIODS.find((item) => item.label === period)?.display}</p>
-          </div>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-3 sm:items-end sm:gap-4">
-          {PODIUM.map(({ place, color, hint, featured }) => (
-            <article
-              key={place}
-              className={`relative flex min-h-36 items-center gap-4 overflow-hidden rounded-2xl border p-4 sm:flex-col sm:items-start sm:justify-between sm:p-5 ${
-                featured
-                  ? `${color} min-h-40 border-primary text-primary-foreground sm:min-h-48`
-                  : `${color} border-border text-foreground sm:min-h-40`
-              }`}
-            >
-              <div className="flex size-16 shrink-0 items-center justify-center rounded-xl bg-card/85 shadow-sm sm:size-20" aria-hidden="true">
-                <CategoryIcon className={`size-7 ${featured ? 'text-accent' : 'text-primary/70'}`} />
-              </div>
-              <div className="min-w-0 flex-1 sm:flex-none">
-                <div className="flex items-center gap-2">
-                  {place === 1 && <Crown className={`size-4 ${featured ? 'text-amber-300' : 'text-accent'}`} aria-hidden="true" />}
-                  <span className={`text-xs font-bold uppercase tracking-wider ${featured ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>{hint}</span>
-                </div>
-                <p className={`mt-1 font-serif text-3xl font-bold leading-none sm:text-4xl ${featured ? 'text-primary-foreground' : 'text-accent'}`}>
-                  #{place}
-                </p>
-                <p className={`mt-1 text-xs leading-5 ${featured ? 'text-primary-foreground/75' : 'text-muted-foreground'}`}>
-                  {place === 1 ? `Naghihintay ang ${selectedCategory.firstPlace} mo.` : 'May puwang pa sa leaderboard.'}
-                </p>
-              </div>
-              <Sparkles className={`absolute -right-3 -top-3 size-20 opacity-[.08] ${featured ? 'text-white' : 'text-primary'}`} aria-hidden="true" />
-            </article>
-          ))}
-        </div>
-      </section>
-
       <section className="overflow-hidden rounded-2xl border border-border bg-card" aria-labelledby="ranking-empty-title">
         <div className="flex items-center gap-3 border-b border-border bg-secondary/45 px-4 py-4 sm:px-6">
           <span className="section-icon"><Heart className="size-4" /></span>
           <div>
             <h2 id="ranking-empty-title" className="font-serif text-lg font-bold">Simula pa lang ang kuwento ng ranking</h2>
-            <p className="text-xs text-muted-foreground">Sa ngayon, wala pang sapat na activity para bumuo ng listahan.</p>
+            <p className="text-xs text-muted-foreground">
+              {selectedCategory.description} · {PERIODS.find((item) => item.label === period)?.display}. Sa ngayon, wala pang sapat na activity para bumuo ng listahan.
+            </p>
           </div>
         </div>
         <div className="flex flex-col items-start gap-4 p-5 sm:flex-row sm:items-center sm:px-6">
@@ -159,10 +112,6 @@ export function RankingView() {
                 ? 'Ibahagi ang unang komiks mo at simulan ang susunod na paborito ng readers.'
                 : 'Ipakilala ang gawa mo sa community—baka ikaw ang susunod na makilala rito.'}
           </p>
-          <div className="flex items-center gap-3 text-xs font-bold text-accent">
-            <span>Unang entry pa lang ito</span>
-            <ArrowRight className="size-4" aria-hidden="true" />
-          </div>
         </div>
       </section>
 

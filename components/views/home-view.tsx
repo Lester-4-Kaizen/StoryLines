@@ -2,17 +2,11 @@
 
 import { useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowRight, BookOpen, Brush, Compass, Handshake, PenLine, Search, Sparkles } from 'lucide-react'
+import { ArrowRight, BookOpen, Compass, PenLine, Search, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/shared/empty-state'
 import { SectionHeading } from '@/components/shared/section-heading'
 import type { Route } from '@/lib/types'
-
-const WAYS_TO_CREATE = [
-  { title: 'Magsulat', description: 'I-serialize ang kuwento mo, isang kabanata sa bawat pagkakataon.', icon: PenLine, action: 'create' },
-  { title: 'Gumuhit', description: 'Ipakita ang komiks, cover, at iba pang likha mo.', icon: Brush, action: 'create' },
-  { title: 'Makipagtulungan', description: 'Humanap ng ka-writing o ka-collab na kapareho ng pangarap.', icon: Handshake, action: 'collaborate' },
-] as const
 
 export function HomeView({
   creator,
@@ -83,24 +77,17 @@ export function HomeView({
         </div>
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Mga puwedeng gawin sa StoryLines">
+      <section className="grid gap-3 sm:grid-cols-2" aria-label="Mga puwedeng gawin sa StoryLines">
         <button type="button" onClick={() => go('/browse')} className="home-path-card group text-left">
           <span className="section-icon"><BookOpen className="size-4" /></span>
           <h2 className="mt-3 font-serif text-xl font-bold">Magbasa</h2>
           <p className="mt-1 text-sm leading-5 text-muted-foreground">Tumuklas ng mga kuwento at komiks mula sa kapwa Pinoy.</p>
         </button>
-        {WAYS_TO_CREATE.map(({ title, description, icon: Icon, action }) => (
-          <button
-            key={title}
-            type="button"
-            onClick={action === 'create' ? onCreate : () => go('/collaborate')}
-            className="home-path-card group text-left"
-          >
-            <span className="section-icon"><Icon className="size-4" /></span>
-            <h2 className="mt-3 font-serif text-xl font-bold">{title}</h2>
-            <p className="mt-1 text-sm leading-5 text-muted-foreground">{description}</p>
-          </button>
-        ))}
+        <button type="button" onClick={() => go('/collaborate')} className="home-path-card group text-left">
+          <span className="section-icon"><Sparkles className="size-4" /></span>
+          <h2 className="mt-3 font-serif text-xl font-bold">Makipagtulungan</h2>
+          <p className="mt-1 text-sm leading-5 text-muted-foreground">Humanap ng ka-writing o ka-collab na kapareho ng pangarap.</p>
+        </button>
       </section>
 
       <section className="flex flex-col gap-5">
@@ -139,17 +126,6 @@ export function HomeView({
         </div>
       </section>
 
-      <section className="home-create-panel flex flex-col items-center gap-4 rounded-2xl px-5 py-9 text-center sm:px-10 sm:py-12">
-        <span className="eyebrow">Handa ka na ba?</span>
-        <h2 className="font-serif text-3xl font-bold sm:text-4xl">May naghihintay sa kuwento mo.</h2>
-        <p className="max-w-lg text-sm leading-6 text-muted-foreground">
-          Sumali bilang reader, writer, o alagad ng sining. Piliin ang role mo—puwede mo pa itong baguhin.
-        </p>
-        <Button onClick={onCreate} className="mt-1 min-h-11 rounded-full bg-accent px-6 text-accent-foreground hover:bg-accent/90">
-          {creator ? 'I-publish ang gawa mo' : 'Simulan ang gawa mo'}
-          <ArrowRight data-icon="inline-end" />
-        </Button>
-      </section>
     </div>
   )
 }

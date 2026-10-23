@@ -65,7 +65,7 @@ export function WorkEditorView({ work, go }: { work: Work; go: (route: Route) =>
   }
 
   return (
-    <CreatorFrame eyebrow={`Editing ${work.type === 'story' ? 'story' : work.type === 'comic' ? 'comic' : 'artwork'}`} title={work.title} go={go} backHref="/create/works">
+    <CreatorFrame eyebrow={`Editing ${work.type === 'story' ? 'story' : work.type === 'comic' ? 'comic' : 'artwork'}`} title={work.title} go={go}>
       <Panel className="mx-auto w-full max-w-3xl">
         <div className="flex flex-col gap-6">
           <div>

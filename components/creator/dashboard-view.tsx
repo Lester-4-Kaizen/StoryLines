@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { BookOpen, PenLine, RefreshCw, Sparkles } from 'lucide-react'
+import { BookOpen, RefreshCw, Sparkles } from 'lucide-react'
 import { CreatorFrame } from '@/components/shared/creator-frame'
 import { EmptyState } from '@/components/shared/empty-state'
 import { Panel } from '@/components/shared/panel'
@@ -63,15 +63,6 @@ export function DashboardView({ go }: { go: (route: Route) => void }) {
             <Link href="/create/works" className="inline-flex min-h-11 items-center justify-center rounded-lg text-sm font-bold text-accent hover:underline">View all works</Link>
           </div>
         )}
-      </Panel>
-      <Panel className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="font-serif text-xl font-bold">Ready to start something new?</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Choose a format first. You can save it as a draft and finish it later.</p>
-        </div>
-        <Link href="/create/works/new" className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-accent px-5 text-sm font-bold text-accent-foreground">
-          <PenLine className="size-4" /> New work
-        </Link>
       </Panel>
     </CreatorFrame>
   )

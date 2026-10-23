@@ -31,7 +31,7 @@ export function WorksView({ go }: { go: (route: Route) => void }) {
   }, [query, statusFilter, typeFilter, works])
 
   return (
-    <CreatorFrame eyebrow="Creator studio / mga gawa" title="Mga gawa mo." go={go} backHref="/create">
+    <CreatorFrame eyebrow="Creator studio / mga gawa" title="Mga gawa mo." go={go}>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <p className="text-sm text-muted-foreground">Stories, comics, at artwork mo—draft man o nailathala.</p>
         <Button onClick={() => go('/create/works/new')} className="rounded-lg bg-accent text-accent-foreground">

@@ -267,7 +267,7 @@ export function ComicEditorView({ go, work }: { go: (route: Route) => void; work
   const previewBackground = { dark: 'bg-stone-950', light: 'bg-white', paper: 'bg-[#f1e3cb]' }[background]
 
   return (
-    <CreatorFrame eyebrow="Comic editor" title={`${title} · ${episodeTitle || 'Episode 1'}`} go={go} backHref={savedWork ? '/create/works' : '/create/works/new/comic'}>
+    <CreatorFrame eyebrow="Comic editor" title={`${title} · ${episodeTitle || 'Episode 1'}`} go={go}>
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
         <div className="flex min-w-0 flex-col gap-3">
           <Panel className="p-4">

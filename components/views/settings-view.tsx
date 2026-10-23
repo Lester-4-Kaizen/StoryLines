@@ -69,23 +69,7 @@ export function SettingsView({
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="mx-auto grid w-full max-w-6xl gap-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-8">
-        <aside className="flex gap-1 overflow-x-auto lg:flex-col" aria-label="Settings sections">
-          {['Account', 'Privacy', 'Notifications', 'Upgrade account', 'Premium'].map((item) => (
-            <button
-              key={item}
-              type="button"
-              disabled={item !== 'Upgrade account'}
-              aria-current={item === 'Upgrade account' ? 'page' : undefined}
-              className={`min-h-11 whitespace-nowrap rounded-xl px-4 py-3 text-left text-sm font-bold disabled:cursor-default disabled:opacity-70 ${
-                item === 'Upgrade account' ? 'bg-secondary text-foreground' : 'text-foreground hover:bg-muted'
-              }`}
-            >
-              {item}
-            </button>
-          ))}
-        </aside>
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
         <div className="flex min-w-0 flex-col gap-4">
           <Panel className="p-5 sm:p-7 lg:p-8">
             <span className="eyebrow">Ikaw ang masusunod dito</span>
@@ -198,6 +182,5 @@ export function SettingsView({
           </Panel>
         </div>
       </div>
-    </div>
   )
 }

@@ -476,7 +476,6 @@ export function StoryEditorView({
         eyebrow={work ? 'Story editor / edit' : 'Story editor'}
         title={editor.title || 'Untitled story'}
         go={go}
-        backHref={work ? '/create/works' : '/create/works/new/story'}
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p aria-live="polite" className="text-xs text-muted-foreground">{savedStatus}</p>

@@ -624,29 +624,6 @@ export function LibraryView({ initialData }: { initialData: LibraryPageData }) {
                 </div>
               )}
 
-              <Panel className="p-4 sm:p-5">
-                <div className="mb-1 flex items-center justify-between gap-3">
-                  <h2 className="font-serif text-xl font-bold">Reading history</h2>
-                  <button
-                    type="button"
-                    onClick={() => void clearHistory()}
-                    disabled={!data.readingHistory.length || busy !== null}
-                    className="inline-flex min-h-11 items-center gap-1 rounded-lg px-2 text-xs font-bold text-accent hover:underline disabled:opacity-50"
-                  >
-                    <Trash2 className="size-3.5" aria-hidden="true" />
-                    Clear history
-                  </button>
-                </div>
-                {data.readingHistory.length ? (
-                  <ul>
-                    {data.readingHistory.slice(0, 3).map((work) => (
-                      <HistoryRow key={work.id} work={work} disabled={busy !== null} onRemove={(id) => void removeHistoryItem(id)} />
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="border-t border-border pt-3 text-sm text-muted-foreground">Wala pang laman ang reading history mo. Magsimula ng isang Story para maitala rito.</p>
-                )}
-              </Panel>
             </section>
           ) : (
             <section role="tabpanel" id="library-panel-history" aria-labelledby="library-tab-history" tabIndex={0}>
