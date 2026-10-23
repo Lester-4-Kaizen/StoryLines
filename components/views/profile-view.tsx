@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { BookOpen, Brush, PenLine, UserRound, UsersRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/shared/empty-state'
+import { BackButton } from '@/components/shared/back-button'
 import { getSupabaseClient } from '@/lib/supabase'
 import { isSupabaseConfigured } from '@/lib/supabase/config'
 import type { Badge } from '@/lib/types'
@@ -165,14 +166,22 @@ export function ProfileView({
   }
 
   if (loading) {
-    return <div className="community-card h-64 animate-pulse bg-secondary/45" aria-label="Loading profile" aria-busy="true" />
+    return (
+      <div className="flex flex-col gap-4">
+        <BackButton fallbackHref={profileId ? '/community' : '/'} />
+        <div className="community-card h-64 animate-pulse bg-secondary/45" aria-label="Loading profile" aria-busy="true" />
+      </div>
+    )
   }
 
   if (error || !profile) {
     return (
-      <div role="alert" className="community-card flex flex-col items-start gap-3">
-        <p className="text-sm text-destructive">{error ?? 'This profile could not be found.'}</p>
-        <Button type="button" variant="outline" onClick={() => void loadProfile()}>Try again</Button>
+      <div className="flex flex-col items-start gap-4">
+        <BackButton fallbackHref={profileId ? '/community' : '/'} />
+        <div role="alert" className="community-card flex flex-col items-start gap-3">
+          <p className="text-sm text-destructive">{error ?? 'This profile could not be found.'}</p>
+          <Button type="button" variant="outline" onClick={() => void loadProfile()}>Try again</Button>
+        </div>
       </div>
     )
   }
@@ -182,6 +191,7 @@ export function ProfileView({
 
   return (
     <div className="flex flex-col gap-6">
+      <BackButton fallbackHref={profileId ? '/community' : '/'} />
       <section className="overflow-hidden rounded-xl border border-border bg-card">
         <div className="profile-banner" />
         <div className="flex flex-col gap-5 p-6 sm:flex-row sm:items-end">

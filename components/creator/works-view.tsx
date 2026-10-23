@@ -19,7 +19,7 @@ export function WorksView({ go }: { go: (route: Route) => void }) {
   const { works, hydrated } = useWorks()
 
   return (
-    <CreatorFrame eyebrow="Creator studio / mga gawa" title="Mga gawa mo." go={go}>
+    <CreatorFrame eyebrow="Creator studio / mga gawa" title="Mga gawa mo." go={go} backHref="/create">
       <div className="flex items-center justify-between gap-4">
         <p className="text-sm text-muted-foreground">Dito makikita ang drafts at nailathala mo. Pumili ng isa para i-edit.</p>
         <Button onClick={() => go('/create/works/new')} className="rounded-lg bg-accent text-accent-foreground">

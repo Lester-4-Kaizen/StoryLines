@@ -30,7 +30,7 @@ export function StoryEditorView({ go }: { go: (route: Route) => void }) {
   }
 
   return (
-    <CreatorFrame eyebrow="Story editor" title={draft?.title ? `Writing “${draft.title}”` : 'The first chapter.'} go={go}>
+    <CreatorFrame eyebrow="Story editor" title={draft?.title ? `Writing “${draft.title}”` : 'The first chapter.'} go={go} backHref="/create/works/new/story">
       <Panel className="mx-auto w-full max-w-4xl">
         <div className="flex flex-col gap-5">
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">

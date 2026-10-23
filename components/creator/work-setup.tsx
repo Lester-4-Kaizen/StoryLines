@@ -18,13 +18,13 @@ export function WorkSetup({
   go: (route: Route) => void
   children?: React.ReactNode
 }) {
-  const { addWork, setDraft } = useWorks()
-  const [title, setTitle] = useState('')
-  const [synopsis, setSynopsis] = useState('')
-  const [genre, setGenre] = useState('Select genre')
-  const [language, setLanguage] = useState('English')
-  const [rating, setRating] = useState('All ages')
-  const [status, setStatus] = useState<'Draft' | 'Ongoing' | 'Complete'>('Draft')
+  const { addWork, draft, setDraft } = useWorks()
+  const [title, setTitle] = useState(draft?.title ?? '')
+  const [synopsis, setSynopsis] = useState(draft?.synopsis ?? '')
+  const [genre, setGenre] = useState(draft?.genre ?? 'Select genre')
+  const [language, setLanguage] = useState(draft?.language ?? 'English')
+  const [rating, setRating] = useState(draft?.rating ?? 'All ages')
+  const [status, setStatus] = useState<'Draft' | 'Ongoing' | 'Complete'>(draft?.status ?? 'Draft')
 
   const editorRoute: Route = type === 'Story' ? '/create/works/new/story/editor' : '/create/works/new/comic/editor'
 
@@ -54,7 +54,7 @@ export function WorkSetup({
   }
 
   return (
-    <CreatorFrame eyebrow={`Creator studio / ${type.toLowerCase()} setup`} title={`Set up your ${type.toLowerCase()}.`} go={go}>
+    <CreatorFrame eyebrow={`Creator studio / ${type.toLowerCase()} setup`} title={`Set up your ${type.toLowerCase()}.`} go={go} backHref="/create/works/new">
       <Panel className="mx-auto w-full max-w-3xl">
         <div className="flex flex-col gap-6">
           <div>

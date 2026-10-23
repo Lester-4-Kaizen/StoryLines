@@ -1,6 +1,9 @@
+import { BackButton } from '@/components/shared/back-button'
+
 export default function TermsPage() {
   return (
     <article className="paper-panel mx-auto max-w-3xl p-6 sm:p-10">
+      <BackButton />
       <p className="eyebrow">StoryLines</p>
       <h1 className="mt-2 font-serif text-3xl font-bold">Terms of Use</h1>
       <p className="mt-2 text-sm text-muted-foreground">Starter copy pa lang ito. Basahin ang buod sa ibaba at palitan ng pinal na terms bago ilunsad sa community.</p>

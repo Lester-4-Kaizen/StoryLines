@@ -29,7 +29,7 @@ export function ComicEditorView({ go }: { go: (route: Route) => void }) {
   }
 
   return (
-    <CreatorFrame eyebrow="Comic editor" title={draft?.title ? `Laying out “${draft.title}”` : 'Lay out the pages.'} go={go}>
+    <CreatorFrame eyebrow="Comic editor" title={draft?.title ? `Laying out “${draft.title}”` : 'Lay out the pages.'} go={go} backHref="/create/works/new/comic">
       <Panel className="mx-auto w-full max-w-4xl">
         <div className="flex flex-col gap-6">
           <div>

@@ -1,6 +1,9 @@
+import { BackButton } from '@/components/shared/back-button'
+
 export default function PrivacyPage() {
   return (
     <article className="paper-panel mx-auto max-w-3xl p-6 sm:p-10">
+      <BackButton />
       <p className="eyebrow">StoryLines</p>
       <h1 className="mt-2 font-serif text-3xl font-bold">Privacy Policy</h1>
       <p className="mt-2 text-sm text-muted-foreground">Starter copy pa lang ito. Narito ang maikling paliwanag; palitan ng pinal na privacy policy bago ilunsad sa community.</p>

@@ -20,7 +20,7 @@ export function NewWorkView({ go, badges }: { go: (route: Route) => void; badges
     badges.includes('writer') && !badges.includes('artist') ? 'story' : badges.includes('artist') && !badges.includes('writer') ? 'comic' : null,
   )
   return (
-    <CreatorFrame eyebrow="Creator studio / bagong gawa" title="Simulan na natin 'yan." go={go}>
+    <CreatorFrame eyebrow="Creator studio / bagong gawa" title="Simulan na natin 'yan." go={go} backHref="/create/works">
       <Panel className="mx-auto w-full max-w-3xl">
         <div className="flex flex-col gap-6">
           <div>
