@@ -622,7 +622,8 @@ export function CommunityView({
   const [submitting, setSubmitting] = useState(false)
   const [showAll, setShowAll] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const canPost = isLoggedIn && creator
+  const canPost = isLoggedIn && creator && role !== 'reader'
+  const openRoleSettings = isLoggedIn && creator && role === 'reader'
 
   const visiblePosts = posts
     .filter((post) => feedTab !== 'collaborators' || post.type === 'collaborator')
@@ -649,7 +650,8 @@ export function CommunityView({
 
   const focusComposer = () => {
     if (!canPost) {
-      onUnlock()
+      if (openRoleSettings) router.push('/settings')
+      else onUnlock()
       return
     }
     setComposerExpanded(true)
@@ -796,17 +798,28 @@ export function CommunityView({
               <>
                 <div className="flex items-center gap-3">
                   <Avatar role={isLoggedIn && role === 'artist' ? 'artist' : isLoggedIn && role === 'writer' ? 'writer' : undefined} />
-                  <button type="button" onClick={onUnlock} className="community-composer-prompt">
-                    {isLoggedIn ? 'Reader ka ngayon—gusto mo bang magbahagi?' : "Ano'ng ginagawa mo ngayon? Log in to post."}
+                  <button type="button" onClick={focusComposer} className="community-composer-prompt">
+                    {openRoleSettings
+                      ? 'Naka-Reader mode ka ngayon—magpalit ng active role para mag-post.'
+                      : isLoggedIn ? 'Reader ka ngayon—gusto mo bang magbahagi?' : "Ano'ng ginagawa mo ngayon? Log in to post."}
                   </button>
                 </div>
                 <p className="mt-3 pl-12 text-xs leading-5 text-muted-foreground">
-                  {isLoggedIn
+                  {openRoleSettings
+                    ? 'May Writer o Artist badge ka na. Piliin ang active role sa account settings para makapag-post.'
+                    : isLoggedIn
                     ? 'Kailangan ng Writer o Alagad ng sining badge para makapag-post. Puwede mo itong i-request sa account settings.'
                     : 'Sumali sa kuwentuhan at magbahagi ng ginagawa mong likha.'}
                 </p>
-                <Button type="button" variant="outline" onClick={onUnlock} className="mt-4 min-h-11 w-full rounded-xl">
-                  {isLoggedIn ? 'Alamin kung paano makakuha ng badge' : 'Log in to post'}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={focusComposer}
+                  className="mt-4 min-h-11 w-full rounded-xl"
+                >
+                  {openRoleSettings
+                    ? 'Change active role'
+                    : isLoggedIn ? 'Alamin kung paano makakuha ng badge' : 'Log in to post'}
                 </Button>
               </>
             ) : !composerExpanded ? (

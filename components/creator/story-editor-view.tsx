@@ -15,6 +15,14 @@ export function StoryEditorView({ go }: { go: (route: Route) => void }) {
   const [error, setError] = useState<string | null>(null)
 
   const publish = async (status: 'Draft' | 'Ongoing') => {
+    if (status !== 'Draft' && !body.trim()) {
+      setError('Magdagdag muna ng laman sa unang kabanata bago i-publish.')
+      return
+    }
+    if (!chapter.trim()) {
+      setError('Lagyan muna ng pamagat ang kabanata.')
+      return
+    }
     setSaving(true)
     setError(null)
     try {

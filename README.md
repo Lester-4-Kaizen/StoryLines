@@ -213,9 +213,15 @@ Apply [`supabase/migrations/20261023000400_creator_follows.sql`](./supabase/migr
 
 Apply [`supabase/migrations/20261023000500_profile_page_data.sql`](./supabase/migrations/20261023000500_profile_page_data.sql) after the community posts and follows migrations to enable editable profile details and links, collaboration preferences, published creator works, persistent post likes, public follow counts, and direct messages. The profile page reads public profile data and published works on the server; private drafts and profile edits remain restricted by row-level security. The migration also creates the `creator_works` table used when creators save, update, and delete Story or Comic works.
 
+Liked and Saved profile categories are private to the profile owner and are available to Reader accounts as well as creators. They refer to Community posts; saved Stories and Comics and reading history live in the Library.
+
 On an account's own profile, the **Liked** and **Saved** tabs show that signed-in user's private post activity and are hidden from other profile visitors. **Settings → Upgrade account** follows the account-role layout; badge selections are saved explicitly. The Light/Dark theme preference is stored in that browser, applies across the site, and switches the header logo to match.
 
 Apply [`supabase/migrations/20261023000600_community_post_edits.sql`](./supabase/migrations/20261023000600_community_post_edits.sql) to let a post's author edit its text from the three-dot menu. Only the `content` column is updateable, and row-level security restricts edits to the author. The `/community` route redirects signed-out visitors to login; public profile previews remain available.
+
+Apply [`supabase/migrations/20261023000700_library_and_reader.sql`](./supabase/migrations/20261023000700_library_and_reader.sql) after the creator works migration to enable private saved works and reading history, plus published story chapters for the reader. Signed-in users can save and remove works, resume stories, filter and sort their saved list, and clear reading history. Chapter records and reading state are protected by row-level security. The current comic creator does not persist comic page images yet, so saved comics can appear in the Library but cannot be read there until page storage is implemented.
+
+On **Settings → Upgrade account**, Reader is always included. Turn on Writer or Artist / Comics and save to add creator capabilities; enabling the first creator badge selects it as the active role. Accounts with multiple badges can choose their active Reader, Writer, or Artist / Comics role in the same settings page.
 
 ## Auth routes and behavior
 

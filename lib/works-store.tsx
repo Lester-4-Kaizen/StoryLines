@@ -51,6 +51,21 @@ export function WorksProvider({ children }: { children: ReactNode }) {
       .single()
     if (error) throw error
 
+    if (work.type === 'story' && work.chapterTitle) {
+      const { error: chapterError } = await supabase.from('creator_work_chapters').insert({
+        work_id: data.id,
+        chapter_number: 1,
+        title: work.chapterTitle,
+        body: work.chapterBody ?? '',
+        is_published: work.status !== 'Draft',
+      })
+      if (chapterError) {
+        const { error: cleanupError } = await supabase.from('creator_works').delete().eq('id', data.id)
+        if (cleanupError) console.error('Failed to clean up a story after chapter creation failed', cleanupError)
+        throw chapterError
+      }
+    }
+
     const newWork: Work = { ...work, authorId: user.id, id: data.id, createdAt: new Date(data.created_at).getTime() }
     setWorks((current) => [newWork, ...current])
     return newWork
@@ -92,6 +107,13 @@ export function WorksProvider({ children }: { children: ReactNode }) {
         .maybeSingle()
       if (error) throw error
       if (!data) throw new Error('Hindi ma-update ang work na ito. I-refresh ang pahina at subukan ulit.')
+      if (current.type === 'story' && current.status !== updated.status) {
+        const { error: chapterError } = await supabase
+          .from('creator_work_chapters')
+          .update({ is_published: updated.status !== 'Draft', updated_at: new Date().toISOString() })
+          .eq('work_id', id)
+        if (chapterError) throw chapterError
+      }
     } else {
       const { error } = await supabase.from('creator_works').insert({
         id,

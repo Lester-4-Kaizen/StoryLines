@@ -20,6 +20,7 @@ type AppState = {
   setMobileNav: (value: boolean) => void
   setUpgradeOpen: (value: boolean) => void
   setThemeMode: (mode: 'light' | 'dark') => void
+  changeRole: (role: Badge) => Promise<void>
   saveBadges: (badges: Badge[]) => Promise<void>
   toggleBadge: (b: Badge) => void
   go: (route: Route) => void
@@ -161,7 +162,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       throw new Error('Log in to save your account roles.')
     }
     const nextBadges = Array.from(new Set<Badge>(['reader', ...selectedBadges]))
-    const nextRole = nextBadges.includes(role) ? role : nextBadges.find((badge) => badge !== 'reader') ?? 'reader'
+    const isAddingFirstCreatorBadge = !badges.some((badge) => badge !== 'reader')
+      && nextBadges.some((badge) => badge !== 'reader')
+    const nextRole = isAddingFirstCreatorBadge
+      ? nextBadges.find((badge) => badge !== 'reader') ?? 'reader'
+      : nextBadges.includes(role) ? role : nextBadges.find((badge) => badge !== 'reader') ?? 'reader'
     const { error: profileError } = await getSupabaseClient()
       .from('profiles')
       .update({ roles: nextBadges })
@@ -169,6 +174,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     if (profileError) throw profileError
     const { data, error } = await getSupabaseClient().auth.updateUser({
       data: { ...user.user_metadata, badges: nextBadges, roles: nextBadges, role: nextRole },
+    })
+    if (error) throw error
+    applyUser(data.user)
+  }
+
+  const changeRole = async (nextRole: Badge) => {
+    if (!user) {
+      requireAuth('/settings')
+      throw new Error('Mag-log in para palitan ang active account role.')
+    }
+    if (!badges.includes(nextRole)) throw new Error('I-enable muna ang badge na ito sa account settings.')
+    const { data, error } = await getSupabaseClient().auth.updateUser({
+      data: { ...user.user_metadata, role: nextRole },
     })
     if (error) throw error
     applyUser(data.user)
@@ -224,6 +242,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setMobileNav,
         setUpgradeOpen,
         setThemeMode,
+        changeRole,
         saveBadges,
         toggleBadge,
         go,
