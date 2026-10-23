@@ -25,6 +25,8 @@ export function WorkSetup({
   const [language, setLanguage] = useState(draft?.language ?? 'English')
   const [rating, setRating] = useState(draft?.rating ?? 'All ages')
   const [status, setStatus] = useState<'Draft' | 'Ongoing' | 'Complete'>(draft?.status ?? 'Draft')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const editorRoute: Route = type === 'Story' ? '/create/works/new/story/editor' : '/create/works/new/comic/editor'
 
@@ -43,9 +45,17 @@ export function WorkSetup({
   // hands these fields off via the Works draft slot, since the actual
   // content (chapter text / page count) only exists once you're in the
   // Story/Comic editor on the next page.
-  const saveDraft = () => {
-    addWork({ ...fields(), authorId: 'me', status: 'Draft' })
-    go('/create/works')
+  const saveDraft = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      await addWork({ ...fields(), authorId: 'me', status: 'Draft' })
+      go('/create/works')
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Hindi na-save ang draft. Subukan ulit.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const continueToEditor = () => {
@@ -63,6 +73,7 @@ export function WorkSetup({
             </label>
             <input
               value={title}
+              maxLength={160}
               onChange={(e) => setTitle(e.target.value)}
               placeholder={`Untitled ${type}`}
               className="mt-2 w-full rounded-lg border border-input bg-background px-3 py-3 text-sm outline-none focus:border-accent"
@@ -92,10 +103,11 @@ export function WorkSetup({
             <FieldSelect label="Rating" value={rating} onChange={setRating} options={['All ages', 'Teen', 'Mature']} />
             <FieldSelect label="Status" value={status} onChange={(v) => setStatus(v as typeof status)} options={['Draft', 'Ongoing', 'Complete']} />
           </div>
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           {children}
           <div className="flex flex-col-reverse gap-3 border-t border-border pt-5 sm:flex-row sm:justify-between">
-            <Button variant="outline" disabled={!title.trim()} onClick={saveDraft} className="rounded-lg">
-              Save draft
+            <Button variant="outline" disabled={!title.trim() || saving} onClick={() => void saveDraft()} className="min-h-11 rounded-lg">
+              {saving ? 'Saving…' : 'Save draft'}
             </Button>
             <Button disabled={!title.trim()} onClick={continueToEditor} className="rounded-lg bg-accent text-accent-foreground">
               Magpatuloy sa editor <ChevronRight data-icon="inline-end" />

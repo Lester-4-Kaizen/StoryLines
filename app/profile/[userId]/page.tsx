@@ -1,12 +1,8 @@
-'use client'
-
-import { useParams } from 'next/navigation'
 import { ProfileView } from '@/components/views/profile-view'
-import { useAppState } from '@/lib/app-state'
+import { getProfilePageData } from '@/lib/profile-data'
 
-export default function PublicProfilePage() {
-  const { userId } = useParams<{ userId: string }>()
-  const { go } = useAppState()
-
-  return <ProfileView profileId={userId} onEdit={() => go('/settings')} />
+export default async function PublicProfilePage({ params }: { params: Promise<{ userId: string }> }) {
+  const { userId } = await params
+  const initialData = await getProfilePageData(userId)
+  return <ProfileView initialData={initialData} />
 }

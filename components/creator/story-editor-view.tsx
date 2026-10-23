@@ -11,22 +11,32 @@ export function StoryEditorView({ go }: { go: (route: Route) => void }) {
   const { draft, addWork, clearDraft } = useWorks()
   const [body, setBody] = useState('')
   const [chapter, setChapter] = useState('Chapter 1')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const publish = (status: 'Draft' | 'Ongoing') => {
-    addWork({
-      title: draft?.title ?? 'Untitled Story',
-      type: 'story',
-      authorId: 'me',
-      synopsis: draft?.synopsis,
-      genre: draft?.genre,
-      language: draft?.language,
-      rating: draft?.rating,
-      status,
-      chapterTitle: chapter,
-      chapterBody: body,
-    })
-    clearDraft()
-    go('/create/works')
+  const publish = async (status: 'Draft' | 'Ongoing') => {
+    setSaving(true)
+    setError(null)
+    try {
+      await addWork({
+        title: draft?.title ?? 'Untitled Story',
+        type: 'story',
+        authorId: 'me',
+        synopsis: draft?.synopsis,
+        genre: draft?.genre,
+        language: draft?.language,
+        rating: draft?.rating,
+        status,
+        chapterTitle: chapter,
+        chapterBody: body,
+      })
+      clearDraft()
+      go('/create/works')
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Hindi na-save ang story. Subukan ulit.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -60,11 +70,12 @@ export function StoryEditorView({ go }: { go: (route: Route) => void }) {
             className="min-h-90 w-full resize-y bg-transparent font-serif text-lg leading-8 outline-none"
           />
           <div className="flex flex-col-reverse gap-3 border-t border-border pt-5 sm:flex-row sm:justify-between">
-            <Button variant="outline" onClick={() => publish('Draft')} className="rounded-lg">
-              Save draft
+            {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+            <Button variant="outline" disabled={saving} onClick={() => void publish('Draft')} className="min-h-11 rounded-lg">
+              {saving ? 'Saving…' : 'Save draft'}
             </Button>
-            <Button onClick={() => publish('Ongoing')} className="rounded-lg bg-accent text-accent-foreground">
-              I-publish ang story
+            <Button disabled={saving} onClick={() => void publish('Ongoing')} className="min-h-11 rounded-lg bg-accent text-accent-foreground">
+              {saving ? 'Publishing…' : 'I-publish ang story'}
             </Button>
           </div>
         </div>

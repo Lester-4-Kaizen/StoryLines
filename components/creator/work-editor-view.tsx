@@ -27,25 +27,42 @@ export function WorkEditorView({ work }: { work: Work }) {
   const [chapterBody, setChapterBody] = useState(work.chapterBody ?? '')
   const [pageCount, setPageCount] = useState(work.pageCount ?? 0)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const backToWorks = () => router.push('/create/works')
 
-  const save = () => {
-    updateWork(work.id, {
-      title: title.trim() || work.title,
-      synopsis,
-      genre: genre === 'Select genre' ? undefined : genre,
-      language,
-      rating,
-      status,
-      ...(work.type === 'story' ? { chapterTitle, chapterBody } : { pageCount }),
-    })
-    backToWorks()
+  const save = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      await updateWork(work.id, {
+        title: title.trim() || work.title,
+        synopsis,
+        genre: genre === 'Select genre' ? undefined : genre,
+        language,
+        rating,
+        status,
+        ...(work.type === 'story' ? { chapterTitle, chapterBody } : { pageCount }),
+      })
+      backToWorks()
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Hindi na-save ang changes. Subukan ulit.')
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const remove = () => {
-    deleteWork(work.id)
-    backToWorks()
+  const remove = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      await deleteWork(work.id)
+      backToWorks()
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Hindi na-delete ang work. Subukan ulit.')
+      setSaving(false)
+    }
   }
 
   return (
@@ -124,9 +141,10 @@ export function WorkEditorView({ work }: { work: Work }) {
             </div>
           )}
 
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           <div className="flex justify-end border-t border-border pt-5">
-            <Button onClick={save} className="rounded-lg bg-accent text-accent-foreground">
-              Save changes
+            <Button disabled={saving} onClick={() => void save()} className="min-h-11 rounded-lg bg-accent text-accent-foreground">
+              {saving ? 'Saving…' : 'Save changes'}
             </Button>
           </div>
         </div>
@@ -169,8 +187,8 @@ export function WorkEditorView({ work }: { work: Work }) {
               <Button type="button" variant="outline" onClick={() => setConfirmDelete(false)} className="rounded-lg" autoFocus>
                 Cancel
               </Button>
-              <Button type="button" variant="destructive" onClick={remove} className="rounded-lg">
-                <Trash2 data-icon="inline-start" /> Delete work
+              <Button type="button" variant="destructive" disabled={saving} onClick={() => void remove()} className="min-h-11 rounded-lg">
+                <Trash2 data-icon="inline-start" /> {saving ? 'Deleting…' : 'Delete work'}
               </Button>
             </div>
           </section>

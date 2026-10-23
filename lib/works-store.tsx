@@ -1,6 +1,7 @@
 'use client'
 
 import { createContext, useContext, useState, type ReactNode } from 'react'
+import { getSupabaseClient } from '@/lib/supabase'
 import { useLocalStorageList } from '@/lib/use-local-storage-list'
 import type { Work } from '@/lib/types'
 
@@ -14,9 +15,9 @@ type WorksState = {
   draft: Partial<Work> | null
   setDraft: (draft: Partial<Work>) => void
   clearDraft: () => void
-  addWork: (work: Omit<Work, 'id' | 'createdAt'>) => Work
-  updateWork: (id: string, patch: Partial<Work>) => void
-  deleteWork: (id: string) => void
+  addWork: (work: Omit<Work, 'id' | 'createdAt'>) => Promise<Work>
+  updateWork: (id: string, patch: Partial<Work>) => Promise<void>
+  deleteWork: (id: string) => Promise<void>
 }
 
 const WorksContext = createContext<WorksState | null>(null)
@@ -29,17 +30,101 @@ export function WorksProvider({ children }: { children: ReactNode }) {
   const setDraft = (patch: Partial<Work>) => setDraftState((current) => ({ ...current, ...patch }))
   const clearDraft = () => setDraftState(null)
 
-  const addWork = (work: Omit<Work, 'id' | 'createdAt'>) => {
-    const newWork: Work = { ...work, id: crypto.randomUUID(), createdAt: Date.now() }
+  const addWork = async (work: Omit<Work, 'id' | 'createdAt'>) => {
+    const supabase = getSupabaseClient()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError) throw userError
+    if (!user) throw new Error('Mag-log in ulit bago mag-save ng work.')
+
+    const { data, error } = await supabase
+      .from('creator_works')
+      .insert({
+        author_id: user.id,
+        title: work.title,
+        type: work.type,
+        synopsis: work.synopsis ?? '',
+        genre: work.genre ?? null,
+        language: work.language ?? null,
+        status: work.status,
+      })
+      .select('id, created_at')
+      .single()
+    if (error) throw error
+
+    const newWork: Work = { ...work, authorId: user.id, id: data.id, createdAt: new Date(data.created_at).getTime() }
     setWorks((current) => [newWork, ...current])
     return newWork
   }
 
-  const updateWork = (id: string, patch: Partial<Work>) => {
-    setWorks((current) => current.map((work) => (work.id === id ? { ...work, ...patch } : work)))
+  const updateWork = async (id: string, patch: Partial<Work>) => {
+    const supabase = getSupabaseClient()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError) throw userError
+    if (!user) throw new Error('Mag-log in ulit bago mag-update ng work.')
+
+    const current = works.find((work) => work.id === id)
+    if (!current) throw new Error('Hindi na makita ang work na ito.')
+    if (current.authorId !== 'me' && current.authorId !== user.id) {
+      throw new Error('Hindi mo puwedeng i-edit ang work ng ibang account.')
+    }
+    const updated = { ...current, ...patch }
+    const { data: existing, error: lookupError } = await supabase
+      .from('creator_works')
+      .select('id')
+      .eq('id', id)
+      .maybeSingle()
+    if (lookupError) throw lookupError
+    const fields = {
+      title: updated.title,
+      synopsis: updated.synopsis ?? '',
+      genre: updated.genre ?? null,
+      language: updated.language ?? null,
+      status: updated.status,
+      updated_at: new Date().toISOString(),
+    }
+    if (existing) {
+      const { data, error } = await supabase
+        .from('creator_works')
+        .update(fields)
+        .eq('id', id)
+        .eq('author_id', user.id)
+        .select('id')
+        .maybeSingle()
+      if (error) throw error
+      if (!data) throw new Error('Hindi ma-update ang work na ito. I-refresh ang pahina at subukan ulit.')
+    } else {
+      const { error } = await supabase.from('creator_works').insert({
+        id,
+        author_id: user.id,
+        type: updated.type,
+        ...fields,
+      })
+      if (error) throw error
+    }
+    setWorks((current) => current.map((work) => (work.id === id ? { ...work, ...patch, authorId: user.id } : work)))
   }
 
-  const deleteWork = (id: string) => {
+  const deleteWork = async (id: string) => {
+    const supabase = getSupabaseClient()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError) throw userError
+    if (!user) throw new Error('Mag-log in ulit bago mag-delete ng work.')
+    const current = works.find((work) => work.id === id)
+    if (!current) throw new Error('Hindi na makita ang work na ito.')
+    if (current.authorId !== 'me' && current.authorId !== user.id) {
+      throw new Error('Hindi mo puwedeng i-delete ang work ng ibang account.')
+    }
+    const { data, error } = await supabase
+      .from('creator_works')
+      .delete()
+      .eq('id', id)
+      .eq('author_id', user.id)
+      .select('id')
+      .maybeSingle()
+    if (error) throw error
+    if (!data && current.authorId !== 'me') {
+      throw new Error('Hindi ma-delete ang work na ito. I-refresh ang pahina at subukan ulit.')
+    }
     setWorks((current) => current.filter((work) => work.id !== id))
   }
 

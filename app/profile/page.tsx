@@ -1,9 +1,9 @@
-'use client'
-
+import { redirect } from 'next/navigation'
 import { ProfileView } from '@/components/views/profile-view'
-import { useAppState } from '@/lib/app-state'
+import { getProfilePageData } from '@/lib/profile-data'
 
-export default function Page() {
-  const { go } = useAppState()
-  return <ProfileView onEdit={() => go('/settings')} />
+export default async function Page() {
+  const initialData = await getProfilePageData()
+  if (!initialData.error && !initialData.currentUserId) redirect('/login?next=%2Fprofile')
+  return <ProfileView initialData={initialData} />
 }

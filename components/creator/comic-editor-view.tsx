@@ -11,21 +11,31 @@ import type { Route } from '@/lib/types'
 export function ComicEditorView({ go }: { go: (route: Route) => void }) {
   const { draft, addWork, clearDraft } = useWorks()
   const [pages, setPages] = useState(0)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const publish = (status: 'Draft' | 'Ongoing') => {
-    addWork({
-      title: draft?.title ?? 'Untitled Comic',
-      type: 'comic',
-      authorId: 'me',
-      synopsis: draft?.synopsis,
-      genre: draft?.genre,
-      language: draft?.language,
-      rating: draft?.rating,
-      status,
-      pageCount: pages,
-    })
-    clearDraft()
-    go('/create/works')
+  const publish = async (status: 'Draft' | 'Ongoing') => {
+    setSaving(true)
+    setError(null)
+    try {
+      await addWork({
+        title: draft?.title ?? 'Untitled Comic',
+        type: 'comic',
+        authorId: 'me',
+        synopsis: draft?.synopsis,
+        genre: draft?.genre,
+        language: draft?.language,
+        rating: draft?.rating,
+        status,
+        pageCount: pages,
+      })
+      clearDraft()
+      go('/create/works')
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Hindi na-save ang comic. Subukan ulit.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -48,12 +58,13 @@ export function ComicEditorView({ go }: { go: (route: Route) => void }) {
             </span>
             <span className="text-muted-foreground">Magiging available ang pag-aayos at pag-crop pagkatapos mag-upload.</span>
           </div>
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           <div className="flex flex-col-reverse gap-3 border-t border-border pt-5 sm:flex-row sm:justify-between">
-            <Button variant="outline" onClick={() => publish('Draft')} className="rounded-lg">
-              Save draft
+            <Button variant="outline" disabled={saving} onClick={() => void publish('Draft')} className="min-h-11 rounded-lg">
+              {saving ? 'Saving…' : 'Save draft'}
             </Button>
-            <Button onClick={() => publish('Ongoing')} disabled={!pages} className="rounded-lg bg-accent text-accent-foreground">
-              I-publish ang comic
+            <Button onClick={() => void publish('Ongoing')} disabled={!pages || saving} className="min-h-11 rounded-lg bg-accent text-accent-foreground">
+              {saving ? 'Publishing…' : 'I-publish ang comic'}
             </Button>
           </div>
         </div>

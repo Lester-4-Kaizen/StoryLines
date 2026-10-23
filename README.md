@@ -211,6 +211,8 @@ Apply [`supabase/migrations/20261023000300_allow_owners_to_delete_community_post
 
 Apply [`supabase/migrations/20261023000400_creator_follows.sql`](./supabase/migrations/20261023000400_creator_follows.sql) to enable follows on Writer and Artist profiles. Any signed-in account can follow creators; Reader profiles are not followable. Public profiles are available at `/profile/<user-id>`, while `/profile` remains the signed-in user's own profile.
 
+Apply [`supabase/migrations/20261023000500_profile_page_data.sql`](./supabase/migrations/20261023000500_profile_page_data.sql) after the community posts and follows migrations to enable editable profile details and links, collaboration preferences, published creator works, persistent post likes, public follow counts, and direct messages. The profile page reads public profile data and published works on the server; private drafts and profile edits remain restricted by row-level security. The migration also creates the `creator_works` table used when creators save, update, and delete Story or Comic works.
+
 ## Auth routes and behavior
 
 - `/login`, `/signup`, `/forgot-password`, and `/reset-password` are standalone pages.
