@@ -123,7 +123,7 @@ export function WorksProvider({ children }: { children: ReactNode }) {
       }
       const { data: workRows, error: workError } = await supabase
         .from('creator_works')
-        .select('id, author_id, title, type, synopsis, genre, language, rating, content_warnings, status, cover_image_url, comic_reading_direction, comic_reader_background, comic_page_spacing, author_note, created_at')
+        .select('id, author_id, title, type, synopsis, genre, moods, language, rating, content_warnings, status, cover_image_url, comic_reading_direction, comic_reader_background, comic_page_spacing, author_note, created_at')
         .eq('author_id', user.id)
         .order('updated_at', { ascending: false })
         .order('id', { ascending: false })
@@ -182,6 +182,7 @@ export function WorksProvider({ children }: { children: ReactNode }) {
           type: work.type as Work['type'],
           synopsis: work.synopsis,
           genre: work.genre ?? undefined,
+          moods: work.moods ?? [],
           language: work.language ?? undefined,
           rating: work.rating ?? undefined,
           contentWarnings: work.content_warnings ?? [],
@@ -233,6 +234,7 @@ export function WorksProvider({ children }: { children: ReactNode }) {
         type: work.type,
         synopsis: work.synopsis ?? '',
         genre: work.genre ?? null,
+        moods: work.moods ?? [],
         language: work.language ?? null,
         rating: work.rating ?? 'All ages',
         content_warnings: work.contentWarnings ?? [],
@@ -304,6 +306,7 @@ export function WorksProvider({ children }: { children: ReactNode }) {
       title: updated.title,
       synopsis: updated.synopsis ?? '',
       genre: updated.genre ?? null,
+      moods: updated.moods ?? [],
       language: updated.language ?? null,
       rating: updated.rating ?? 'All ages',
       content_warnings: updated.contentWarnings ?? [],

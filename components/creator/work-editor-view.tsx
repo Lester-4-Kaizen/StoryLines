@@ -7,7 +7,9 @@ import { Button } from '@/components/ui/button'
 import { CreatorFrame } from '@/components/shared/creator-frame'
 import { FieldSelect } from '@/components/shared/field-select'
 import { Panel } from '@/components/shared/panel'
+import { WorkMoodSelector } from '@/components/shared/work-mood-selector'
 import { useWorks } from '@/lib/works-store'
+import { WORK_GENRES, WORK_LANGUAGES } from '@/lib/work-taxonomy'
 import type { Route, Work } from '@/lib/types'
 
 // One screen for editing an existing Work, story or comic — unlike the
@@ -21,6 +23,7 @@ export function WorkEditorView({ work, go }: { work: Work; go: (route: Route) =>
   const [title, setTitle] = useState(work.title)
   const [synopsis, setSynopsis] = useState(work.synopsis ?? '')
   const [genre, setGenre] = useState(work.genre ?? 'Select genre')
+  const [moods, setMoods] = useState(work.moods ?? [])
   const [language, setLanguage] = useState(work.language ?? 'English')
   const [rating, setRating] = useState(work.rating ?? 'All ages')
   const [chapterTitle, setChapterTitle] = useState(work.chapterTitle ?? 'Chapter 1')
@@ -39,6 +42,7 @@ export function WorkEditorView({ work, go }: { work: Work; go: (route: Route) =>
         title: title.trim() || work.title,
         synopsis,
         genre: genre === 'Select genre' ? undefined : genre,
+        moods,
         language,
         rating,
         status: work.status,
@@ -95,10 +99,11 @@ export function WorkEditorView({ work, go }: { work: Work; go: (route: Route) =>
             />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <FieldSelect label="Genre" value={genre} onChange={setGenre} options={['Select genre', 'Fantasy', 'Romance', 'Slice of life', 'Mystery']} />
-            <FieldSelect label="Language" value={language} onChange={setLanguage} options={['English', 'Filipino', 'Other']} />
+            <FieldSelect label="Genre" value={genre} onChange={setGenre} options={['Select genre', ...WORK_GENRES]} />
+            <FieldSelect label="Language" value={language} onChange={setLanguage} options={[...WORK_LANGUAGES]} />
             <FieldSelect label="Rating" value={rating} onChange={setRating} options={['All ages', 'Teen', 'Mature']} />
           </div>
+          <WorkMoodSelector selected={moods} onChange={setMoods} />
 
           {work.type === 'story' ? (
             <div className="flex flex-col gap-3 border-t border-border pt-6">

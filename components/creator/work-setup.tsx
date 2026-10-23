@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/button'
 import { CreatorFrame } from '@/components/shared/creator-frame'
 import { FieldSelect } from '@/components/shared/field-select'
 import { Panel } from '@/components/shared/panel'
+import { WorkMoodSelector } from '@/components/shared/work-mood-selector'
 import { useWorks } from '@/lib/works-store'
+import { WORK_GENRES, WORK_LANGUAGES } from '@/lib/work-taxonomy'
 import type { Route } from '@/lib/types'
 
 export function WorkSetup({
@@ -22,6 +24,7 @@ export function WorkSetup({
   const [title, setTitle] = useState(draft?.title ?? '')
   const [synopsis, setSynopsis] = useState(draft?.synopsis ?? '')
   const [genre, setGenre] = useState(draft?.genre ?? 'Select genre')
+  const [moods, setMoods] = useState(draft?.moods ?? [])
   const [language, setLanguage] = useState(draft?.language ?? 'English')
   const [rating, setRating] = useState(draft?.rating ?? 'All ages')
   const [status, setStatus] = useState<'Draft' | 'Ongoing' | 'Complete'>(draft?.status ?? 'Draft')
@@ -35,6 +38,7 @@ export function WorkSetup({
     type: (type === 'Story' ? 'story' : 'comic') as 'story' | 'comic',
     synopsis,
     genre: genre === 'Select genre' ? undefined : genre,
+    moods,
     language,
     rating,
   })
@@ -106,11 +110,12 @@ export function WorkSetup({
             />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <FieldSelect label="Genre" value={genre} onChange={setGenre} options={['Select genre', 'Fantasy', 'Romance', 'Slice of life', 'Mystery']} />
-            <FieldSelect label="Language" value={language} onChange={setLanguage} options={['English', 'Filipino', 'Other']} />
+            <FieldSelect label="Genre" value={genre} onChange={setGenre} options={['Select genre', ...WORK_GENRES]} />
+            <FieldSelect label="Language" value={language} onChange={setLanguage} options={[...WORK_LANGUAGES]} />
             <FieldSelect label="Rating" value={rating} onChange={setRating} options={['All ages', 'Teen', 'Mature']} />
             <FieldSelect label="Status" value={status} onChange={(v) => setStatus(v as typeof status)} options={['Draft', 'Ongoing', 'Complete']} />
           </div>
+          <WorkMoodSelector selected={moods} onChange={setMoods} />
           {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           {children}
           <div className="flex flex-col-reverse gap-3 border-t border-border pt-5 sm:flex-row sm:justify-between">

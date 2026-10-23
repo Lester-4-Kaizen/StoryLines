@@ -28,8 +28,10 @@ import { Button } from '@/components/ui/button'
 import { CreatorFrame } from '@/components/shared/creator-frame'
 import { FieldSelect } from '@/components/shared/field-select'
 import { Panel } from '@/components/shared/panel'
+import { WorkMoodSelector } from '@/components/shared/work-mood-selector'
 import { useAppState } from '@/lib/app-state'
 import { useWorks } from '@/lib/works-store'
+import { WORK_GENRES, WORK_LANGUAGES } from '@/lib/work-taxonomy'
 import type { Route, Work } from '@/lib/types'
 
 type EditorChapter = { number: number; title: string; body: string; authorNote: string }
@@ -42,6 +44,7 @@ type EditorDraft = {
   status: Work['status']
   coverImageUrl: string
   contentWarnings: string[]
+  moods: string[]
   chapters: EditorChapter[]
   selectedChapter: number
 }
@@ -57,7 +60,6 @@ type StyleSettings = {
   autosave: boolean
 }
 
-const GENRES = ['Fantasy', 'Romance', 'Slice of life', 'Mystery', 'Horror', 'Sci-fi', 'Drama', 'Other']
 const WARNINGS = ['Violence', 'Mature themes', 'Strong language', 'Grief', 'Self-harm']
 const STYLES_STORAGE_KEY = 'storylines-editor-style'
 
@@ -111,6 +113,7 @@ function makeEditorDraft(draft: Partial<Work> | null, work?: Work): EditorDraft 
     status: work?.status ?? draft?.status ?? 'Draft',
     coverImageUrl: work?.coverImageUrl ?? draft?.coverImageUrl ?? '',
     contentWarnings: work?.contentWarnings ?? draft?.contentWarnings ?? [],
+    moods: work?.moods ?? draft?.moods ?? [],
     chapters: chapters?.length
       ? chapters.map((chapter) => ({ ...chapter, authorNote: chapter.authorNote ?? '' }))
       : [{ number: 1, title: work?.chapterTitle ?? 'Chapter 1', body: work?.chapterBody ?? '', authorNote: '' }],
@@ -370,7 +373,8 @@ export function StoryEditorView({
         type: 'story' as const,
         authorId: work?.authorId ?? 'me',
         synopsis: editor.blurb,
-        genre: editor.genre || undefined,
+        genre: editor.genre === 'Choose genre' ? undefined : editor.genre,
+        moods: editor.moods,
         language: editor.language,
         rating: editor.rating,
         coverImageUrl: editor.coverImageUrl || undefined,
@@ -545,8 +549,9 @@ export function StoryEditorView({
                     <label className="text-xs font-bold">Blurb
                       <textarea value={editor.blurb} maxLength={500} onChange={(event) => setEditor((current) => ({ ...current, blurb: event.target.value }))} className="mt-1 min-h-24 w-full rounded-lg border border-input bg-background p-3 text-sm font-normal" />
                     </label>
-                    <FieldSelect label="Genre" value={editor.genre} onChange={(genre) => setEditor((current) => ({ ...current, genre }))} options={['Choose genre', ...GENRES]} />
-                    <FieldSelect label="Language" value={editor.language} onChange={(language) => setEditor((current) => ({ ...current, language }))} options={['Filipino', 'English', 'Tagalog', 'Other']} />
+                    <FieldSelect label="Genre" value={editor.genre} onChange={(genre) => setEditor((current) => ({ ...current, genre }))} options={['Choose genre', ...WORK_GENRES]} />
+                    <FieldSelect label="Language" value={editor.language} onChange={(language) => setEditor((current) => ({ ...current, language }))} options={[...WORK_LANGUAGES]} />
+                    <WorkMoodSelector selected={editor.moods ?? []} onChange={(moods) => setEditor((current) => ({ ...current, moods }))} />
                     <FieldSelect label="Rating" value={editor.rating} onChange={(rating) => setEditor((current) => ({ ...current, rating }))} options={['All ages', 'Teen', 'Mature']} />
                     <FieldSelect label="Publication status" value={editor.status} onChange={(status) => setEditor((current) => ({ ...current, status: status as Work['status'] }))} options={['Draft', 'Ongoing', 'Complete']} />
                     <fieldset>

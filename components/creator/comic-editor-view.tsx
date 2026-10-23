@@ -7,7 +7,9 @@ import { Button } from '@/components/ui/button'
 import { CreatorFrame } from '@/components/shared/creator-frame'
 import { FieldSelect } from '@/components/shared/field-select'
 import { Panel } from '@/components/shared/panel'
+import { WorkMoodSelector } from '@/components/shared/work-mood-selector'
 import { useWorks } from '@/lib/works-store'
+import { WORK_GENRES, WORK_LANGUAGES } from '@/lib/work-taxonomy'
 import type { ComicPage, Route, Work } from '@/lib/types'
 
 type ReadingDirection = NonNullable<Work['comicReadingDirection']>
@@ -26,6 +28,7 @@ export function ComicEditorView({ go, work }: { go: (route: Route) => void; work
   const [authorNote, setAuthorNote] = useState(work?.authorNote ?? '')
   const [synopsis, setSynopsis] = useState(work?.synopsis ?? draft?.synopsis ?? '')
   const [genre, setGenre] = useState(work?.genre ?? draft?.genre ?? 'Select genre')
+  const [moods, setMoods] = useState(work?.moods ?? draft?.moods ?? [])
   const [language, setLanguage] = useState(work?.language ?? draft?.language ?? 'English')
   const [rating, setRating] = useState(work?.rating ?? draft?.rating ?? 'All ages')
   const [warnings, setWarnings] = useState(work?.contentWarnings ?? [])
@@ -47,6 +50,7 @@ export function ComicEditorView({ go, work }: { go: (route: Route) => void; work
     authorId: savedWork?.authorId ?? 'me',
     synopsis,
     genre: genre === 'Select genre' ? undefined : genre,
+    moods,
     language,
     rating,
     contentWarnings: warnings,
@@ -378,9 +382,10 @@ export function ComicEditorView({ go, work }: { go: (route: Route) => void; work
                 <input value={episodeTitle} maxLength={160} onChange={(event) => setEpisodeTitle(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm font-normal" />
               </label>
               <FieldSelect label="Rating" value={rating} onChange={setRating} options={['All ages', 'Teen', 'Mature']} />
-              <FieldSelect label="Genre" value={genre} onChange={setGenre} options={['Select genre', 'Fantasy', 'Romance', 'Slice of life', 'Mystery']} />
-              <FieldSelect label="Language" value={language} onChange={setLanguage} options={['English', 'Filipino', 'Other']} />
+              <FieldSelect label="Genre" value={genre} onChange={setGenre} options={['Select genre', ...WORK_GENRES]} />
+              <FieldSelect label="Language" value={language} onChange={setLanguage} options={[...WORK_LANGUAGES]} />
             </div>
+            <WorkMoodSelector selected={moods} onChange={setMoods} />
             <label className="mt-4 block text-sm font-bold">Blurb
               <textarea value={synopsis} maxLength={500} onChange={(event) => setSynopsis(event.target.value)} className="mt-1 min-h-20 w-full rounded-lg border border-input bg-background p-3 text-sm font-normal" />
             </label>

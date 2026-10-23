@@ -235,6 +235,10 @@ CLOUDFLARE_IMAGES_DELIVERY_HASH=<images-delivery-hash>
 
 The dashboard URL is for account management, not an upload or image URL. Never use it as a page image URL or expose the API token in a `NEXT_PUBLIC_` variable. Uploaded page URLs are public Cloudflare Images delivery URLs; work/page metadata and drafts are still protected by Supabase RLS. Apply the Supabase migration before deploying code that reads the new Comic columns and page table.
 
+Apply [`supabase/migrations/20261023001000_browse_creator_stats.sql`](./supabase/migrations/20261023001000_browse_creator_stats.sql) to power the Browse Authors directory's follower and published-work counts. The function returns aggregate counts only for Writer and Artist profiles and accepts at most 50 profile IDs per call.
+
+Apply [`supabase/migrations/20261023001100_work_moods.sql`](./supabase/migrations/20261023001100_work_moods.sql) after migration `00900` to store up to three supported moods on each work. Browse uses these values to filter Story and Comic works; the same moods can be selected in the new-work setup, story editor, comic editor, and existing-work editor. Apply `01000` and `01100` in numerical order before deploying the corresponding Browse updates.
+
 ## Auth routes and behavior
 
 - `/login`, `/signup`, `/forgot-password`, and `/reset-password` are standalone pages.

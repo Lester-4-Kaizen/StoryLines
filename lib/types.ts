@@ -26,7 +26,9 @@ export type Work = {
   type: 'story' | 'comic' | 'art'
   authorId: string
   synopsis?: string
+  authorName?: string
   genre?: string
+  moods?: string[]
   language?: string
   rating?: string
   coverImageUrl?: string
