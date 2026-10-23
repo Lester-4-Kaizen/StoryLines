@@ -51,6 +51,7 @@ export type CommunityPostType =
   | 'collaborator'
   | 'feedback'
   | 'poll'
+  | 'random'
 
 export type Post = {
   id: string

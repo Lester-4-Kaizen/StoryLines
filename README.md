@@ -203,6 +203,8 @@ Community posts are stored in Supabase so they appear to all visitors, rather th
 
 The migration is additive and safe to run again. After applying it, deploy the app so the community page uses the shared feed.
 
+The follow-up [`supabase/migrations/20261023000100_add_random_community_post_type.sql`](./supabase/migrations/20261023000100_add_random_community_post_type.sql) adds the **Random story / post** type to the composer, with matching suggested tags.
+
 ## Auth routes and behavior
 
 - `/login`, `/signup`, `/forgot-password`, and `/reset-password` are standalone pages.

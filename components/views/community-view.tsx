@@ -36,6 +36,7 @@ const POST_TYPES: { value: CommunityPostType; label: string }[] = [
   { value: 'collaborator', label: 'Looking for collaborator' },
   { value: 'feedback', label: 'Feedback request' },
   { value: 'poll', label: 'Poll' },
+  { value: 'random', label: 'Random story / post' },
 ]
 const COLLABORATOR_ROLES = ['Writer', 'Artist', 'Editor', 'Cover designer', 'Translator']
 const SUGGESTED_TAGS: Record<CommunityPostType, string[]> = {
@@ -45,6 +46,7 @@ const SUGGESTED_TAGS: Record<CommunityPostType, string[]> = {
   collaborator: ['collaboration', 'looking-for-writer', 'looking-for-artist', 'open-call'],
   feedback: ['feedback-welcome', 'critique', 'cover-art', 'story-review'],
   poll: ['community-poll', 'story-ideas', 'character-design', 'choose-for-me'],
+  random: ['random-thought', 'mini-story', 'writing-prompt', 'just-for-fun'],
 }
 
 type FeedTab = 'for-you' | 'following' | 'latest' | 'collaborators' | 'authors'
