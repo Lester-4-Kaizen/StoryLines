@@ -1,9 +1,34 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Check, Moon, Sun } from 'lucide-react'
 import { Panel } from '@/components/shared/panel'
+import { getSupabaseClient } from '@/lib/supabase'
 import type { Badge } from '@/lib/types'
+
+function clearLocalAccountData(userId: string) {
+  const draftPrefix = `storylines-editor-draft:${userId}:`
+  const draftKeys: string[] = []
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index)
+    if (key?.startsWith(draftPrefix)) draftKeys.push(key)
+  }
+  for (const key of draftKeys) window.localStorage.removeItem(key)
+
+  const legacyPosts = window.localStorage.getItem('storylines-community-posts')
+  if (!legacyPosts) return
+  const parsed: unknown = JSON.parse(legacyPosts)
+  if (!Array.isArray(parsed)) throw new Error('The saved community post list is not valid JSON data.')
+  const remaining = parsed.filter((post: unknown) => (
+    typeof post !== 'object'
+    || post === null
+    || !('authorId' in post)
+    || Reflect.get(post, 'authorId') !== userId
+  ))
+  window.localStorage.setItem('storylines-community-posts', JSON.stringify(remaining))
+}
 
 export function SettingsView({
   badges,
@@ -12,6 +37,7 @@ export function SettingsView({
   saveBadges,
   themeMode,
   setThemeMode,
+  isLoggedIn,
 }: {
   badges: Badge[]
   activeRole: Badge
@@ -19,13 +45,19 @@ export function SettingsView({
   saveBadges: (badges: Badge[]) => Promise<void>
   themeMode: 'light' | 'dark'
   setThemeMode: (mode: 'light' | 'dark') => void
+  isLoggedIn: boolean
 }) {
+  const router = useRouter()
   const [draftBadges, setDraftBadges] = useState(badges)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [roleSaving, setRoleSaving] = useState(false)
   const [roleError, setRoleError] = useState<string | null>(null)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteConfirmation, setDeleteConfirmation] = useState('')
+  const [deletePending, setDeletePending] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   useEffect(() => {
     setDraftBadges(badges)
@@ -65,6 +97,62 @@ export function SettingsView({
       setRoleError(error instanceof Error ? error.message : 'Hindi napalitan ang active role. Subukan ulit.')
     } finally {
       setRoleSaving(false)
+    }
+  }
+
+  const deleteAccount = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!isLoggedIn || deleteConfirmation !== 'DELETE' || deletePending) return
+    setDeletePending(true)
+    setDeleteError(null)
+
+    try {
+      const supabase = getSupabaseClient()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError) throw userError
+      if (!user) throw new Error('Mag-log in ulit bago burahin ang account.')
+
+      const { error } = await supabase.functions.invoke('delete-account', {
+        body: { confirmation: deleteConfirmation },
+      })
+      if (error) {
+        let message = error.message
+        if (error.context instanceof Response) {
+          try {
+            const payload: unknown = await error.context.clone().json()
+            if (
+              typeof payload === 'object'
+              && payload !== null
+              && 'error' in payload
+              && typeof payload.error === 'string'
+            ) {
+              message = payload.error
+            }
+          } catch (parseError) {
+            console.error('Could not read the account deletion error response', parseError)
+          }
+        }
+        throw new Error(message)
+      }
+
+      let deviceCleanupFailed = false
+      try {
+        clearLocalAccountData(user.id)
+      } catch (cleanupError) {
+        console.error('Account was deleted, but this browser could not clear all local account drafts', cleanupError)
+        deviceCleanupFailed = true
+      }
+
+      const { error: signOutError } = await supabase.auth.signOut({ scope: 'local' })
+      if (signOutError) console.error('Account was deleted, but its local session could not be cleared', signOutError)
+      router.replace(`/login?account=deleted${deviceCleanupFailed ? '&deviceCleanup=failed' : ''}`)
+      router.refresh()
+    } catch (error) {
+      setDeleteError(error instanceof Error
+        ? error.message
+        : 'Hindi natapos ang account deletion. Walang pagbabago kung hindi nakumpirma ang pagtanggal. Subukan ulit.')
+    } finally {
+      setDeletePending(false)
     }
   }
 
@@ -179,6 +267,75 @@ export function SettingsView({
                 {themeMode === 'dark' && <Check className="size-4 text-accent" aria-hidden="true" />}
               </button>
             </div>
+          </Panel>
+
+          <Panel className="border-destructive/40 p-5 sm:p-7 lg:p-8">
+            <span className="eyebrow text-destructive">Irreversible action</span>
+            <h2 className="mt-2 font-serif text-2xl font-bold">Delete account</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Permanenteng mabubura ang profile, posts, comments, stories, comics, likes, saves, follows, messages, at uploaded images mo. Hindi na ito maibabalik.
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Kung password lang ang gusto mong palitan, <Link href="/forgot-password" className="font-semibold text-accent underline underline-offset-2">mag-reset ng password</Link> sa halip.
+            </p>
+            {!isLoggedIn ? (
+              <Link
+                href="/login?next=%2Fsettings"
+                className="mt-4 inline-flex min-h-11 items-center rounded-full border border-border px-5 text-sm font-bold hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+              >
+                Mag-log in para magpatuloy
+              </Link>
+            ) : !deleteOpen ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteOpen(true)
+                  setDeleteError(null)
+                }}
+                className="mt-4 min-h-11 rounded-full border border-destructive px-5 text-sm font-bold text-destructive hover:bg-destructive/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              >
+                Permanently delete account
+              </button>
+            ) : (
+              <form className="mt-4 grid gap-3" onSubmit={(event) => void deleteAccount(event)}>
+                <label htmlFor="delete-account-confirmation" className="text-sm font-semibold">
+                  Type <span className="font-mono">DELETE</span> to confirm
+                </label>
+                <input
+                  id="delete-account-confirmation"
+                  type="text"
+                  autoComplete="off"
+                  value={deleteConfirmation}
+                  onChange={(event) => setDeleteConfirmation(event.target.value)}
+                  disabled={deletePending}
+                  className="min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                  aria-describedby={deleteError ? 'delete-account-error' : undefined}
+                  required
+                />
+                {deleteError && <p id="delete-account-error" role="alert" className="text-sm text-destructive">{deleteError}</p>}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={deletePending}
+                    onClick={() => {
+                      setDeleteOpen(false)
+                      setDeleteConfirmation('')
+                      setDeleteError(null)
+                    }}
+                    className="min-h-11 rounded-full border border-border px-5 text-sm font-semibold hover:bg-muted disabled:opacity-60"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={deletePending || deleteConfirmation !== 'DELETE'}
+                    className="min-h-11 rounded-full bg-destructive px-5 text-sm font-bold text-white hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {deletePending ? 'Deleting account…' : 'Delete everything'}
+                  </button>
+                </div>
+              </form>
+            )}
           </Panel>
         </div>
       </div>

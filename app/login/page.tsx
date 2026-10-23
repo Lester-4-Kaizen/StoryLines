@@ -4,8 +4,15 @@ import { safeNextPath } from '@/lib/auth/redirect'
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>
+  searchParams: Promise<{ next?: string; account?: string; deviceCleanup?: string }>
 }) {
-  const { next } = await searchParams
-  return <AuthPage mode="login" next={safeNextPath(next)} />
+  const { next, account, deviceCleanup } = await searchParams
+  return (
+    <AuthPage
+      mode="login"
+      next={safeNextPath(next)}
+      accountDeleted={account === 'deleted'}
+      deviceCleanupFailed={deviceCleanup === 'failed'}
+    />
+  )
 }

@@ -205,10 +205,14 @@ export function AuthPage({
   mode,
   next = '/',
   authError = false,
+  accountDeleted = false,
+  deviceCleanupFailed = false,
 }: {
   mode: AuthPageMode
   next?: string
   authError?: boolean
+  accountDeleted?: boolean
+  deviceCleanupFailed?: boolean
 }) {
   const router = useRouter()
   const { refreshSession } = useAppState()
@@ -452,6 +456,12 @@ export function AuthPage({
         <p className="eyebrow">{eyebrow[mode]}</p>
         <h1 id="auth-title" className="mt-2 font-serif text-3xl font-bold sm:text-4xl">{heading[mode]}</h1>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">{explanation[mode]}</p>
+        {accountDeleted && mode === 'login' && (
+          <p role="status" className="mt-4 rounded-xl border border-border bg-secondary/60 p-3.5 text-sm leading-5">
+            Permanenteng nabura na ang account mo at ang associated data nito.
+            {deviceCleanupFailed && ' May ilang local draft na hindi na-clear sa browser na ito; burahin ang StoryLines site data sa browser settings para alisin ang mga iyon.'}
+          </p>
+        )}
 
         {mode === 'reset-password' && !hasRecoverySession ? (
           <div className="mt-6 rounded-xl border border-border bg-secondary/50 p-4">

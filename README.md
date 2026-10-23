@@ -239,6 +239,18 @@ Apply [`supabase/migrations/20261023001000_browse_creator_stats.sql`](./supabase
 
 Apply [`supabase/migrations/20261023001100_work_moods.sql`](./supabase/migrations/20261023001100_work_moods.sql) after migration `00900` to store up to three supported moods on each work. Browse uses these values to filter Story and Comic works; the same moods can be selected in the new-work setup, story editor, comic editor, and existing-work editor. Apply `01000` and `01100` in numerical order before deploying the corresponding Browse updates.
 
+Apply [`supabase/migrations/20261023001200_profile_social_and_avatars.sql`](./supabase/migrations/20261023001200_profile_social_and_avatars.sql) after `20261023001100_work_moods.sql` (and the earlier required profile/community migrations) to enable public profile pictures and paginated Followers/Following lists. It creates the public `avatars` Storage bucket with a 5 MB limit, allows each signed-in user to upload or remove files only under their own user-ID folder, and adds the `get_community_connections` RPC. Run the migration before deploying profile-photo or follower-list UI.
+
+Account deletion runs in the Supabase Edge Function at [`supabase/functions/delete-account/index.ts`](./supabase/functions/delete-account/index.ts). Deploy it with `supabase functions deploy delete-account` after applying migrations `00000`, `00200`, `00400`, `00500`, `00900`, and `01200`. The function validates the caller's access token, removes their account-owned Supabase Storage files and Cloudflare Images referenced by their works, then uses Supabase Auth's admin API to permanently delete their Auth account; foreign-key cascades remove their profile, works, chapters, comic pages, posts, comments, likes, saves, follows, and messages. The service-role key is only used inside the managed Edge Function and must never be added to the Next.js app or exposed to the browser.
+
+For Cloudflare image cleanup, set the existing account ID and Images edit token as Supabase Edge Function secrets too; Vercel environment variables are not automatically available to Edge Functions:
+
+```sh
+supabase secrets set CLOUDFLARE_ACCOUNT_ID=<cloudflare-account-id> CLOUDFLARE_IMAGES_API_TOKEN=<account-scoped-images-edit-token>
+```
+
+If account-owned Cloudflare images exist but these Edge Function secrets are missing, account deletion is refused before its data is removed. Avatar files and Community post images are removed from Supabase Storage. The current browser's user-specific editor drafts and legacy Community posts are cleared after deletion; drafts stored only in another device's browser cannot be removed remotely. Deleted-account navigation goes to `/login?account=deleted`.
+
 ## Auth routes and behavior
 
 - `/login`, `/signup`, `/forgot-password`, and `/reset-password` are standalone pages.

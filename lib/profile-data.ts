@@ -6,6 +6,8 @@ export type ProfileRecord = {
   id: string
   displayName: string
   username: string
+  avatarPath: string | null
+  avatarUrl: string | null
   roles: Badge[]
   bio: string
   writingLanguages: string[]
@@ -145,6 +147,8 @@ function mapProfile(profile: {
   id: string
   display_name: string
   username: string
+  avatar_path: string | null
+  avatar_url: string | null
   roles: string[] | null
   bio: string | null
   writing_languages: string[] | null
@@ -160,6 +164,8 @@ function mapProfile(profile: {
     id: profile.id,
     displayName: profile.display_name,
     username: profile.username,
+    avatarPath: profile.avatar_path,
+    avatarUrl: profile.avatar_url,
     roles: (profile.roles ?? []).filter(isBadge),
     bio: profile.bio ?? '',
     writingLanguages: profile.writing_languages ?? [],
@@ -191,7 +197,7 @@ export async function getProfilePageData(profileId?: string): Promise<ProfilePag
       await Promise.all([
         supabase
           .from('profiles')
-          .select('id, display_name, username, roles, bio, writing_languages, favorite_genres, facebook_url, instagram_url, portfolio_url, open_for_collaboration, collaboration_roles, created_at')
+          .select('id, display_name, username, avatar_path, roles, bio, writing_languages, favorite_genres, facebook_url, instagram_url, portfolio_url, open_for_collaboration, collaboration_roles, created_at')
           .eq('id', targetId)
           .maybeSingle(),
         supabase
@@ -262,7 +268,13 @@ export async function getProfilePageData(profileId?: string): Promise<ProfilePag
       throw new Error('Hindi ma-load ang follower counts. Subukan ulit.')
     }
 
-    const profile = mapProfile(profileResult.data)
+    const profile = mapProfile({
+      ...profileResult.data,
+      avatar_path: profileResult.data.avatar_path,
+      avatar_url: profileResult.data.avatar_path
+        ? supabase.storage.from('avatars').getPublicUrl(profileResult.data.avatar_path).data.publicUrl
+        : null,
+    })
     const postRows = postsResult.data ?? []
     const storyRows = storyWorksResult.data ?? []
     const comicRows = comicWorksResult.data ?? []

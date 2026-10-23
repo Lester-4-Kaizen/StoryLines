@@ -3,10 +3,11 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from 'react'
 import {
   BookOpen,
   Brush,
+  Camera,
   ExternalLink,
   MessageCircle,
   PenLine,
@@ -17,6 +18,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Panel } from '@/components/shared/panel'
 import { ProfilePostCard } from '@/components/profile/profile-post-card'
+import { ProfileConnectionsDialog } from '@/components/profile/profile-connections-dialog'
 import { isSupabaseStorageImage } from '@/lib/is-supabase-storage-image'
 import { getSupabaseClient } from '@/lib/supabase'
 import type { ProfileCursor, ProfilePageData, ProfilePost, ProfileRecord, ProfileWork } from '@/lib/profile-data'
@@ -112,6 +114,9 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
   const [messageDraft, setMessageDraft] = useState('')
   const [messageSending, setMessageSending] = useState(false)
   const [messageError, setMessageError] = useState<string | null>(null)
+  const [connectionsDirection, setConnectionsDirection] = useState<'followers' | 'following' | null>(null)
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
   const profileTabs: ProfileTab[] = data.currentUserId && data.currentUserId === data.profile?.id
     ? [...TABS, 'Liked', 'Saved']
     : TABS
@@ -625,6 +630,64 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
     }
   }
 
+  const uploadAvatar = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!file || !ownProfile || !data.currentUserId) return
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setActionError('Pumili ng JPG, PNG, o WEBP na larawan.')
+      return
+    }
+    if (file.size <= 0 || file.size > 5 * 1024 * 1024) {
+      setActionError('Hanggang 5 MB lang ang profile picture.')
+      return
+    }
+
+    setAvatarUploading(true)
+    setActionError(null)
+    const supabase = getSupabaseClient()
+    const extension = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/png' ? 'png' : 'webp'
+    const avatarPath = `${data.currentUserId}/${crypto.randomUUID()}.${extension}`
+    try {
+      const { error: uploadError } = await supabase.storage.from('avatars').upload(avatarPath, file, {
+        cacheControl: '3600',
+        contentType: file.type,
+        upsert: false,
+      })
+      if (uploadError) throw uploadError
+
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ avatar_path: avatarPath })
+        .eq('id', data.currentUserId)
+      if (updateError) {
+        const { error: cleanupError } = await supabase.storage.from('avatars').remove([avatarPath])
+        if (cleanupError) console.error('Could not clean up a profile photo after its profile update failed', cleanupError)
+        throw updateError
+      }
+
+      const avatarUrl = supabase.storage.from('avatars').getPublicUrl(avatarPath).data.publicUrl
+      const previousAvatarPath = profile.avatarPath
+      setData((current) => ({
+        ...current,
+        profile: current.profile ? { ...current.profile, avatarPath, avatarUrl } : null,
+      }))
+      setNotice('Na-update na ang profile picture mo.')
+
+      if (previousAvatarPath && previousAvatarPath !== avatarPath) {
+        const { error: cleanupError } = await supabase.storage.from('avatars').remove([previousAvatarPath])
+        if (cleanupError) {
+          console.error('Profile photo updated, but the previous photo could not be removed', cleanupError)
+          setActionError('Na-update ang larawan, pero hindi natanggal ang lumang file. Subukan ulit o makipag-ugnayan sa suporta.')
+        }
+      }
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Hindi na-upload ang profile picture. Subukan ulit.')
+    } finally {
+      setAvatarUploading(false)
+    }
+  }
+
   const editProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!ownProfile || !data.currentUserId) return
@@ -727,9 +790,35 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
       <section className="overflow-hidden rounded-2xl border border-border bg-card">
         <div className="h-28 bg-[linear-gradient(115deg,color-mix(in_oklch,var(--primary)_96%,var(--accent)),color-mix(in_oklch,var(--accent)_72%,var(--primary)))] sm:h-36" aria-hidden="true" />
         <div className="flex flex-col gap-4 px-4 pb-4 sm:flex-row sm:items-end sm:px-6">
-          <span className="-mt-8 flex size-16 shrink-0 items-center justify-center rounded-full border-4 border-card bg-secondary text-accent sm:-mt-10 sm:size-20" aria-hidden="true">
-            <UserRound className="size-8 sm:size-9" />
-          </span>
+          <div className="-mt-8 flex shrink-0 flex-col items-center gap-1.5 sm:-mt-10">
+            <span className="relative flex size-16 items-center justify-center overflow-hidden rounded-full border-4 border-card bg-secondary text-accent sm:size-20">
+              {profile.avatarUrl
+                ? <Image src={profile.avatarUrl} alt={`${profile.displayName}'s profile picture`} fill sizes="80px" className="object-cover" />
+                : <UserRound className="size-8 sm:size-9" aria-hidden="true" />}
+            </span>
+            {ownProfile && (
+              <>
+                <input
+                  ref={avatarInputRef}
+                  id="profile-avatar-upload"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  aria-label="Choose a profile picture"
+                  className="sr-only"
+                  onChange={(event) => void uploadAvatar(event)}
+                />
+                <button
+                  type="button"
+                  disabled={avatarUploading}
+                  onClick={() => avatarInputRef.current?.click()}
+                  className="inline-flex min-h-11 items-center gap-1 rounded-full px-2 text-xs font-semibold text-accent hover:bg-secondary focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-60"
+                >
+                  <Camera className="size-3.5" aria-hidden="true" />
+                  {avatarUploading ? 'Uploading…' : profile.avatarUrl ? 'Change photo' : 'Add photo'}
+                </button>
+              </>
+            )}
+          </div>
           <div className="min-w-0 flex-1">
             <h1 className="break-words font-serif text-2xl font-bold sm:text-3xl">{profile.displayName}</h1>
             <p className="mt-1 break-all text-xs text-muted-foreground">@{profile.username}{profile.bio ? ` · ${profile.bio}` : ''}</p>
@@ -756,9 +845,23 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
             </Button>
           </div>
         </div>
-        <div className="flex flex-wrap gap-x-5 gap-y-2 border-t border-border px-4 py-3 text-xs sm:px-6">
-          <span><strong>{data.counts.followers}</strong> Followers</span>
-          <span><strong>{data.counts.following}</strong> Following</span>
+        <div className="flex flex-wrap gap-x-3 gap-y-2 border-t border-border px-4 py-2 sm:px-6">
+          <button
+            type="button"
+            onClick={() => setConnectionsDirection('followers')}
+            className="min-h-11 rounded-lg px-2 text-left text-xs hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+            aria-label={`Show ${data.counts.followers} followers`}
+          >
+            <strong>{data.counts.followers}</strong> Followers
+          </button>
+          <button
+            type="button"
+            onClick={() => setConnectionsDirection('following')}
+            className="min-h-11 rounded-lg px-2 text-left text-xs hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+            aria-label={`Show ${data.counts.following} following`}
+          >
+            <strong>{data.counts.following}</strong> Following
+          </button>
           <span><strong>{data.counts.works}</strong> Works</span>
           <span><strong>{data.counts.posts}</strong> Posts</span>
         </div>
@@ -843,6 +946,14 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
       )}
       {notice && <p role="status" className="rounded-xl border border-border bg-card px-4 py-3 text-sm">{notice}</p>}
       {actionError && <p role="alert" className="rounded-xl border border-destructive/30 bg-card px-4 py-3 text-sm text-destructive">{actionError}</p>}
+      {connectionsDirection && (
+        <ProfileConnectionsDialog
+          profileId={profile.id}
+          direction={connectionsDirection}
+          onDirectionChange={setConnectionsDirection}
+          onClose={() => setConnectionsDirection(null)}
+        />
+      )}
 
       <div className="grid min-w-0 items-start gap-3 sm:gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <section
