@@ -23,25 +23,38 @@ export type Route =
 export type Work = {
   id: string
   title: string
-  type: 'story' | 'comic'
+  type: 'story' | 'comic' | 'art'
   authorId: string
   synopsis?: string
   genre?: string
   language?: string
   rating?: string
+  coverImageUrl?: string
   status: 'Draft' | 'Ongoing' | 'Complete'
   // Story-specific — the chapter text captured in the Story editor.
   chapterTitle?: string
   chapterBody?: string
-  // Comic-specific — how many pages were selected. There's no real file
-  // storage yet, so actual page images aren't persisted, just the count.
-  pageCount?: number
+  chapters?: { number: number; title: string; body: string; authorNote?: string }[]
+  contentWarnings?: string[]
+  authorNote?: string
+  comicReadingDirection?: 'vertical' | 'page' | 'rtl'
+  comicReaderBackground?: 'dark' | 'light' | 'paper'
+  comicPageSpacing?: 'none' | 'small' | 'large'
+  comicPages?: ComicPage[]
   createdAt: number
   // Set when a Work is published out of the collaboration workspace —
   // the joint credit described in the project plan ("Publish as joint
   // Work"). Undefined for solo works.
   coCreatorId?: string
   coCreatorRole?: 'writer' | 'artist'
+}
+
+export type ComicPage = {
+  id?: string
+  imageId: string
+  imageUrl: string
+  altText: string
+  transcript: string
 }
 
 export type CommunityPostType =

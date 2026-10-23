@@ -20,13 +20,30 @@ export type ReaderPageData = {
   } | null
   chapters: Omit<ReaderChapter, 'body'>[]
   currentChapter: ReaderChapter | null
+  comicPages: { id: string; number: number; imageUrl: string; altText: string; transcript: string }[]
+  comicAuthorNote: string
+  comicReadingDirection: 'vertical' | 'page' | 'rtl'
+  comicReaderBackground: 'dark' | 'light' | 'paper'
+  comicPageSpacing: 'none' | 'small' | 'large'
   currentUserId: string | null
   isSaved: boolean
   error: string | null
 }
 
 function emptyReaderPageData(error: string | null = null): ReaderPageData {
-  return { work: null, chapters: [], currentChapter: null, currentUserId: null, isSaved: false, error }
+  return {
+    work: null,
+    chapters: [],
+    currentChapter: null,
+    comicPages: [],
+    comicAuthorNote: '',
+    comicReadingDirection: 'vertical',
+    comicReaderBackground: 'dark',
+    comicPageSpacing: 'small',
+    currentUserId: null,
+    isSaved: false,
+    error,
+  }
 }
 
 function readerLoadError(error: unknown) {
@@ -34,7 +51,7 @@ function readerLoadError(error: unknown) {
     ? String(Reflect.get(error, 'code'))
     : ''
   if (['PGRST202', 'PGRST204', 'PGRST205', '42P01', '42883'].includes(code)) {
-    return 'Hindi pa naka-set up ang story reader. I-run ang 20261023000700_library_and_reader.sql sa Supabase SQL Editor.'
+    return 'Hindi pa kumpleto ang reader database. I-run ang 20261023000700_library_and_reader.sql at 20261023000900_comic_editor.sql sa Supabase SQL Editor.'
   }
   return 'Hindi ma-load ang gawa ngayon. Tingnan ang connection at subukan ulit.'
 }
@@ -48,7 +65,7 @@ export async function getReaderPageData(workId: string, requestedChapter: number
       supabase.auth.getUser(),
       supabase
         .from('creator_works')
-        .select('id, author_id, title, type, synopsis')
+        .select('id, author_id, title, type, synopsis, author_note, comic_reading_direction, comic_reader_background, comic_page_spacing')
         .eq('id', workId)
         .in('type', ['story', 'comic'])
         .neq('status', 'Draft')
@@ -58,13 +75,21 @@ export async function getReaderPageData(workId: string, requestedChapter: number
     if (workResult.error) throw workResult.error
     if (!workResult.data) return emptyReaderPageData('Hindi makita ang nailathalang gawa na ito.')
 
-    const [{ data: chapterRows, error: chapterError }, { data: author, error: authorError }] = await Promise.all([
+    const [{ data: chapterRows, error: chapterError }, { data: comicPageRows, error: comicPageError }, { data: author, error: authorError }] = await Promise.all([
       supabase
         .from('creator_work_chapters')
         .select('id, chapter_number, title')
         .eq('work_id', workId)
         .eq('is_published', true)
         .order('chapter_number', { ascending: true }),
+      workResult.data.type === 'comic'
+        ? supabase
+          .from('creator_comic_pages')
+          .select('id, page_number, image_url, alt_text, transcript')
+          .eq('work_id', workId)
+          .eq('is_published', true)
+          .order('page_number', { ascending: true })
+        : Promise.resolve({ data: [], error: null }),
       supabase
         .from('profiles')
         .select('display_name, username')
@@ -72,6 +97,7 @@ export async function getReaderPageData(workId: string, requestedChapter: number
         .maybeSingle(),
     ])
     if (chapterError) throw chapterError
+    if (comicPageError) throw comicPageError
     if (authorError) throw authorError
 
     const currentUserId = userResult.user?.id ?? null
@@ -118,6 +144,17 @@ export async function getReaderPageData(workId: string, requestedChapter: number
       },
       chapters,
       currentChapter,
+      comicPages: comicPageRows.map((page) => ({
+        id: page.id,
+        number: page.page_number,
+        imageUrl: page.image_url,
+        altText: page.alt_text,
+        transcript: page.transcript,
+      })),
+      comicAuthorNote: workResult.data.type === 'comic' ? workResult.data.author_note ?? '' : '',
+      comicReadingDirection: workResult.data.comic_reading_direction ?? 'vertical',
+      comicReaderBackground: workResult.data.comic_reader_background ?? 'dark',
+      comicPageSpacing: workResult.data.comic_page_spacing ?? 'small',
       currentUserId,
       isSaved,
       error: null,

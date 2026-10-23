@@ -2,18 +2,19 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, Trash2 } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { CreatorFrame } from '@/components/shared/creator-frame'
 import { FieldSelect } from '@/components/shared/field-select'
 import { Panel } from '@/components/shared/panel'
 import { useWorks } from '@/lib/works-store'
-import type { Work } from '@/lib/types'
+import type { Route, Work } from '@/lib/types'
 
 // One screen for editing an existing Work, story or comic — unlike the
 // New Work flow (format picker → setup → editor as separate steps), an
 // existing work already knows its type and just needs its fields open for
 // change, so this collapses setup + content into a single page.
-export function WorkEditorView({ work }: { work: Work }) {
+export function WorkEditorView({ work, go }: { work: Work; go: (route: Route) => void }) {
   const router = useRouter()
   const { updateWork, deleteWork } = useWorks()
 
@@ -22,10 +23,8 @@ export function WorkEditorView({ work }: { work: Work }) {
   const [genre, setGenre] = useState(work.genre ?? 'Select genre')
   const [language, setLanguage] = useState(work.language ?? 'English')
   const [rating, setRating] = useState(work.rating ?? 'All ages')
-  const [status, setStatus] = useState<Work['status']>(work.status)
   const [chapterTitle, setChapterTitle] = useState(work.chapterTitle ?? 'Chapter 1')
   const [chapterBody, setChapterBody] = useState(work.chapterBody ?? '')
-  const [pageCount, setPageCount] = useState(work.pageCount ?? 0)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -42,8 +41,8 @@ export function WorkEditorView({ work }: { work: Work }) {
         genre: genre === 'Select genre' ? undefined : genre,
         language,
         rating,
-        status,
-        ...(work.type === 'story' ? { chapterTitle, chapterBody } : { pageCount }),
+        status: work.status,
+        ...(work.type === 'story' ? { chapterTitle, chapterBody } : {}),
       })
       backToWorks()
     } catch (saveError) {
@@ -66,47 +65,39 @@ export function WorkEditorView({ work }: { work: Work }) {
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-        <div>
-          <button onClick={backToWorks} className="flex items-center gap-1 text-xs font-bold text-muted-foreground hover:text-foreground">
-            <ChevronLeft className="size-3.5" /> Back to works
-          </button>
-          <span className="eyebrow mt-3 block">Editing {work.type === 'story' ? 'story' : 'comic'}</span>
-          <h1 className="mt-1 font-serif text-5xl font-bold text-balance">{work.title}</h1>
-        </div>
-        <Button variant="destructive" onClick={() => setConfirmDelete(true)} className="shrink-0 rounded-lg">
-          <Trash2 data-icon="inline-start" /> Delete
-        </Button>
-      </div>
-
+    <CreatorFrame eyebrow={`Editing ${work.type === 'story' ? 'story' : work.type === 'comic' ? 'comic' : 'artwork'}`} title={work.title} go={go} backHref="/create/works">
       <Panel className="mx-auto w-full max-w-3xl">
         <div className="flex flex-col gap-6">
           <div>
-            <label className="text-sm font-bold">Title</label>
+            <label htmlFor="work-title" className="text-sm font-bold">Title</label>
             <input
+              id="work-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="mt-2 w-full rounded-lg border border-input bg-background px-3 py-3 text-sm outline-none focus:border-accent"
+              maxLength={160}
+              required
+              className="mt-2 min-h-11 w-full rounded-lg border border-input bg-background px-3 py-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
           <div>
             <div className="flex items-center justify-between">
-              <label className="text-sm font-bold">Synopsis</label>
-              <span className="text-xs text-muted-foreground">{synopsis.length}/500</span>
+              <label htmlFor="work-synopsis" className="text-sm font-bold">Synopsis</label>
+              <span id="synopsis-count" className="text-xs text-muted-foreground">{synopsis.length}/500</span>
             </div>
             <textarea
+              id="work-synopsis"
               value={synopsis}
-              onChange={(e) => setSynopsis(e.target.value.slice(0, 500))}
+              maxLength={500}
+              onChange={(e) => setSynopsis(e.target.value)}
+              aria-describedby="synopsis-count"
               placeholder="Ano ang dapat malaman ng readers bago magsimula?"
-              className="mt-2 min-h-28 w-full resize-none rounded-lg border border-input bg-background px-3 py-3 text-sm outline-none focus:border-accent"
+              className="mt-2 min-h-28 w-full resize-y rounded-lg border border-input bg-background px-3 py-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <FieldSelect label="Genre" value={genre} onChange={setGenre} options={['Select genre', 'Fantasy', 'Romance', 'Slice of life', 'Mystery']} />
             <FieldSelect label="Language" value={language} onChange={setLanguage} options={['English', 'Filipino', 'Other']} />
             <FieldSelect label="Rating" value={rating} onChange={setRating} options={['All ages', 'Teen', 'Mature']} />
-            <FieldSelect label="Status" value={status} onChange={(v) => setStatus(v as Work['status'])} options={['Draft', 'Ongoing', 'Complete']} />
           </div>
 
           {work.type === 'story' ? (
@@ -129,21 +120,16 @@ export function WorkEditorView({ work }: { work: Work }) {
             </div>
           ) : (
             <div className="border-t border-border pt-6">
-              <label className="text-sm font-bold">Page count</label>
-              <p className="mt-1 text-xs text-muted-foreground">Hindi pa puwedeng mag-upload ulit ng pages—bilang lang muna ang puwede mong baguhin.</p>
-              <input
-                type="number"
-                min={0}
-                value={pageCount}
-                onChange={(e) => setPageCount(Math.max(0, Number(e.target.value)))}
-                className="mt-2 w-32 rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:border-accent"
-              />
+              <p className="text-sm text-muted-foreground">Page uploads and publishing are not available yet. You can update the saved work details here.</p>
             </div>
           )}
 
           {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-          <div className="flex justify-end border-t border-border pt-5">
-            <Button disabled={saving} onClick={() => void save()} className="min-h-11 rounded-lg bg-accent text-accent-foreground">
+          <div className="flex flex-col-reverse justify-between gap-3 border-t border-border pt-5 sm:flex-row">
+            <Button type="button" variant="destructive" disabled={saving} onClick={() => setConfirmDelete(true)} className="min-h-11 rounded-lg">
+              <Trash2 data-icon="inline-start" /> Delete work
+            </Button>
+            <Button type="button" disabled={saving || !title.trim()} onClick={() => void save()} className="min-h-11 rounded-lg bg-accent text-accent-foreground">
               {saving ? 'Saving…' : 'Save changes'}
             </Button>
           </div>
@@ -194,6 +180,6 @@ export function WorkEditorView({ work }: { work: Work }) {
           </section>
         </div>
       )}
-    </div>
+    </CreatorFrame>
   )
 }

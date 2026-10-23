@@ -223,6 +223,18 @@ Apply [`supabase/migrations/20261023000700_library_and_reader.sql`](./supabase/m
 
 On **Settings → Upgrade account**, Reader is always included. Turn on Writer or Artist / Comics and save to add creator capabilities; enabling the first creator badge selects it as the active role. Accounts with multiple badges can choose their active Reader, Writer, or Artist / Comics role in the same settings page.
 
+Apply [`supabase/migrations/20261023000800_creator_studio_fields.sql`](./supabase/migrations/20261023000800_creator_studio_fields.sql) after the Library migration to add story ratings, content warnings, and chapter author notes. Apply it from the Supabase SQL Editor by opening the migration, copying its full contents, and running it against the project; existing creator works receive safe defaults. The Creator Studio loads and saves works through Supabase and requires the earlier creator-work, library, and profile migrations to be applied first. Creator analytics currently reports persisted work counts only; read, like, and follower analytics are not yet instrumented. Standalone artwork uploads are not available yet.
+
+Apply [`supabase/migrations/20261023000900_comic_editor.sql`](./supabase/migrations/20261023000900_comic_editor.sql) after migration `00800` to save Comic pages, transcripts, reading direction, reader background/spacing, and episode author notes with owner-only draft access. The Comic editor uses Cloudflare Images Direct Creator Upload so private API credentials stay server-side. In Cloudflare Dashboard → Images, enable Cloudflare Images and create an account-scoped API token with Images edit permission. Configure these server environment variables in local `.env.local` and in Vercel for Production, Preview, and Development:
+
+```env
+CLOUDFLARE_ACCOUNT_ID=<cloudflare-account-id>
+CLOUDFLARE_IMAGES_API_TOKEN=<account-scoped-images-edit-token>
+CLOUDFLARE_IMAGES_DELIVERY_HASH=<images-delivery-hash>
+```
+
+The dashboard URL is for account management, not an upload or image URL. Never use it as a page image URL or expose the API token in a `NEXT_PUBLIC_` variable. Uploaded page URLs are public Cloudflare Images delivery URLs; work/page metadata and drafts are still protected by Supabase RLS. Apply the Supabase migration before deploying code that reads the new Comic columns and page table.
+
 ## Auth routes and behavior
 
 - `/login`, `/signup`, `/forgot-password`, and `/reset-password` are standalone pages.

@@ -14,6 +14,7 @@ export function ReaderView({ data }: { data: ReaderPageData }) {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(data.error)
   const [progressError, setProgressError] = useState<string | null>(null)
+  const [comicIndex, setComicIndex] = useState(0)
 
   useEffect(() => {
     setIsSaved(data.isSaved)
@@ -81,6 +82,17 @@ export function ReaderView({ data }: { data: ReaderPageData }) {
     : -1
   const previousChapter = chapterIndex > 0 ? data.chapters[chapterIndex - 1] : null
   const nextChapter = chapterIndex >= 0 ? data.chapters[chapterIndex + 1] : null
+  const comicPages = data.comicReadingDirection === 'rtl' ? [...data.comicPages].reverse() : data.comicPages
+  const readerBackground = {
+    dark: 'bg-stone-950 text-stone-100',
+    light: 'bg-white text-stone-900',
+    paper: 'bg-[#f1e3cb] text-[#4b3325]',
+  }[data.comicReaderBackground]
+  const pageSpacing = {
+    none: 'gap-0',
+    small: 'gap-2',
+    large: 'gap-6',
+  }[data.comicPageSpacing]
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
@@ -114,12 +126,42 @@ export function ReaderView({ data }: { data: ReaderPageData }) {
         {progressError && <p role="status" className="mt-4 text-sm text-muted-foreground">{progressError}</p>}
 
         {data.work.type === 'comic' ? (
-          <div className="py-10 text-center">
-            <h2 className="font-serif text-2xl font-bold">Hindi pa available ang comic pages</h2>
-            <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted-foreground">
-              Naka-save na ang comic na ito sa StoryLines, pero hindi pa naka-store ang mga pahina nito para mabasa rito.
-            </p>
-          </div>
+          comicPages.length ? (
+            <section aria-label="Comic pages" className={`mt-6 overflow-hidden rounded-xl ${readerBackground}`}>
+              <div className={`mx-auto flex max-w-3xl flex-col ${pageSpacing} ${data.comicReadingDirection === 'vertical' ? '' : 'p-3 sm:p-6'}`}>
+                {(data.comicReadingDirection === 'vertical' ? comicPages : [comicPages[comicIndex] ?? comicPages[0]]).map((page) => (
+                  <figure key={page.id} className="m-0">
+                    <img src={page.imageUrl} alt={page.altText || `Comic page ${page.number}`} className="mx-auto block h-auto max-w-full" loading={page.number > 2 ? 'lazy' : 'eager'} />
+                    {page.transcript && (
+                      <figcaption className="mx-auto max-w-2xl p-4">
+                        <details>
+                          <summary className="min-h-11 cursor-pointer py-3 text-sm font-bold">Read page {page.number} transcript</summary>
+                          <p className="whitespace-pre-wrap text-sm leading-6">{page.transcript}</p>
+                        </details>
+                      </figcaption>
+                    )}
+                  </figure>
+                ))}
+              </div>
+              {data.comicReadingDirection !== 'vertical' && (
+                <nav aria-label="Comic page navigation" className="flex items-center justify-between border-t border-current/15 p-3">
+                  <button type="button" disabled={comicIndex <= 0} onClick={() => setComicIndex((index) => Math.max(0, index - 1))} className="inline-flex min-h-11 items-center gap-2 rounded-full border border-current/20 px-4 text-sm font-bold disabled:opacity-40">
+                    <ChevronLeft className="size-4" aria-hidden="true" /> Previous
+                  </button>
+                  <span className="text-xs">Page {comicIndex + 1} of {comicPages.length}</span>
+                  <button type="button" disabled={comicIndex >= comicPages.length - 1} onClick={() => setComicIndex((index) => Math.min(comicPages.length - 1, index + 1))} className="inline-flex min-h-11 items-center gap-2 rounded-full bg-accent px-4 text-sm font-bold text-accent-foreground disabled:opacity-40">
+                    Next <ChevronRight className="size-4" aria-hidden="true" />
+                  </button>
+                </nav>
+              )}
+              {data.comicAuthorNote && <aside className="border-t border-current/15 p-5"><h2 className="font-bold">Author&apos;s note</h2><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{data.comicAuthorNote}</p></aside>}
+            </section>
+          ) : (
+            <div className="py-10 text-center">
+              <h2 className="font-serif text-2xl font-bold">Wala pang nailathalang comic pages</h2>
+              <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted-foreground">Subukan ulit mamaya habang inaayos ng artist ang episode.</p>
+            </div>
+          )
         ) : data.currentChapter ? (
           <article className="mx-auto max-w-2xl py-8">
             <p className="text-center text-xs font-bold uppercase tracking-widest text-accent">

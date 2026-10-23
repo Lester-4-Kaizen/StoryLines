@@ -10,6 +10,7 @@ import type { Badge, Route } from '@/lib/types'
 type AppState = {
   badges: Badge[]
   role: Badge
+  currentUserId: string | null
   themeMode: 'light' | 'dark'
   creator: boolean
   isLoggedIn: boolean
@@ -232,6 +233,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       value={{
         badges,
         role,
+        currentUserId: user?.id ?? null,
         themeMode,
         creator,
         isLoggedIn: user !== null,
