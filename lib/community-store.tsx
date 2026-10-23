@@ -23,6 +23,7 @@ type CommunityState = {
     lookingFor: string[]
   }) => Promise<void>
   toggleLike: (id: string) => void
+  updatePost: (id: string, content: string) => Promise<void>
   deletePost: (id: string) => Promise<void>
   toggleSaved: (id: string) => Promise<void>
   loadComments: (postId: string) => Promise<CommunityComment[]>
@@ -223,6 +224,37 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
     )
   }
 
+  const updatePost: CommunityState['updatePost'] = async (postId, content) => {
+    const trimmedContent = content.trim()
+    if (!trimmedContent || trimmedContent.length > 500) {
+      throw new Error('A post must be between 1 and 500 characters.')
+    }
+
+    const post = sharedPosts.find((item) => item.id === postId)
+    if (!post) throw new Error('Post not found.')
+
+    const supabase = getSupabaseClient()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError) throw userError
+    if (!user || user.id !== post.authorId) {
+      throw new Error('You can only edit your own community posts.')
+    }
+
+    const { data, error: updateError } = await supabase
+      .from('community_posts')
+      .update({ content: trimmedContent })
+      .eq('id', postId)
+      .eq('author_id', user.id)
+      .select('id')
+      .single()
+    if (updateError) throw updateError
+    if (data.id !== postId) throw new Error('Could not verify the updated post.')
+
+    setSharedPosts((current) => current.map((item) => (
+      item.id === postId ? { ...item, content: trimmedContent } : item
+    )))
+  }
+
   const deletePost: CommunityState['deletePost'] = async (postId) => {
     const localPost = devicePosts.find((post) => post.id === postId)
     if (localPost) {
@@ -371,6 +403,7 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
         refresh,
         addPost,
         toggleLike,
+        updatePost,
         deletePost,
         toggleSaved,
         loadComments,

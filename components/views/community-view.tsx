@@ -141,7 +141,9 @@ function FeedPost({
   onAddComment,
   onProfileClick,
   canDelete,
+  canEdit,
   onDelete,
+  onEdit,
 }: {
   post: Post
   onLike: (id: string) => void
@@ -153,7 +155,9 @@ function FeedPost({
   onAddComment: (id: string, content: string) => Promise<CommunityComment>
   onProfileClick: (id: string) => void
   canDelete: boolean
+  canEdit: boolean
   onDelete: (id: string) => Promise<void>
+  onEdit: (id: string, content: string) => Promise<void>
 }) {
   const [expanded, setExpanded] = useState(false)
   const [shareMessage, setShareMessage] = useState<string | null>(null)
@@ -167,6 +171,10 @@ function FeedPost({
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editDraft, setEditDraft] = useState(post.content)
+  const [editError, setEditError] = useState<string | null>(null)
+  const [savingEdit, setSavingEdit] = useState(false)
   const postAuthorId = post.authorId
   const images = post.imageUrls?.length ? post.imageUrls : post.imageUrl ? [post.imageUrl] : []
   const tags = post.tags ?? []
@@ -248,6 +256,26 @@ function FeedPost({
     }
   }
 
+  const saveEdit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const content = editDraft.trim()
+    if (!content) {
+      setEditError('Maglagay muna ng mensahe bago i-save.')
+      return
+    }
+
+    setSavingEdit(true)
+    setEditError(null)
+    try {
+      await onEdit(post.id, content)
+      setEditing(false)
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : 'Hindi ma-edit ang post. Subukan ulit.')
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
   return (
     <article className="community-card">
       <div className="flex items-start gap-3">
@@ -268,46 +296,105 @@ function FeedPost({
             {post.authorUsername && <span>@{post.authorUsername}</span>}
             {post.authorUsername && <span aria-hidden="true">·</span>}
             <time dateTime={new Date(post.createdAt).toISOString()}>{timeAgo(post.createdAt)}</time>
-            <span aria-hidden="true">·</span>
-            <span className="community-type">{postTypeLabel(post.type)}</span>
-          </div>
-        </div>
-        <details className="group relative">
-          <summary
-            className="community-icon-button list-none"
-            aria-label="Post actions"
-            title="Post actions"
-          >
-            <MoreHorizontal className="size-4" />
-          </summary>
-          <div className="absolute right-0 z-20 mt-1 w-48 rounded-xl border border-border bg-card p-1 shadow-lg">
-            {canDelete ? (
-              <button
-                type="button"
-                role="menuitem"
-                className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-destructive hover:bg-destructive/10"
-                onClick={(event) => {
-                  event.currentTarget.closest('details')?.removeAttribute('open')
-                  setConfirmDelete(true)
-                }}
-              >
-                <Trash2 className="size-4" /> Delete post
-              </button>
-            ) : (
-              <span className="block px-3 py-2 text-xs text-muted-foreground">More actions coming soon</span>
+            {post.type !== 'random' && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="community-type">{postTypeLabel(post.type)}</span>
+              </>
             )}
           </div>
-        </details>
-      </div>
-
-      <div className="mt-4">
-        <p className={`whitespace-pre-wrap break-words text-sm leading-6 ${!expanded ? 'community-post-copy' : ''}`}>{post.content}</p>
-        {post.content.length > 260 && (
-          <button type="button" className="mt-1 text-xs font-bold text-accent hover:underline" onClick={() => setExpanded((value) => !value)}>
-            {expanded ? 'See less' : 'See more'}
-          </button>
+        </div>
+        {(canEdit || canDelete) && !editing && (
+          <details className="group relative">
+            <summary
+              className="community-icon-button list-none"
+              aria-label="Post actions"
+              title="Post actions"
+            >
+              <MoreHorizontal className="size-4" />
+            </summary>
+            <div role="menu" aria-label="Post actions" className="absolute right-0 z-20 mt-1 w-48 rounded-xl border border-border bg-card p-1 shadow-lg">
+              {canEdit && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold hover:bg-secondary"
+                  onClick={(event) => {
+                    event.currentTarget.closest('details')?.removeAttribute('open')
+                    setEditDraft(post.content)
+                    setEditError(null)
+                    setEditing(true)
+                  }}
+                >
+                  <PenLine className="size-4" /> Edit post
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-destructive hover:bg-destructive/10"
+                  onClick={(event) => {
+                    event.currentTarget.closest('details')?.removeAttribute('open')
+                    setConfirmDelete(true)
+                  }}
+                >
+                  <Trash2 className="size-4" /> Delete post
+                </button>
+              )}
+            </div>
+          </details>
         )}
       </div>
+
+      {editing ? (
+        <form className="mt-4" onSubmit={(event) => void saveEdit(event)}>
+          <label className="sr-only" htmlFor={`edit-post-${post.id}`}>Edit post</label>
+          <textarea
+            id={`edit-post-${post.id}`}
+            value={editDraft}
+            onChange={(event) => setEditDraft(event.target.value)}
+            maxLength={MAX_POST_LENGTH}
+            rows={5}
+            autoFocus
+            disabled={savingEdit}
+            className="community-composer-textarea border border-input"
+          />
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs text-muted-foreground">{editDraft.length}/{MAX_POST_LENGTH}</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border px-3 text-sm font-semibold hover:bg-secondary"
+                onClick={() => {
+                  setEditing(false)
+                  setEditError(null)
+                }}
+                disabled={savingEdit}
+              >
+                <X className="size-4" /> Cancel
+              </button>
+              <button
+                type="submit"
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-accent px-3 text-sm font-bold text-accent-foreground hover:brightness-95 disabled:opacity-50"
+                disabled={savingEdit || !editDraft.trim()}
+              >
+                <Check className="size-4" /> {savingEdit ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          </div>
+          {editError && <p role="alert" className="mt-2 text-xs text-destructive">{editError}</p>}
+        </form>
+      ) : (
+        <div className="mt-4">
+          <p className={`whitespace-pre-wrap break-words text-sm leading-6 ${!expanded ? 'community-post-copy' : ''}`}>{post.content}</p>
+          {post.content.length > 260 && (
+            <button type="button" className="mt-1 text-xs font-bold text-accent hover:underline" onClick={() => setExpanded((value) => !value)}>
+              {expanded ? 'See less' : 'See more'}
+            </button>
+          )}
+        </div>
+      )}
 
       {post.type === 'collaborator' && post.lookingFor?.length ? (
         <div className="mt-3 rounded-xl border border-border bg-secondary/55 p-3">
@@ -514,6 +601,7 @@ export function CommunityView({
     addPost,
     toggleLike,
     deletePost,
+    updatePost,
     toggleSaved,
     loadComments,
     addComment,
@@ -927,6 +1015,7 @@ export function CommunityView({
                     onLike={toggleLike}
                     isSaved={savedPostIds.includes(post.id)}
                     canDelete={!post.authorId || (currentUserId !== null && post.authorId === currentUserId)}
+                    canEdit={currentUserId !== null && post.authorId === currentUserId}
                     isLoggedIn={isLoggedIn}
                     onUnlock={onUnlock}
                     onSave={toggleSaved}
@@ -934,6 +1023,7 @@ export function CommunityView({
                     onAddComment={addComment}
                     onProfileClick={openProfile}
                     onDelete={deletePost}
+                    onEdit={updatePost}
                   />
                 </div>
               ))}
