@@ -68,6 +68,17 @@ export type Post = {
   createdAt: number
   likes: number
   likedByMe: boolean
+  commentsCount?: number
+}
+
+export type CommunityComment = {
+  id: string
+  postId: string
+  authorId: string
+  authorName: string
+  authorUsername?: string
+  content: string
+  createdAt: number
 }
 
 export type CommunityAuthor = {

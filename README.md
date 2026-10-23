@@ -205,6 +205,8 @@ The migration is additive and safe to run again. After applying it, deploy the a
 
 The follow-up [`supabase/migrations/20261023000100_add_random_community_post_type.sql`](./supabase/migrations/20261023000100_add_random_community_post_type.sql) adds the **Random story / post** type to the composer, with matching suggested tags.
 
+Apply [`supabase/migrations/20261023000200_community_comments_and_saved_posts.sql`](./supabase/migrations/20261023000200_community_comments_and_saved_posts.sql) to enable public comment reading, signed-in comments, and private saved posts. Saved posts are available from the community **Saved** shortcut. Author names on posts and comments, as well as entries in **Authors**, open that author's posts in the feed.
+
 ## Auth routes and behavior
 
 - `/login`, `/signup`, `/forgot-password`, and `/reset-password` are standalone pages.

@@ -23,7 +23,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Panel } from '@/components/shared/panel'
 import { useCommunity } from '@/lib/community-store'
-import type { Badge, CommunityPostType, Post } from '@/lib/types'
+import type { Badge, CommunityComment, CommunityPostType, Post } from '@/lib/types'
 
 const MAX_POST_LENGTH = 500
 const MAX_IMAGES = 4
@@ -49,7 +49,7 @@ const SUGGESTED_TAGS: Record<CommunityPostType, string[]> = {
   random: ['random-thought', 'mini-story', 'writing-prompt', 'just-for-fun'],
 }
 
-type FeedTab = 'for-you' | 'following' | 'latest' | 'collaborators' | 'authors'
+type FeedTab = 'for-you' | 'following' | 'latest' | 'collaborators' | 'authors' | 'saved'
 type PreviewImage = { name: string; dataUrl: string }
 
 function timeAgo(ts: number) {
@@ -109,12 +109,34 @@ function Avatar({ role, large = false }: { role?: 'writer' | 'artist'; large?: b
 function FeedPost({
   post,
   onLike,
+  isSaved,
+  isLoggedIn,
+  onUnlock,
+  onSave,
+  onLoadComments,
+  onAddComment,
+  onAuthorClick,
 }: {
   post: Post
   onLike: (id: string) => void
+  isSaved: boolean
+  isLoggedIn: boolean
+  onUnlock: () => void
+  onSave: (id: string) => Promise<void>
+  onLoadComments: (id: string) => Promise<CommunityComment[]>
+  onAddComment: (id: string, content: string) => Promise<CommunityComment>
+  onAuthorClick: (id: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const [shareMessage, setShareMessage] = useState<string | null>(null)
+  const [commentsOpen, setCommentsOpen] = useState(false)
+  const [comments, setComments] = useState<CommunityComment[]>([])
+  const [commentsLoading, setCommentsLoading] = useState(false)
+  const [commentDraft, setCommentDraft] = useState('')
+  const [commentError, setCommentError] = useState<string | null>(null)
+  const [commentSubmitting, setCommentSubmitting] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const postAuthorId = post.authorId
   const images = post.imageUrls?.length ? post.imageUrls : post.imageUrl ? [post.imageUrl] : []
   const tags = post.tags ?? []
 
@@ -127,13 +149,75 @@ function FeedPost({
     }
   }
 
+  const toggleComments = async () => {
+    if (commentsOpen) {
+      setCommentsOpen(false)
+      return
+    }
+    if (!post.authorId) {
+      setCommentError('Comments are only available on shared posts.')
+      return
+    }
+
+    setCommentsOpen(true)
+    setCommentsLoading(true)
+    setCommentError(null)
+    try {
+      setComments(await onLoadComments(post.id))
+    } catch (loadError) {
+      setCommentError(loadError instanceof Error ? loadError.message : 'Hindi ma-load ang comments. Subukan ulit.')
+    } finally {
+      setCommentsLoading(false)
+    }
+  }
+
+  const submitComment = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const content = commentDraft.trim()
+    if (!content) {
+      setCommentError('Maglagay muna ng comment.')
+      return
+    }
+
+    setCommentSubmitting(true)
+    setCommentError(null)
+    try {
+      const comment = await onAddComment(post.id, content)
+      setComments((current) => [...current, comment])
+      setCommentDraft('')
+    } catch (submitError) {
+      setCommentError(submitError instanceof Error ? submitError.message : 'Hindi naipadala ang comment. Subukan ulit.')
+    } finally {
+      setCommentSubmitting(false)
+    }
+  }
+
+  const savePost = async () => {
+    if (!isLoggedIn) {
+      onUnlock()
+      return
+    }
+    setSaveError(null)
+    try {
+      await onSave(post.id)
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Hindi ma-save ang post. Subukan ulit.')
+    }
+  }
+
   return (
     <article className="community-card">
       <div className="flex items-start gap-3">
         <Avatar role={post.authorRole} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-sm font-bold">{post.authorName || 'Ikaw'}</span>
+            {postAuthorId ? (
+              <button type="button" className="text-sm font-bold hover:text-accent hover:underline" onClick={() => onAuthorClick(postAuthorId)}>
+                {post.authorName || 'StoryLines creator'}
+              </button>
+            ) : (
+              <span className="text-sm font-bold">{post.authorName || 'Ikaw'}</span>
+            )}
             <span className="community-role">{roleLabel(post.authorRole)}</span>
             {!post.authorId && <span className="community-role">On this device</span>}
           </div>
@@ -191,13 +275,20 @@ function FeedPost({
           <Heart className={`size-3.5 ${post.likedByMe ? 'fill-accent text-accent' : ''}`} />
           {post.likes} {post.likes === 1 ? 'reaction' : 'reactions'}
         </span>
-        <span>{shareMessage ?? 'Comments arrive in the next phase'}</span>
+        <span>{shareMessage ?? (post.commentsCount === undefined ? 'Comments' : `${post.commentsCount} comments`)}</span>
       </div>
       <div className="grid grid-cols-4 gap-1 pt-2">
         <button type="button" className={`community-action ${post.likedByMe ? 'community-action-active' : ''}`} aria-pressed={post.likedByMe} onClick={() => onLike(post.id)}>
           <Heart className={`size-4 ${post.likedByMe ? 'fill-current' : ''}`} /> Like
         </button>
-        <button type="button" className="community-action" disabled title="Comments arrive in the next phase">
+        <button
+          type="button"
+          className={`community-action ${commentsOpen ? 'community-action-active' : ''}`}
+          aria-expanded={commentsOpen}
+          onClick={() => void toggleComments()}
+          disabled={!post.authorId}
+          title={!post.authorId ? 'Comments are only available on shared posts' : undefined}
+        >
           <MessageCircle className="size-4" /> Comment
         </button>
         <button
@@ -207,10 +298,73 @@ function FeedPost({
         >
           <Share2 className="size-4" /> Share
         </button>
-        <button type="button" className="community-action" disabled title="Saving arrives in a later phase">
-          <Bookmark className="size-4" /> Save
+        <button
+          type="button"
+          className={`community-action ${isSaved ? 'community-action-active' : ''}`}
+          aria-pressed={isSaved}
+          onClick={() => void savePost()}
+          disabled={!post.authorId}
+          title={!post.authorId ? 'Only shared posts can be saved' : undefined}
+        >
+          <Bookmark className={`size-4 ${isSaved ? 'fill-current' : ''}`} /> {isSaved ? 'Saved' : 'Save'}
         </button>
       </div>
+      {saveError && <p role="alert" className="mt-2 text-xs text-destructive">{saveError}</p>}
+      {commentsOpen && (
+        <section className="mt-3 border-t border-border pt-3" aria-label="Post comments">
+          {commentsLoading ? (
+            <p className="py-3 text-sm text-muted-foreground">Loading comments…</p>
+          ) : comments.length ? (
+            <div className="flex flex-col gap-3">
+              {comments.map((comment) => (
+                <article key={comment.id} className="rounded-xl bg-secondary/55 px-3 py-2.5">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                    <button type="button" className="font-bold hover:text-accent hover:underline" onClick={() => onAuthorClick(comment.authorId)}>
+                      {comment.authorName}{comment.authorUsername ? ` · @${comment.authorUsername}` : ''}
+                    </button>
+                    <time className="text-muted-foreground" dateTime={new Date(comment.createdAt).toISOString()}>
+                      {timeAgo(comment.createdAt)}
+                    </time>
+                  </div>
+                  <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-5">{comment.content}</p>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="py-2 text-sm text-muted-foreground">Wala pang comments. Ikaw ang mauna!</p>
+          )}
+          {isLoggedIn ? (
+            <form className="mt-3 flex flex-col gap-2" onSubmit={(event) => void submitComment(event)}>
+              <label className="sr-only" htmlFor={`comment-${post.id}`}>Write a comment</label>
+              <textarea
+                id={`comment-${post.id}`}
+                value={commentDraft}
+                onChange={(event) => setCommentDraft(event.target.value)}
+                maxLength={500}
+                rows={2}
+                placeholder="Write a comment…"
+                className="w-full resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                disabled={commentSubmitting}
+              />
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs text-muted-foreground">{commentDraft.length}/500</span>
+                <button
+                  type="submit"
+                  className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-accent px-3 text-sm font-bold text-accent-foreground hover:brightness-95 disabled:opacity-50"
+                  disabled={commentSubmitting || !commentDraft.trim()}
+                >
+                  <Send className="size-4" /> {commentSubmitting ? 'Sending…' : 'Comment'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <button type="button" className="mt-3 text-sm font-bold text-accent hover:underline" onClick={onUnlock}>
+              Log in to comment
+            </button>
+          )}
+          {commentError && <p role="alert" className="mt-2 text-xs text-destructive">{commentError}</p>}
+        </section>
+      )}
     </article>
   )
 }
@@ -226,7 +380,19 @@ export function CommunityView({
   role: Badge
   onUnlock: () => void
 }) {
-  const { posts, authors, hydrated, error, refresh, addPost, toggleLike } = useCommunity()
+  const {
+    posts,
+    authors,
+    savedPostIds,
+    hydrated,
+    error,
+    refresh,
+    addPost,
+    toggleLike,
+    toggleSaved,
+    loadComments,
+    addComment,
+  } = useCommunity()
   const [composerExpanded, setComposerExpanded] = useState(false)
   const [draft, setDraft] = useState('')
   const [postType, setPostType] = useState<CommunityPostType>('update')
@@ -248,6 +414,7 @@ export function CommunityView({
   const visiblePosts = posts
     .filter((post) => feedTab !== 'collaborators' || post.type === 'collaborator')
     .filter((post) => feedTab !== 'following')
+    .filter((post) => feedTab !== 'saved' || savedPostIds.includes(post.id))
     .filter((post) => selectedAuthorId === null || post.authorId === selectedAuthorId)
     .slice()
     .sort((a, b) => b.createdAt - a.createdAt)
@@ -274,6 +441,11 @@ export function CommunityView({
     }
     setComposerExpanded(true)
     requestAnimationFrame(() => textareaRef.current?.focus())
+  }
+
+  const showAuthorPosts = (authorId: string) => {
+    setSelectedAuthorId(authorId)
+    setFeedTab('for-you')
   }
 
   const addTag = (value = tagInput) => {
@@ -382,7 +554,20 @@ export function CommunityView({
             <button className={`community-shortcut ${feedTab === 'for-you' ? 'community-shortcut-active' : ''}`} type="button" onClick={() => setFeedTab('for-you')}><Compass /> Feed</button>
             <button className={`community-shortcut ${feedTab === 'authors' ? 'community-shortcut-active' : ''}`} type="button" onClick={() => setFeedTab('authors')}><Search /> Authors</button>
             <button className="community-shortcut" type="button" disabled title="Following feed arrives in a later phase"><UsersRound /> Following</button>
-            <button className="community-shortcut" type="button" disabled title="Saved posts arrive in a later phase"><Bookmark /> Saved</button>
+            <button
+              className={`community-shortcut ${feedTab === 'saved' ? 'community-shortcut-active' : ''}`}
+              type="button"
+              onClick={() => {
+                if (!isLoggedIn) {
+                  onUnlock()
+                  return
+                }
+                setSelectedAuthorId(null)
+                setFeedTab('saved')
+              }}
+            >
+              <Bookmark /> Saved
+            </button>
             <button className="community-shortcut" type="button" disabled title="Your posts view arrives in a later phase"><PenLine /> My Posts</button>
             <button className={`community-shortcut ${feedTab === 'collaborators' ? 'community-shortcut-active' : ''}`} type="button" onClick={() => setFeedTab('collaborators')}><Handshake /> Collaboration Board</button>
           </Panel>
@@ -556,7 +741,7 @@ export function CommunityView({
                     <li key={author.id}>
                       <button
                         type="button"
-                        onClick={() => { setSelectedAuthorId(author.id); setFeedTab('for-you') }}
+                        onClick={() => showAuthorPosts(author.id)}
                         className="flex min-h-16 w-full items-center gap-3 py-3 text-left hover:text-accent"
                       >
                         <Avatar role={author.roles.includes('artist') ? 'artist' : 'writer'} />
@@ -594,17 +779,33 @@ export function CommunityView({
             {visiblePosts.length === 0 ? (
             <div className="community-empty">
               <span className="empty-icon"><MessageCircle className="size-5" /></span>
-              <h2 className="mt-4 font-serif text-xl font-bold">{feedTab === 'collaborators' ? 'Wala pang naghahanap ng ka-collab' : 'Wala pang kuwentuhan dito'}</h2>
+              <h2 className="mt-4 font-serif text-xl font-bold">{feedTab === 'collaborators' ? 'Wala pang naghahanap ng ka-collab' : feedTab === 'saved' ? 'Wala ka pang naka-save na post' : 'Wala pang kuwentuhan dito'}</h2>
               <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
                 {feedTab === 'collaborators'
                   ? 'Baka ikaw ang unang mag-post ng collaboration request at makahanap ng kaagapay.'
-                  : 'Walang pang post, ikaw na ang mauna! Ibahagi ang ginagawa mo o ang kuwentong tumatak sa iyo.'}
+                  : feedTab === 'saved'
+                    ? 'I-save ang mga post na gusto mong balikan para makita rito.'
+                    : 'Walang pang post, ikaw na ang mauna! Ibahagi ang ginagawa mo o ang kuwentong tumatak sa iyo.'}
               </p>
               {canPost && <Button type="button" onClick={focusComposer} className="mt-4 min-h-11 rounded-xl bg-accent text-accent-foreground">Start a post</Button>}
             </div>
           ) : (
             <div className="flex flex-col gap-3">
-              {(showAll ? visiblePosts : visiblePosts.slice(0, 10)).map((post) => <div id={`post-${post.id}`} key={post.id}><FeedPost post={post} onLike={toggleLike} /></div>)}
+              {(showAll ? visiblePosts : visiblePosts.slice(0, 10)).map((post) => (
+                <div id={`post-${post.id}`} key={post.id}>
+                  <FeedPost
+                    post={post}
+                    onLike={toggleLike}
+                    isSaved={savedPostIds.includes(post.id)}
+                    isLoggedIn={isLoggedIn}
+                    onUnlock={onUnlock}
+                    onSave={toggleSaved}
+                    onLoadComments={loadComments}
+                    onAddComment={addComment}
+                    onAuthorClick={showAuthorPosts}
+                  />
+                </div>
+              ))}
               {visiblePosts.length > 10 && <Button type="button" variant="outline" onClick={() => setShowAll((value) => !value)} className="min-h-11 w-full rounded-xl">{showAll ? 'Show fewer posts' : 'Load more posts'}</Button>}
             </div>
           )}
