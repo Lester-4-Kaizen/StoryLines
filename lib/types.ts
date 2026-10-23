@@ -6,6 +6,8 @@ export type Route =
   | '/browse'
   | '/ranking'
   | '/library'
+  | '/messages'
+  | '/updates'
   | '/collaborate'
   | '/profile'
   | '/settings'
@@ -73,6 +75,7 @@ export type Post = {
   authorId?: string
   authorName?: string
   authorUsername?: string
+  authorAvatarUrl?: string | null
   authorRole: 'writer' | 'artist'
   type?: CommunityPostType
   content: string
@@ -92,6 +95,11 @@ export type CommunityComment = {
   authorId: string
   authorName: string
   authorUsername?: string
+  authorAvatarUrl?: string | null
+  parentCommentId?: string | null
+  likes?: number
+  dislikes?: number
+  myReaction?: 'like' | 'dislike' | null
   content: string
   createdAt: number
 }
@@ -100,6 +108,7 @@ export type CommunityAuthor = {
   id: string
   displayName: string
   username: string
+  avatarUrl?: string | null
   roles: Badge[]
 }
 

@@ -1,10 +1,10 @@
 'use client'
 
-import Image from 'next/image'
 import Link from 'next/link'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { UserRound, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { getSupabaseClient } from '@/lib/supabase'
+import { ProfileAvatar } from '@/components/shared/profile-avatar'
 
 type Direction = 'followers' | 'following'
 type Connection = {
@@ -229,11 +229,7 @@ export function ProfileConnectionsDialog({
                     onClick={onClose}
                     className="flex min-h-16 items-center gap-3 rounded-lg px-2 py-2 hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
                   >
-                    <span className="relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-accent">
-                      {connection.avatarUrl
-                        ? <Image src={connection.avatarUrl} alt="" fill sizes="40px" className="object-cover" />
-                        : <UserRound className="size-5" aria-hidden="true" />}
-                    </span>
+                    <ProfileAvatar src={connection.avatarUrl} name={connection.displayName} className="size-10" />
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-semibold">{connection.displayName}</span>
                       <span className="block truncate text-xs text-muted-foreground">@{connection.username}</span>

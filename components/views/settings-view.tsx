@@ -38,6 +38,7 @@ export function SettingsView({
   themeMode,
   setThemeMode,
   isLoggedIn,
+  refreshSession,
 }: {
   badges: Badge[]
   activeRole: Badge
@@ -46,6 +47,7 @@ export function SettingsView({
   themeMode: 'light' | 'dark'
   setThemeMode: (mode: 'light' | 'dark') => void
   isLoggedIn: boolean
+  refreshSession: () => Promise<void>
 }) {
   const router = useRouter()
   const [draftBadges, setDraftBadges] = useState(badges)
@@ -54,6 +56,11 @@ export function SettingsView({
   const [saved, setSaved] = useState(false)
   const [roleSaving, setRoleSaving] = useState(false)
   const [roleError, setRoleError] = useState<string | null>(null)
+  const [resetOpen, setResetOpen] = useState(false)
+  const [resetConfirmation, setResetConfirmation] = useState('')
+  const [resetPending, setResetPending] = useState(false)
+  const [resetError, setResetError] = useState<string | null>(null)
+  const [resetNotice, setResetNotice] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteConfirmation, setDeleteConfirmation] = useState('')
   const [deletePending, setDeletePending] = useState(false)
@@ -97,6 +104,81 @@ export function SettingsView({
       setRoleError(error instanceof Error ? error.message : 'Hindi napalitan ang active role. Subukan ulit.')
     } finally {
       setRoleSaving(false)
+    }
+  }
+
+  const resetAccount = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!isLoggedIn || resetConfirmation !== 'RESET' || resetPending) return
+    setResetPending(true)
+    setResetError(null)
+    setResetNotice(null)
+
+    try {
+      const supabase = getSupabaseClient()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError) throw userError
+      if (!user) throw new Error('Mag-log in ulit bago i-reset ang account.')
+
+      const { data, error } = await supabase.functions.invoke('delete-account', {
+        body: { action: 'reset', confirmation: resetConfirmation },
+      })
+      if (error) {
+        let message = error.message
+        if (error.context instanceof Response) {
+          try {
+            const payload: unknown = await error.context.clone().json()
+            if (
+              typeof payload === 'object'
+              && payload !== null
+              && 'error' in payload
+              && typeof payload.error === 'string'
+            ) {
+              message = payload.error
+            }
+          } catch (parseError) {
+            console.error('Could not read the account reset error response', parseError)
+          }
+        }
+        throw new Error(message)
+      }
+
+      let notice = ''
+      try {
+        clearLocalAccountData(user.id)
+      } catch (cleanupError) {
+        console.error('Account was reset, but this browser could not clear all local account drafts', cleanupError)
+        notice = 'Na-reset ang account, pero hindi nalinis ang ilang lokal na draft sa browser na ito.'
+      }
+      if (
+        typeof data === 'object'
+        && data !== null
+        && 'warning' in data
+        && typeof data.warning === 'string'
+      ) {
+        notice = notice ? `${notice} ${data.warning}` : data.warning
+      }
+
+      setResetOpen(false)
+      setResetConfirmation('')
+      try {
+        const { error: tokenError } = await supabase.auth.refreshSession()
+        if (tokenError) throw tokenError
+        await refreshSession()
+      } catch (refreshError) {
+        console.error('Account was reset, but the session role could not be refreshed', refreshError)
+        notice = notice
+          ? `${notice} Mag-log out at mag-log in ulit para ma-update ang Reader role.`
+          : 'Na-reset ang account, pero hindi na-refresh ang Reader role. Mag-log out at mag-log in ulit.'
+      }
+      setResetNotice(notice || 'Na-reset na ang account mo bilang Reader. Nananatili ang login mo.')
+      router.refresh()
+    } catch (error) {
+      setResetError(error instanceof Error
+        ? error.message
+        : 'Hindi natapos ang account reset. Subukan ulit.')
+    } finally {
+      setResetPending(false)
     }
   }
 
@@ -267,6 +349,77 @@ export function SettingsView({
                 {themeMode === 'dark' && <Check className="size-4 text-accent" aria-hidden="true" />}
               </button>
             </div>
+          </Panel>
+
+          <Panel className="border-border p-5 sm:p-7 lg:p-8">
+            <span className="eyebrow">Keep your login</span>
+            <h2 className="mt-2 font-serif text-2xl font-bold">Reset account data</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Buburahin ang stories, comics, chapters, posts, comments, likes, saves, follows, messages, reading history, profile photo, at iba pang account data mo. Babalik sa Reader ang account, pero mananatili ang email, username, display name, at login mo. Hindi ito password reset.
+            </p>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Hindi mababawi ang data pagkatapos ng reset. Kung gusto mo lang palitan ang password, <Link href="/forgot-password" className="font-semibold text-accent underline underline-offset-2">mag-reset ng password</Link> sa halip.
+            </p>
+            {resetNotice && <p role="status" className="mt-3 text-sm text-muted-foreground">{resetNotice}</p>}
+            {!isLoggedIn ? (
+              <Link
+                href="/login?next=%2Fsettings"
+                className="mt-4 inline-flex min-h-11 items-center rounded-full border border-border px-5 text-sm font-bold hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+              >
+                Mag-log in para magpatuloy
+              </Link>
+            ) : !resetOpen ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setResetOpen(true)
+                  setResetError(null)
+                  setResetNotice(null)
+                }}
+                className="mt-4 min-h-11 rounded-full border border-border px-5 text-sm font-bold hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              >
+                Reset account data
+              </button>
+            ) : (
+              <form className="mt-4 grid gap-3" onSubmit={(event) => void resetAccount(event)}>
+                <label htmlFor="reset-account-confirmation" className="text-sm font-semibold">
+                  Type <span className="font-mono">RESET</span> to confirm. Your login will remain active.
+                </label>
+                <input
+                  id="reset-account-confirmation"
+                  type="text"
+                  autoComplete="off"
+                  value={resetConfirmation}
+                  onChange={(event) => setResetConfirmation(event.target.value)}
+                  disabled={resetPending}
+                  className="min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                  aria-describedby={resetError ? 'reset-account-error' : undefined}
+                  required
+                />
+                {resetError && <p id="reset-account-error" role="alert" className="text-sm text-destructive">{resetError}</p>}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={resetPending}
+                    onClick={() => {
+                      setResetOpen(false)
+                      setResetConfirmation('')
+                      setResetError(null)
+                    }}
+                    className="min-h-11 rounded-full border border-border px-5 text-sm font-semibold hover:bg-muted disabled:opacity-60"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={resetPending || resetConfirmation !== 'RESET'}
+                    className="min-h-11 rounded-full bg-accent px-5 text-sm font-bold text-accent-foreground hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {resetPending ? 'Resetting account…' : 'Reset all account data'}
+                  </button>
+                </div>
+              </form>
+            )}
           </Panel>
 
           <Panel className="border-destructive/40 p-5 sm:p-7 lg:p-8">

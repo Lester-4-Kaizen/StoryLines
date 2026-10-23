@@ -1,7 +1,8 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import {
   Bookmark,
   Brush,
@@ -24,7 +25,12 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Panel } from '@/components/shared/panel'
+import { CommunityCommentThread } from '@/components/shared/community-comment-thread'
+import { PostDetailDialog } from '@/components/shared/post-detail-dialog'
+import { ProfileAvatar } from '@/components/shared/profile-avatar'
+import { ShareLinkDialog } from '@/components/shared/share-link-dialog'
 import { useCommunity } from '@/lib/community-store'
+import { getSupabaseClient } from '@/lib/supabase'
 import type { Badge, CommunityComment, CommunityPostType, Post } from '@/lib/types'
 
 const MAX_POST_LENGTH = 500
@@ -104,29 +110,32 @@ function Avatar({
   large = false,
   onClick,
   label,
+  src,
+  name = 'StoryLines member',
 }: {
   role?: 'writer' | 'artist'
   large?: boolean
   onClick?: () => void
   label?: string
+  src?: string | null
+  name?: string
 }) {
   const Icon = role === 'artist' ? Brush : role === 'writer' ? PenLine : UsersRound
+  const avatar = <ProfileAvatar src={src} name={name} className={`community-avatar${large ? ' community-avatar-large' : ''}`} imageSizes={large ? '64px' : '40px'} />
   if (onClick) {
     return (
       <button
         type="button"
-        className={`community-avatar${large ? ' community-avatar-large' : ''} community-avatar-link`}
+        className="community-avatar-link rounded-full focus-visible:outline-2 focus-visible:outline-ring"
         onClick={onClick}
         aria-label={label ?? 'Open profile'}
       >
-        <Icon className={large ? 'size-5' : 'size-4'} />
+        {src ? avatar : <span className={`community-avatar${large ? ' community-avatar-large' : ''}`}><Icon className={large ? 'size-5' : 'size-4'} /></span>}
       </button>
     )
   }
   return (
-    <span className={`community-avatar${large ? ' community-avatar-large' : ''}`} aria-hidden="true">
-      <Icon className={large ? 'size-5' : 'size-4'} />
-    </span>
+    src ? avatar : <span className={`community-avatar${large ? ' community-avatar-large' : ''}`} aria-hidden="true"><Icon className={large ? 'size-5' : 'size-4'} /></span>
   )
 }
 
@@ -139,34 +148,44 @@ function FeedPost({
   onSave,
   onLoadComments,
   onAddComment,
+  onCommentReaction,
   onProfileClick,
+  currentUserId,
   canDelete,
   canEdit,
   onDelete,
   onEdit,
 }: {
   post: Post
-  onLike: (id: string) => void
+  onLike: (id: string) => Promise<void>
   isSaved: boolean
   isLoggedIn: boolean
   onUnlock: () => void
   onSave: (id: string) => Promise<void>
   onLoadComments: (id: string) => Promise<CommunityComment[]>
-  onAddComment: (id: string, content: string) => Promise<CommunityComment>
+  onAddComment: (id: string, content: string, parentCommentId?: string) => Promise<CommunityComment>
+  onCommentReaction: (id: string, reaction: 'like' | 'dislike') => Promise<void>
   onProfileClick: (id: string) => void
+  currentUserId: string | null
   canDelete: boolean
   canEdit: boolean
   onDelete: (id: string) => Promise<void>
   onEdit: (id: string, content: string) => Promise<void>
 }) {
+  const router = useRouter()
   const [expanded, setExpanded] = useState(false)
-  const [shareMessage, setShareMessage] = useState<string | null>(null)
+  const [shareOpen, setShareOpen] = useState(false)
+  const [detailOpen, setDetailOpen] = useState(false)
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [comments, setComments] = useState<CommunityComment[]>([])
   const [commentsLoading, setCommentsLoading] = useState(false)
   const [commentDraft, setCommentDraft] = useState('')
+  const [replyTarget, setReplyTarget] = useState<CommunityComment | null>(null)
   const [commentError, setCommentError] = useState<string | null>(null)
   const [commentSubmitting, setCommentSubmitting] = useState(false)
+  const [likePending, setLikePending] = useState(false)
+  const [savePending, setSavePending] = useState(false)
+  const [likeError, setLikeError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -179,14 +198,7 @@ function FeedPost({
   const images = post.imageUrls?.length ? post.imageUrls : post.imageUrl ? [post.imageUrl] : []
   const tags = post.tags ?? []
 
-  const sharePost = async () => {
-    try {
-      await navigator.clipboard.writeText(`${window.location.origin}/community#post-${post.id}`)
-      setShareMessage('Link copied!')
-    } catch {
-      setShareMessage('Hindi makopya ang link sa device na ito.')
-    }
-  }
+  const shareUrl = typeof window === 'undefined' ? '' : `${window.location.origin}/community#post-${post.id}`
 
   const toggleComments = async () => {
     if (commentsOpen) {
@@ -221,13 +233,31 @@ function FeedPost({
     setCommentSubmitting(true)
     setCommentError(null)
     try {
-      const comment = await onAddComment(post.id, content)
+      const comment = await onAddComment(post.id, content, replyTarget?.id)
       setComments((current) => [...current, comment])
       setCommentDraft('')
+      setReplyTarget(null)
     } catch (submitError) {
       setCommentError(submitError instanceof Error ? submitError.message : 'Hindi naipadala ang comment. Subukan ulit.')
     } finally {
       setCommentSubmitting(false)
+    }
+  }
+
+  const likePost = async () => {
+    if (!isLoggedIn) {
+      onUnlock()
+      return
+    }
+    if (likePending) return
+    setLikePending(true)
+    setLikeError(null)
+    try {
+      await onLike(post.id)
+    } catch (error) {
+      setLikeError(error instanceof Error ? error.message : 'Hindi na-update ang reaction. Subukan ulit.')
+    } finally {
+      setLikePending(false)
     }
   }
 
@@ -236,11 +266,15 @@ function FeedPost({
       onUnlock()
       return
     }
+    if (savePending) return
+    setSavePending(true)
     setSaveError(null)
     try {
       await onSave(post.id)
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'Hindi ma-save ang post. Subukan ulit.')
+    } finally {
+      setSavePending(false)
     }
   }
 
@@ -277,9 +311,18 @@ function FeedPost({
   }
 
   return (
-    <article className="community-card">
+    <article className="community-card cursor-pointer" onClick={(event) => {
+      if ((event.target as HTMLElement).closest('button, a, input, textarea, details, form')) return
+      setDetailOpen(true)
+    }} onKeyDown={(event) => {
+      if (event.target !== event.currentTarget) return
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        setDetailOpen(true)
+      }
+    }} tabIndex={0} aria-label={`Open post by ${post.authorName ?? 'StoryLines creator'}`}>
       <div className="flex items-start gap-3">
-        <Avatar role={post.authorRole} onClick={postAuthorId ? () => onProfileClick(postAuthorId) : undefined} label={`Open ${post.authorName ?? 'author'} profile`} />
+        <Avatar role={post.authorRole} src={post.authorAvatarUrl} name={post.authorName} onClick={postAuthorId ? () => onProfileClick(postAuthorId) : undefined} label={`Open ${post.authorName ?? 'author'} profile`} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             {postAuthorId ? (
@@ -289,6 +332,8 @@ function FeedPost({
             ) : (
               <span className="text-sm font-bold">{post.authorName || 'Ikaw'}</span>
             )}
+            {shareOpen && <ShareLinkDialog title="Share this post" url={shareUrl} onClose={() => setShareOpen(false)} />}
+            {detailOpen && <PostDetailDialog author={post.authorName ?? 'StoryLines creator'} username={post.authorUsername} avatarUrl={post.authorAvatarUrl} createdAt={post.createdAt} content={post.content} images={images} tags={tags} onClose={() => setDetailOpen(false)} />}
             <span className="community-role">{roleLabel(post.authorRole)}</span>
             {!post.authorId && <span className="community-role">On this device</span>}
           </div>
@@ -386,7 +431,7 @@ function FeedPost({
           {editError && <p role="alert" className="mt-2 text-xs text-destructive">{editError}</p>}
         </form>
       ) : (
-        <div className="mt-4">
+        <div className="mt-4" onClick={() => setDetailOpen(true)}>
           <p className={`whitespace-pre-wrap break-words text-sm leading-6 ${!expanded ? 'community-post-copy' : ''}`}>{post.content}</p>
           {post.content.length > 260 && (
             <button type="button" className="mt-1 text-xs font-bold text-accent hover:underline" onClick={() => setExpanded((value) => !value)}>
@@ -402,7 +447,10 @@ function FeedPost({
           <div className="mt-2 flex flex-wrap gap-2">
             {post.lookingFor.map((item) => <span className="community-tag" key={item}>{item}</span>)}
           </div>
-          <button type="button" className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-lg bg-accent px-3 text-sm font-bold text-accent-foreground hover:brightness-95" disabled title="Reach out opens in a later phase">
+          <button type="button" className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-lg bg-accent px-3 text-sm font-bold text-accent-foreground hover:brightness-95" onClick={() => {
+            if (!isLoggedIn) onUnlock()
+            else if (post.authorId) router.push(`/messages?user=${encodeURIComponent(post.authorId)}`)
+          }} disabled={!post.authorId} title={!post.authorId ? 'This post has no account to contact' : undefined}>
             <Send className="size-4" /> Reach out
           </button>
         </div>
@@ -411,8 +459,9 @@ function FeedPost({
       {images.length > 0 && (
         <div className={`community-image-grid community-image-grid-${Math.min(images.length, 4)} mt-4`} aria-label={`${images.length} attached ${images.length === 1 ? 'image' : 'images'}`}>
           {images.map((src, index) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img key={`${post.id}-${index}`} src={src} alt={`Post attachment ${index + 1}`} loading="lazy" />
+            <button key={`${post.id}-${index}`} type="button" className="relative cursor-zoom-in" onClick={() => setDetailOpen(true)} aria-label={`Open image ${index + 1} in post`}>
+              <Image src={src} alt={`Post attachment ${index + 1}`} fill sizes="(max-width: 640px) 50vw, 320px" className="object-contain" unoptimized />
+            </button>
           ))}
         </div>
       )}
@@ -428,10 +477,10 @@ function FeedPost({
           <Heart className={`size-3.5 ${post.likedByMe ? 'fill-accent text-accent' : ''}`} />
           {post.likes} {post.likes === 1 ? 'reaction' : 'reactions'}
         </span>
-        <span>{shareMessage ?? (post.commentsCount === undefined ? 'Comments' : `${post.commentsCount} comments`)}</span>
+        <span>{post.commentsCount === undefined ? 'Comments' : `${post.commentsCount} comments`}</span>
       </div>
       <div className="grid grid-cols-4 gap-1 pt-2">
-        <button type="button" className={`community-action ${post.likedByMe ? 'community-action-active' : ''}`} aria-pressed={post.likedByMe} onClick={() => onLike(post.id)}>
+        <button type="button" className={`community-action ${post.likedByMe ? 'community-action-active' : ''}`} aria-pressed={post.likedByMe} onClick={() => void likePost()} disabled={likePending}>
           <Heart className={`size-4 ${post.likedByMe ? 'fill-current' : ''}`} /> Like
         </button>
         <button
@@ -439,7 +488,7 @@ function FeedPost({
           className={`community-action ${commentsOpen ? 'community-action-active' : ''}`}
           aria-expanded={commentsOpen}
           onClick={() => void toggleComments()}
-          disabled={!post.authorId}
+          disabled={!post.authorId || savePending}
           title={!post.authorId ? 'Comments are only available on shared posts' : undefined}
         >
           <MessageCircle className="size-4" /> Comment
@@ -447,7 +496,7 @@ function FeedPost({
         <button
           type="button"
           className="community-action"
-          onClick={() => void sharePost()}
+          onClick={() => setShareOpen(true)}
         >
           <Share2 className="size-4" /> Share
         </button>
@@ -463,6 +512,7 @@ function FeedPost({
         </button>
       </div>
       {saveError && <p role="alert" className="mt-2 text-xs text-destructive">{saveError}</p>}
+      {likeError && <p role="alert" className="mt-2 text-xs text-destructive">{likeError}</p>}
       {deleteError && <p role="alert" className="mt-2 text-xs text-destructive">{deleteError}</p>}
       {commentsOpen && (
         <section className="mt-3 border-t border-border pt-3" aria-label="Post comments">
@@ -470,25 +520,24 @@ function FeedPost({
             <p className="py-3 text-sm text-muted-foreground">Loading comments…</p>
           ) : comments.length ? (
             <div className="flex flex-col gap-3">
-              {comments.map((comment) => (
-                <article key={comment.id} className="rounded-xl bg-secondary/55 px-3 py-2.5">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                    <button type="button" className="font-bold hover:text-accent hover:underline" onClick={() => onProfileClick(comment.authorId)}>
-                      {comment.authorName}{comment.authorUsername ? ` · @${comment.authorUsername}` : ''}
-                    </button>
-                    <time className="text-muted-foreground" dateTime={new Date(comment.createdAt).toISOString()}>
-                      {timeAgo(comment.createdAt)}
-                    </time>
-                  </div>
-                  <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-5">{comment.content}</p>
-                </article>
-              ))}
+              <CommunityCommentThread
+                comments={comments}
+                currentUserId={currentUserId}
+                onProfile={onProfileClick}
+                onReply={(comment) => {
+                  setReplyTarget(comment)
+                  requestAnimationFrame(() => document.getElementById(`comment-${post.id}`)?.focus())
+                }}
+                onReaction={async (comment, reaction) => onCommentReaction(comment.id, reaction)}
+                onLoginRequired={onUnlock}
+              />
             </div>
           ) : (
             <p className="py-2 text-sm text-muted-foreground">Wala pang comments. Ikaw ang mauna!</p>
           )}
           {isLoggedIn ? (
             <form className="mt-3 flex flex-col gap-2" onSubmit={(event) => void submitComment(event)}>
+              {replyTarget && <div className="flex items-center justify-between rounded-lg bg-secondary/60 px-3 py-2 text-xs"><span>Replying to <strong>{replyTarget.authorName}</strong></span><button type="button" onClick={() => setReplyTarget(null)} className="min-h-8 px-2 font-bold">Cancel</button></div>}
               <label className="sr-only" htmlFor={`comment-${post.id}`}>Write a comment</label>
               <textarea
                 id={`comment-${post.id}`}
@@ -496,7 +545,7 @@ function FeedPost({
                 onChange={(event) => setCommentDraft(event.target.value)}
                 maxLength={500}
                 rows={2}
-                placeholder="Write a comment…"
+                placeholder={replyTarget ? `Reply to ${replyTarget.authorName}…` : 'Write a comment…'}
                 className="w-full resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 disabled={commentSubmitting}
               />
@@ -583,11 +632,15 @@ export function CommunityView({
   isLoggedIn,
   role,
   onUnlock,
+  initialTab = 'for-you',
+  updatesMode = false,
 }: {
   creator: boolean
   isLoggedIn: boolean
   role: Badge
   onUnlock: () => void
+  initialTab?: FeedTab
+  updatesMode?: boolean
 }) {
   const router = useRouter()
   const {
@@ -605,6 +658,7 @@ export function CommunityView({
     toggleSaved,
     loadComments,
     addComment,
+    toggleCommentReaction,
   } = useCommunity()
   const [composerExpanded, setComposerExpanded] = useState(false)
   const [draft, setDraft] = useState('')
@@ -615,19 +669,50 @@ export function CommunityView({
   const [images, setImages] = useState<PreviewImage[]>([])
   const [imageError, setImageError] = useState<string | null>(null)
   const [compressing, setCompressing] = useState(false)
-  const [feedTab, setFeedTab] = useState<FeedTab>('for-you')
+  const [feedTab, setFeedTab] = useState<FeedTab>(initialTab)
   const [composerError, setComposerError] = useState<string | null>(null)
   const [authorSearch, setAuthorSearch] = useState('')
   const [selectedAuthorId, setSelectedAuthorId] = useState<string | null>(null)
+  const [followingIds, setFollowingIds] = useState<string[]>([])
+  const [followingLoading, setFollowingLoading] = useState(false)
+  const [followingError, setFollowingError] = useState<string | null>(null)
+  const [followingReload, setFollowingReload] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [showAll, setShowAll] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const canPost = isLoggedIn && creator && role !== 'reader'
   const openRoleSettings = isLoggedIn && creator && role === 'reader'
 
+  useEffect(() => {
+    if (!currentUserId) {
+      setFollowingIds([])
+      return
+    }
+    let active = true
+    setFollowingLoading(true)
+    setFollowingError(null)
+    void (async () => {
+      const { data, error: followError } = await getSupabaseClient()
+        .from('community_follows')
+        .select('creator_id')
+        .eq('follower_id', currentUserId)
+        .limit(500)
+      if (followError) throw followError
+      if (active) setFollowingIds((data ?? []).map((row) => row.creator_id))
+    })().catch((followError: unknown) => {
+        if (active) setFollowingError(followError instanceof Error ? followError.message : 'Could not load the creators you follow.')
+      })
+      .finally(() => {
+        if (active) setFollowingLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [currentUserId, followingReload])
+
   const visiblePosts = posts
     .filter((post) => feedTab !== 'collaborators' || post.type === 'collaborator')
-    .filter((post) => feedTab !== 'following')
+    .filter((post) => feedTab !== 'following' || followingIds.includes(post.authorId ?? ''))
     .filter((post) => feedTab !== 'saved' || savedPostIds.includes(post.id))
     .filter((post) => selectedAuthorId === null || post.authorId === selectedAuthorId)
     .slice()
@@ -741,9 +826,9 @@ export function CommunityView({
   return (
     <div className="community-layout">
       <header className="community-heading">
-        <span className="eyebrow">Tambayan ng StoryLines</span>
-        <h1 className="mt-1 font-serif text-2xl font-bold sm:text-3xl">Kuwento, likha, at kuwentuhan.</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Ano'ng ginagawa mo ngayon?</p>
+        <span className="eyebrow">{updatesMode ? 'Your StoryLines' : 'Tambayan ng StoryLines'}</span>
+        <h1 className="mt-1 font-serif text-2xl font-bold sm:text-3xl">{updatesMode ? 'Updates' : 'Kuwento, likha, at kuwentuhan.'}</h1>
+        {!updatesMode && <p className="mt-1 text-sm text-muted-foreground">Ano'ng ginagawa mo ngayon?</p>}
       </header>
 
       <div className="community-columns">
@@ -793,7 +878,7 @@ export function CommunityView({
         </aside>
 
         <section className="community-feed" aria-label="Community feed">
-          <section className="community-card community-composer" aria-label="Create a post">
+          {!updatesMode && <section className="community-card community-composer" aria-label="Create a post">
             {!canPost ? (
               <>
                 <div className="flex items-center gap-3">
@@ -929,15 +1014,15 @@ export function CommunityView({
                 <p className="mt-3 text-[11px] leading-5 text-muted-foreground">Maging mabait sa kapwa manlilikha. Posts and photos are shared with the community.</p>
               </form>
             )}
-          </section>
+          </section>}
 
-          <nav className="community-feed-tabs" aria-label="Feed filter">
+          {!updatesMode && <nav className="community-feed-tabs" aria-label="Feed filter">
             {feedTabs.map((tab) => (
               <button key={tab.id} type="button" aria-current={feedTab === tab.id ? 'page' : undefined} onClick={() => setFeedTab(tab.id)} className={`community-feed-tab ${feedTab === tab.id ? 'community-feed-tab-active' : ''}`}>
                 {tab.label}
               </button>
             ))}
-          </nav>
+          </nav>}
 
           {error && (
             <div role="alert" className="community-card flex flex-wrap items-center justify-between gap-3 text-sm">
@@ -991,11 +1076,38 @@ export function CommunityView({
               )}
             </section>
           ) : feedTab === 'following' ? (
-            <div className="community-empty">
-              <span className="empty-icon"><UsersRound className="size-5" /></span>
-              <h2 className="mt-4 font-serif text-xl font-bold">Your Following feed is coming soon</h2>
-              <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">Soon, makikita rito ang bagong gawa at updates ng mga creator na sinusubaybayan mo.</p>
-            </div>
+            followingLoading ? <div className="community-card h-44 animate-pulse bg-secondary/45" aria-label="Loading following feed" /> : followingError ? (
+              <div className="community-empty"><p role="alert" className="text-sm text-destructive">{followingError}</p><button type="button" onClick={() => setFollowingReload((version) => version + 1)} className="mt-3 min-h-11 text-sm font-bold text-accent">Try again</button></div>
+            ) : (
+              <>{visiblePosts.length ? <div className="flex flex-col gap-3">
+                {visiblePosts.map((post) => (
+                  <div id={`post-${post.id}`} key={post.id}>
+                    <FeedPost
+                      post={post}
+                      onLike={toggleLike}
+                      isSaved={savedPostIds.includes(post.id)}
+                      canDelete={!post.authorId || (currentUserId !== null && post.authorId === currentUserId)}
+                      canEdit={currentUserId !== null && post.authorId === currentUserId}
+                      isLoggedIn={isLoggedIn}
+                      onUnlock={onUnlock}
+                      onSave={toggleSaved}
+                      onLoadComments={loadComments}
+                      onAddComment={addComment}
+                      onCommentReaction={toggleCommentReaction}
+                      onProfileClick={openProfile}
+                      currentUserId={currentUserId}
+                      onDelete={deletePost}
+                      onEdit={updatePost}
+                    />
+                  </div>
+                ))}
+              </div> : <div className="community-empty">
+                <span className="empty-icon"><UsersRound className="size-5" /></span>
+                <h2 className="mt-4 font-serif text-xl font-bold">{followingIds.length ? 'No updates yet' : 'Through stories, we find each other'}</h2>
+                <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">{followingIds.length ? 'The creators you follow have not posted yet. Check back soon.' : 'Follow other people to bring your feed to life and discover new worlds.'}</p>
+                <Button type="button" onClick={() => router.push('/browse')} className="mt-4 min-h-11 rounded-xl bg-accent text-accent-foreground">Find creators</Button>
+              </div>}</>
+            )
           ) : (
             <>
             {selectedAuthorId && (
@@ -1034,7 +1146,9 @@ export function CommunityView({
                     onSave={toggleSaved}
                     onLoadComments={loadComments}
                     onAddComment={addComment}
+                    onCommentReaction={toggleCommentReaction}
                     onProfileClick={openProfile}
+                    currentUserId={currentUserId}
                     onDelete={deletePost}
                     onEdit={updatePost}
                   />

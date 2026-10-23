@@ -23,6 +23,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const {
     creator,
     isLoggedIn,
+    currentUserId,
     hydrated,
     mobileNav,
     upgradeOpen,
@@ -55,6 +56,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         route={(pathname as Route) || '/'}
         creator={creator}
         isLoggedIn={isLoggedIn}
+        currentUserId={currentUserId}
         mobileNav={mobileNav}
         setMobileNav={setMobileNav}
         go={go}

@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { safeNextPath } from '@/lib/auth/redirect'
 import { isSupabaseConfigured, supabaseKey, supabaseUrl } from '@/lib/supabase/config'
 
-const PROTECTED_PREFIXES = ['/community', '/create', '/library', '/settings', '/collaborate']
+const PROTECTED_PREFIXES = ['/community', '/create', '/library', '/settings', '/collaborate', '/messages', '/updates']
 
 function isProtectedPath(pathname: string) {
   return pathname === '/profile'

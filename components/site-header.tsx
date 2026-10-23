@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { BookMarked, ChevronDown, Inbox, Library, LogOut, Menu, Search, Settings, UserRound, X } from 'lucide-react'
+import { Bell, BookMarked, ChevronDown, Inbox, Library, LogOut, Menu, Search, Settings, UserRound, X } from 'lucide-react'
+import { ProfileAvatar } from '@/components/shared/profile-avatar'
+import { getSupabaseClient } from '@/lib/supabase'
 import type { Route } from '@/lib/types'
 
 // Detects a click/tap outside the returned ref and calls onOutside. Used
@@ -125,9 +127,40 @@ function NavMenu({
 // get separate Log in / Sign up links; once signed in, the avatar opens an
 // account menu (Profile, Library, Settings, Log out) instead of Logout
 // being buried only inside Settings.
-function AccountMenu({ go, logout }: { go: (route: Route) => void; logout: () => void }) {
+function AccountMenu({ go, logout, userId }: { go: (route: Route) => void; logout: () => void; userId: string | null }) {
   const [open, setOpen] = useState(false)
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const ref = useClickOutside<HTMLDivElement>(() => setOpen(false), open)
+
+  useEffect(() => {
+    if (!userId) {
+      setAvatarUrl(null)
+      return
+    }
+    let active = true
+    void (async () => {
+      const { data, error } = await getSupabaseClient()
+        .from('profiles')
+        .select('avatar_path')
+        .eq('id', userId)
+        .maybeSingle()
+      if (error) throw error
+      if (active) {
+        setAvatarUrl(data?.avatar_path
+          ? getSupabaseClient().storage.from('avatars').getPublicUrl(data.avatar_path).data.publicUrl
+          : null)
+      }
+    })().catch((error: unknown) => console.error('Could not load your profile photo in the header', error))
+    const onAvatarUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ userId: string; avatarUrl: string | null }>).detail
+      if (detail?.userId === userId) setAvatarUrl(detail.avatarUrl)
+    }
+    window.addEventListener('storylines:profile-avatar-updated', onAvatarUpdated)
+    return () => {
+      active = false
+      window.removeEventListener('storylines:profile-avatar-updated', onAvatarUpdated)
+    }
+  }, [userId])
 
   const item = (label: string, route: Route, icon: React.ReactNode) => (
     <button
@@ -149,9 +182,7 @@ function AccountMenu({ go, logout }: { go: (route: Route) => void; logout: () =>
         aria-label="Account menu"
         aria-expanded={open}
       >
-        <span className="avatar-placeholder">
-          <UserRound className="size-4" />
-        </span>
+        <ProfileAvatar src={avatarUrl} name="Your profile" className="size-8" imageSizes="32px" />
         <ChevronDown className="hidden size-3.5 sm:block" />
       </button>
       {open && (
@@ -235,6 +266,7 @@ export function SiteHeader({
   route,
   creator,
   isLoggedIn,
+  currentUserId,
   mobileNav,
   setMobileNav,
   go,
@@ -245,6 +277,7 @@ export function SiteHeader({
   route: Route
   creator: boolean
   isLoggedIn: boolean
+  currentUserId: string | null
   mobileNav: boolean
   setMobileNav: (value: boolean) => void
   go: (route: Route) => void
@@ -328,11 +361,16 @@ export function SiteHeader({
             </div>
           )}
           {isLoggedIn && (
-            <button className="relative rounded-full p-2 hover:bg-primary-foreground/10" aria-label="Inbox">
+            <>
+            <button type="button" onClick={() => go('/messages')} className="relative flex size-11 items-center justify-center rounded-full p-2 hover:bg-primary-foreground/10" aria-label="Messages">
               <Inbox className="size-5" />
             </button>
+            <button type="button" onClick={() => go('/updates')} className="relative flex size-11 items-center justify-center rounded-full p-2 hover:bg-primary-foreground/10" aria-label="Updates and notifications">
+              <Bell className="size-5" />
+            </button>
+            </>
           )}
-          {isLoggedIn && <AccountMenu go={go} logout={logout} />}
+          {isLoggedIn && <AccountMenu go={go} logout={logout} userId={currentUserId} />}
           <button onClick={() => setMobileNav(!mobileNav)} className="flex size-11 items-center justify-center rounded-full hover:bg-primary-foreground/10 min-[1200px]:hidden" aria-label={mobileNav ? 'Close menu' : 'Open menu'} aria-expanded={mobileNav}>
             {mobileNav ? <X /> : <Menu />}
           </button>
@@ -367,6 +405,8 @@ export function SiteHeader({
           </button>
           {isLoggedIn ? (
             <>
+              <button className="flex min-h-11 items-center rounded-lg px-3 text-left text-sm font-bold tracking-wide hover:bg-primary-foreground/10" onClick={() => go('/messages')}>MESSAGES</button>
+              <button className="flex min-h-11 items-center rounded-lg px-3 text-left text-sm font-bold tracking-wide hover:bg-primary-foreground/10" onClick={() => go('/updates')}>UPDATES</button>
               <button className="flex min-h-11 items-center rounded-lg px-3 text-left text-sm font-bold tracking-wide hover:bg-primary-foreground/10" onClick={() => go('/profile')}>
                 PROFILE
               </button>

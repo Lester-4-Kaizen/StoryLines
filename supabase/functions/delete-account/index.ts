@@ -169,13 +169,22 @@ Deno.serve(async (request: Request) => {
   } catch {
     return jsonResponse({ error: 'Invalid account deletion request.' }, 400)
   }
+  const action = typeof body === 'object' && body !== null && 'action' in body
+    ? Reflect.get(body, 'action')
+    : 'delete'
+  const confirmation = typeof body === 'object' && body !== null && 'confirmation' in body
+    ? Reflect.get(body, 'confirmation')
+    : null
+  if (action !== 'reset' && action !== 'delete') {
+    return jsonResponse({ error: 'Invalid account maintenance action.' }, 400)
+  }
+  const expectedConfirmation = action === 'reset' ? 'RESET' : 'DELETE'
   if (
     typeof body !== 'object'
     || body === null
-    || !('confirmation' in body)
-    || Reflect.get(body, 'confirmation') !== 'DELETE'
+    || confirmation !== expectedConfirmation
   ) {
-    return jsonResponse({ error: 'Type DELETE to confirm permanent account removal.' }, 400)
+    return jsonResponse({ error: `Type ${expectedConfirmation} to confirm ${action === 'reset' ? 'the account reset' : 'permanent account removal'}.` }, 400)
   }
 
   const admin = createClient(supabaseUrl, serviceRoleKey, {
@@ -189,6 +198,13 @@ Deno.serve(async (request: Request) => {
   const userId = userResult.user.id
   const accountId = Deno.env.get('CLOUDFLARE_ACCOUNT_ID')
   const cloudflareToken = Deno.env.get('CLOUDFLARE_IMAGES_API_TOKEN')
+  const anonKey = action === 'reset' ? Deno.env.get('SUPABASE_ANON_KEY') : null
+  if (action === 'reset' && !anonKey) {
+    return jsonResponse({
+      error: 'Account reset is not configured. Set the Supabase anon key for this Edge Function and retry.',
+    }, 503)
+  }
+  let mediaCleanupStarted = false
 
   try {
     const [imageIds, avatarPaths, communityImagePaths] = await Promise.all([
@@ -205,9 +221,11 @@ Deno.serve(async (request: Request) => {
 
     if (imageIds.length && accountId && cloudflareToken) {
       await verifyCloudflareImages(imageIds, accountId, cloudflareToken, userId)
+      mediaCleanupStarted = true
       await deleteCloudflareImages(imageIds, accountId, cloudflareToken)
     }
 
+    if (avatarPaths.length || communityImagePaths.length) mediaCleanupStarted = true
     for (const [bucket, paths] of [
       ['avatars', avatarPaths],
       ['community-post-images', communityImagePaths],
@@ -218,18 +236,49 @@ Deno.serve(async (request: Request) => {
       }
     }
 
+    if (action === 'reset') {
+      if (!anonKey) throw new Error('Account reset is not configured. Set the Supabase anon key for this Edge Function and retry.')
+      const userClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authorization } },
+        auth: { autoRefreshToken: false, persistSession: false },
+      })
+      const { error: resetError } = await userClient.rpc('reset_my_account_data')
+      if (resetError) throw new Error(`Could not reset account data: ${resetError.message}`)
+
+      const existingMetadata = userResult.user.user_metadata ?? {}
+      const { error: metadataError } = await admin.auth.admin.updateUserById(userId, {
+        user_metadata: {
+          ...existingMetadata,
+          role: 'reader',
+          roles: ['reader'],
+          badges: ['reader'],
+        },
+      })
+      if (metadataError) {
+        console.error('Account data was reset but Auth role metadata could not be updated', { userId, metadataError })
+        return jsonResponse({
+          ok: true,
+          warning: 'Your data was reset, but your Reader role could not be synchronized. Log out and contact the site owner before continuing.',
+        })
+      }
+      return jsonResponse({ ok: true })
+    }
+
     const { error: deleteError } = await admin.auth.admin.deleteUser(userId)
     if (deleteError) throw new Error(`Account data is cleaned, but Auth could not finish deleting the account: ${deleteError.message}`)
 
-    return jsonResponse({ ok: true })
+    return jsonResponse({ ok: true, action: 'delete' })
   } catch (error) {
     console.error('Account deletion cleanup failed', {
       userId,
       message: error instanceof Error ? error.message : String(error),
     })
+    const cleanupWarning = action === 'reset' && mediaCleanupStarted
+      ? ' Some account media may already have been removed; your account records were not reset. It is safe to retry.'
+      : ''
     return jsonResponse({
       error: error instanceof Error
-        ? error.message
+        ? `${error.message}${cleanupWarning}`
         : 'Hindi natapos ang account cleanup. Walang account data na inalis. Subukan ulit.',
     }, 500)
   }

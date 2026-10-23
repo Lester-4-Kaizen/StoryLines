@@ -34,6 +34,7 @@ export type ProfilePost = {
   authorId?: string
   authorDisplayName?: string
   authorUsername?: string
+  authorAvatarUrl?: string | null
 }
 
 export type ProfileWork = {
@@ -319,7 +320,7 @@ export async function getProfilePageData(profileId?: string): Promise<ProfilePag
     const activityRows = activityRowsResult.data ?? []
     const activityAuthorIds = Array.from(new Set(activityRows.map((post) => post.author_id)))
     const { data: activityAuthors, error: activityAuthorsError } = activityAuthorIds.length
-      ? await supabase.from('profiles').select('id, display_name, username').in('id', activityAuthorIds)
+      ? await supabase.from('profiles').select('id, display_name, username, avatar_path').in('id', activityAuthorIds)
       : { data: [], error: null }
     if (activityAuthorsError) throw activityAuthorsError
 
@@ -343,6 +344,7 @@ export async function getProfilePageData(profileId?: string): Promise<ProfilePag
         likes: likesByPost.get(post.id) ?? 0,
         likedByMe: likedPostIds.has(post.id),
         savedByMe: savedPostIds.has(post.id),
+        authorAvatarUrl: profile.avatarUrl,
       }
     })
     const activityAuthorById = new Map((activityAuthors ?? []).map((author) => [author.id, author]))
@@ -362,6 +364,9 @@ export async function getProfilePageData(profileId?: string): Promise<ProfilePag
         authorId: post.author_id,
         authorDisplayName: author?.display_name ?? 'StoryLines creator',
         authorUsername: author?.username ?? '',
+        authorAvatarUrl: author?.avatar_path
+          ? supabase.storage.from('avatars').getPublicUrl(author.avatar_path).data.publicUrl
+          : null,
       }
     })
     const works: ProfileWork[] = [...storyRows, ...comicRows, ...artRows].map((work) => ({

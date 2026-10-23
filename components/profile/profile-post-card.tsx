@@ -5,6 +5,10 @@ import { useState, type FormEvent } from 'react'
 import { Bookmark, Check, Heart, MessageCircle, MoreHorizontal, PenLine, Share2, Trash2, X } from 'lucide-react'
 import { isSupabaseStorageImage } from '@/lib/is-supabase-storage-image'
 import { getSupabaseClient } from '@/lib/supabase'
+import { CommunityCommentThread } from '@/components/shared/community-comment-thread'
+import { PostDetailDialog } from '@/components/shared/post-detail-dialog'
+import { ProfileAvatar } from '@/components/shared/profile-avatar'
+import { ShareLinkDialog } from '@/components/shared/share-link-dialog'
 import type { ProfilePost } from '@/lib/profile-data'
 import type { CommunityComment } from '@/lib/types'
 
@@ -39,6 +43,7 @@ export function ProfilePostCard({
   onEdit,
   onDelete,
   onLoginRequired,
+  onProfile,
 }: {
   post: ProfilePost
   displayName: string
@@ -50,14 +55,17 @@ export function ProfilePostCard({
   onEdit: (postId: string, content: string) => Promise<void>
   onDelete: (postId: string) => Promise<void>
   onLoginRequired: (action: string) => void
+  onProfile: (id: string) => void
 }) {
   const [comments, setComments] = useState<CommunityComment[]>([])
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [commentsLoading, setCommentsLoading] = useState(false)
   const [commentDraft, setCommentDraft] = useState('')
+  const [replyTarget, setReplyTarget] = useState<CommunityComment | null>(null)
   const [commentError, setCommentError] = useState<string | null>(null)
   const [commentSending, setCommentSending] = useState(false)
-  const [shareMessage, setShareMessage] = useState<string | null>(null)
+  const [shareOpen, setShareOpen] = useState(false)
+  const [detailOpen, setDetailOpen] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [likePending, setLikePending] = useState(false)
   const [savePending, setSavePending] = useState(false)
@@ -76,27 +84,54 @@ export function ProfilePostCard({
       const supabase = getSupabaseClient()
       const { data, error } = await supabase
         .from('community_post_comments')
-        .select('id, post_id, author_id, content, created_at')
+        .select('id, post_id, author_id, content, created_at, parent_comment_id')
         .eq('post_id', post.id)
         .order('created_at', { ascending: true })
         .limit(50)
       if (error) throw error
       const authorIds = Array.from(new Set((data ?? []).map((comment) => comment.author_id)))
       const { data: profiles, error: profileError } = authorIds.length
-        ? await supabase.from('profiles').select('id, display_name, username').in('id', authorIds)
+        ? await supabase.from('profiles').select('id, display_name, username, avatar_path').in('id', authorIds)
         : { data: [], error: null }
       if (profileError) throw profileError
       const profileById = new Map((profiles ?? []).map((profile) => [profile.id, profile]))
+      const commentIds = (data ?? []).map((comment) => comment.id)
+      const [{ data: counts, error: countsError }, { data: { user }, error: userError }] = await Promise.all([
+        commentIds.length
+          ? supabase.rpc('get_community_comment_reaction_counts', { comment_ids: commentIds })
+          : Promise.resolve({ data: [], error: null }),
+        supabase.auth.getUser(),
+      ])
+      if (countsError) throw countsError
+      if (userError) throw userError
+      const { data: myReactions, error: reactionsError } = user && commentIds.length
+        ? await supabase.from('community_comment_reactions').select('comment_id, reaction').eq('user_id', user.id).in('comment_id', commentIds)
+        : { data: [], error: null }
+      if (reactionsError) throw reactionsError
+      const countsById = new Map<string, { likes: number | string; dislikes: number | string }>(
+        (counts ?? []).map((row: { comment_id: string; likes: number | string; dislikes: number | string }) => [row.comment_id, row]),
+      )
+      const reactionsById = new Map<string, 'like' | 'dislike'>(
+        (myReactions ?? []).map((row: { comment_id: string; reaction: 'like' | 'dislike' }) => [row.comment_id, row.reaction]),
+      )
       setComments((data ?? []).map((comment) => {
         const author = profileById.get(comment.author_id)
+        const reactionCounts = countsById.get(comment.id)
         return {
           id: comment.id,
           postId: comment.post_id,
           authorId: comment.author_id,
           authorName: author?.display_name ?? 'StoryLines reader',
           authorUsername: author?.username ?? undefined,
+          authorAvatarUrl: author?.avatar_path
+            ? supabase.storage.from('avatars').getPublicUrl(author.avatar_path).data.publicUrl
+            : null,
           content: comment.content,
           createdAt: new Date(comment.created_at).getTime(),
+          parentCommentId: comment.parent_comment_id,
+          likes: Number(reactionCounts?.likes ?? 0),
+          dislikes: Number(reactionCounts?.dislikes ?? 0),
+          myReaction: reactionsById.get(comment.id) ?? null,
         }
       }))
     } catch (error) {
@@ -133,13 +168,13 @@ export function ProfilePostCard({
       const supabase = getSupabaseClient()
       const { data, error } = await supabase
         .from('community_post_comments')
-        .insert({ post_id: post.id, author_id: currentUserId, content })
-        .select('id, post_id, author_id, content, created_at')
+        .insert({ post_id: post.id, author_id: currentUserId, content, parent_comment_id: replyTarget?.id ?? null })
+        .select('id, post_id, author_id, content, created_at, parent_comment_id')
         .single()
       if (error) throw error
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('display_name, username')
+        .select('display_name, username, avatar_path')
         .eq('id', currentUserId)
         .single()
       if (profileError) throw profileError
@@ -149,10 +184,18 @@ export function ProfilePostCard({
         authorId: data.author_id,
         authorName: profile.display_name,
         authorUsername: profile.username,
+        authorAvatarUrl: profile.avatar_path
+          ? supabase.storage.from('avatars').getPublicUrl(profile.avatar_path).data.publicUrl
+          : null,
         content: data.content,
         createdAt: new Date(data.created_at).getTime(),
+        parentCommentId: data.parent_comment_id,
+        likes: 0,
+        dislikes: 0,
+        myReaction: null,
       }])
       setCommentDraft('')
+      setReplyTarget(null)
     } catch (error) {
       setCommentError(error instanceof Error ? error.message : 'Hindi naipadala ang comment. Subukan ulit.')
     } finally {
@@ -160,14 +203,25 @@ export function ProfilePostCard({
     }
   }
 
-  const sharePost = async () => {
-    const url = `${window.location.origin}${window.location.pathname}#post-${post.id}`
-    try {
-      await navigator.clipboard.writeText(url)
-      setShareMessage('Link copied!')
-    } catch {
-      setShareMessage(url)
+  const toggleCommentReaction = async (comment: CommunityComment, reaction: 'like' | 'dislike') => {
+    if (!currentUserId) {
+      onLoginRequired('mag-react sa comment')
+      return
     }
+    const supabase = getSupabaseClient()
+    const { data: existing, error: readError } = await supabase.from('community_comment_reactions').select('reaction').eq('comment_id', comment.id).eq('user_id', currentUserId).maybeSingle()
+    if (readError) throw readError
+    if (existing?.reaction === reaction) {
+      const { error } = await supabase.from('community_comment_reactions').delete().eq('comment_id', comment.id).eq('user_id', currentUserId)
+      if (error) throw error
+    } else if (existing) {
+      const { error } = await supabase.from('community_comment_reactions').update({ reaction }).eq('comment_id', comment.id).eq('user_id', currentUserId)
+      if (error) throw error
+    } else {
+      const { error } = await supabase.from('community_comment_reactions').insert({ comment_id: comment.id, user_id: currentUserId, reaction })
+      if (error) throw error
+    }
+    await loadComments()
   }
 
   const runAction = async (action: () => Promise<void>) => {
@@ -226,11 +280,25 @@ export function ProfilePostCard({
   }
 
   return (
-    <article id={`post-${post.id}`} className="min-w-0 rounded-2xl border border-border bg-card p-4 shadow-[0_2px_0_rgba(68,45,31,0.05)] sm:p-5">
+    <article
+      id={`post-${post.id}`}
+      className="min-w-0 cursor-pointer rounded-2xl border border-border bg-card p-5 shadow-[0_2px_0_rgba(68,45,31,0.05)] sm:p-6"
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest('button, a, input, textarea, details, form')) return
+        setDetailOpen(true)
+      }}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          setDetailOpen(true)
+        }
+      }}
+      tabIndex={0}
+      aria-label={`Open post by ${displayName}`}
+    >
       <header className="flex items-center gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-secondary text-accent" aria-hidden="true">
-          {displayName.slice(0, 1).toLocaleUpperCase()}
-        </span>
+        <ProfileAvatar src={post.authorAvatarUrl} name={displayName} />
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-sm font-bold">{displayName}</h3>
           <p className="truncate text-xs text-muted-foreground">@{username} · {timeAgo(post.createdAt)}</p>
@@ -276,6 +344,8 @@ export function ProfilePostCard({
             {POST_TYPE_LABELS[post.type]}
           </span>
         )}
+        {shareOpen && <ShareLinkDialog title="Share this post" url={`${window.location.origin}${window.location.pathname}#post-${post.id}`} onClose={() => setShareOpen(false)} />}
+        {detailOpen && <PostDetailDialog author={post.authorDisplayName ?? displayName} username={post.authorUsername ?? username} avatarUrl={post.authorAvatarUrl} createdAt={post.createdAt} content={post.content} images={post.imageUrls} tags={post.tags} onClose={() => setDetailOpen(false)} />}
       </header>
 
       {editing ? (
@@ -305,15 +375,15 @@ export function ProfilePostCard({
           {editError && <p role="alert" className="mt-2 text-xs text-destructive">{editError}</p>}
         </form>
       ) : (
-        <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-6">{post.content}</p>
+        <p className="mt-5 whitespace-pre-wrap break-words text-sm leading-6" onClick={() => setDetailOpen(true)}>{post.content}</p>
       )}
       {post.lookingFor.length > 0 && (
         <p className="mt-3 text-xs text-muted-foreground">Looking for: {post.lookingFor.join(', ')}</p>
       )}
       {post.imageUrls.length > 0 && (
-        <div className={`mt-4 grid gap-2 ${post.imageUrls.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        <div className={`mt-5 grid gap-2.5 ${post.imageUrls.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
           {post.imageUrls.map((imageUrl, index) => (
-            <div key={`${post.id}-${index}`} className="relative aspect-[16/7] overflow-hidden rounded-xl bg-secondary">
+            <button key={`${post.id}-${index}`} type="button" onClick={() => setDetailOpen(true)} aria-label={`Open post image ${index + 1}`} className="relative aspect-[16/7] cursor-zoom-in overflow-hidden rounded-xl bg-secondary">
               <Image
                 src={imageUrl}
                 alt={`${displayName}'s post image ${index + 1}`}
@@ -323,7 +393,7 @@ export function ProfilePostCard({
                 className="object-cover"
                 unoptimized={!isSupabaseStorageImage(imageUrl)}
               />
-            </div>
+            </button>
           ))}
         </div>
       )}
@@ -358,7 +428,7 @@ export function ProfilePostCard({
           <button
             type="button"
             className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-semibold hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => void sharePost()}
+            onClick={() => setShareOpen(true)}
           >
             <Share2 className="size-4" /> Share
           </button>
@@ -374,7 +444,6 @@ export function ProfilePostCard({
         </button>
       </div>
 
-      {shareMessage && <p role="status" className="mt-2 break-all text-xs text-muted-foreground">{shareMessage}</p>}
       {actionError && <p role="alert" className="mt-2 text-xs text-destructive">{actionError}</p>}
       {deleteError && <p role="alert" className="mt-2 text-xs text-destructive">{deleteError}</p>}
 
@@ -405,24 +474,27 @@ export function ProfilePostCard({
               <button type="button" className="min-h-11 text-xs font-bold text-accent" onClick={() => void loadComments()}>Subukan ulit</button>
             </div>
           ) : (
-            <ul className="flex flex-col gap-3">
-              {comments.map((comment) => (
-                <li key={comment.id} className="rounded-xl bg-secondary/50 p-3">
-                  <p className="text-xs font-bold">{comment.authorName} {comment.authorUsername ? `· @${comment.authorUsername}` : ''}</p>
-                  <p className="mt-1 whitespace-pre-wrap break-words text-sm">{comment.content}</p>
-                </li>
-              ))}
-              {comments.length === 0 && <li className="text-xs text-muted-foreground">Wala pang comments. Ikaw ang mauna!</li>}
-            </ul>
+            <CommunityCommentThread
+              comments={comments}
+              currentUserId={currentUserId}
+              onProfile={onProfile}
+              onReply={(comment) => {
+                setReplyTarget(comment)
+                requestAnimationFrame(() => document.getElementById(`comment-${post.id}`)?.focus())
+              }}
+              onReaction={toggleCommentReaction}
+              onLoginRequired={() => onLoginRequired('mag-react sa comment')}
+            />
           )}
           <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={(event) => void submitComment(event)}>
+            {replyTarget && <div className="flex items-center justify-between rounded-lg bg-secondary/60 px-3 py-2 text-xs sm:order-first"><span>Replying to <strong>{replyTarget.authorName}</strong></span><button type="button" onClick={() => setReplyTarget(null)} className="min-h-8 px-2 font-bold">Cancel</button></div>}
             <label htmlFor={`comment-${post.id}`} className="sr-only">Write a comment</label>
             <input
               id={`comment-${post.id}`}
               value={commentDraft}
               maxLength={500}
               onChange={(event) => setCommentDraft(event.target.value)}
-              placeholder={currentUserId ? 'Write a comment…' : 'Mag-log in para mag-comment'}
+              placeholder={replyTarget ? `Reply to ${replyTarget.authorName}…` : currentUserId ? 'Write a comment…' : 'Mag-log in para mag-comment'}
               disabled={!currentUserId}
               className="min-h-11 min-w-0 flex-1 rounded-full border border-input bg-background px-4 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />

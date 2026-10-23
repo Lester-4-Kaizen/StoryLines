@@ -10,15 +10,18 @@ import {
   Camera,
   ExternalLink,
   MessageCircle,
+  Pencil,
   PenLine,
   Share2,
   UserRound,
   UsersRound,
+  X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Panel } from '@/components/shared/panel'
 import { ProfilePostCard } from '@/components/profile/profile-post-card'
 import { ProfileConnectionsDialog } from '@/components/profile/profile-connections-dialog'
+import { ShareLinkDialog } from '@/components/shared/share-link-dialog'
 import { isSupabaseStorageImage } from '@/lib/is-supabase-storage-image'
 import { getSupabaseClient } from '@/lib/supabase'
 import type { ProfileCursor, ProfilePageData, ProfilePost, ProfileRecord, ProfileWork } from '@/lib/profile-data'
@@ -114,9 +117,13 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
   const [messageDraft, setMessageDraft] = useState('')
   const [messageSending, setMessageSending] = useState(false)
   const [messageError, setMessageError] = useState<string | null>(null)
+  const [shareOpen, setShareOpen] = useState(false)
   const [connectionsDirection, setConnectionsDirection] = useState<'followers' | 'following' | null>(null)
   const [avatarUploading, setAvatarUploading] = useState(false)
   const avatarInputRef = useRef<HTMLInputElement>(null)
+  const editProfileButtonRef = useRef<HTMLButtonElement>(null)
+  const editProfileCloseRef = useRef<HTMLButtonElement>(null)
+  const wasEditingProfile = useRef(false)
   const profileTabs: ProfileTab[] = data.currentUserId && data.currentUserId === data.profile?.id
     ? [...TABS, 'Liked', 'Saved']
     : TABS
@@ -145,6 +152,21 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
       collaborationRoles: initialData.profile?.collaborationRoles.join(', ') ?? '',
     })
   }, [initialData])
+
+  useEffect(() => {
+    if (!editing) {
+      if (wasEditingProfile.current) editProfileButtonRef.current?.focus()
+      wasEditingProfile.current = false
+      return
+    }
+    wasEditingProfile.current = true
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    editProfileCloseRef.current?.focus()
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [editing])
 
   if (initialData.error || !data.profile) {
     return (
@@ -183,6 +205,49 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
   const askForLogin = (action: string) => {
     setGuestPrompt(action)
     setNotice(null)
+  }
+
+  const beginProfileEdit = () => {
+    setEditable({
+      displayName: profile.displayName,
+      bio: profile.bio,
+      writingLanguages: profile.writingLanguages.join(', '),
+      favoriteGenres: profile.favoriteGenres.join(', '),
+      facebookUrl: profile.facebookUrl ?? '',
+      instagramUrl: profile.instagramUrl ?? '',
+      portfolioUrl: profile.portfolioUrl ?? '',
+      collaborationRoles: profile.collaborationRoles.join(', '),
+    })
+    setProfileError(null)
+    setProfileFieldErrors({})
+    setEditing(true)
+  }
+
+  const cancelProfileEdit = () => {
+    setProfileError(null)
+    setProfileFieldErrors({})
+    setEditing(false)
+  }
+
+  const handleEditDialogKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape' && !savingProfile && !avatarUploading) {
+      event.preventDefault()
+      cancelProfileEdit()
+      return
+    }
+    if (event.key !== 'Tab') return
+    const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])',
+    )).filter((element) => element.getClientRects().length > 0)
+    const first = focusable[0]
+    const last = focusable.at(-1)
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault()
+      last?.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first?.focus()
+    }
   }
 
   const selectTabWithKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -620,31 +685,21 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
     }
   }
 
-  const shareProfile = async () => {
-    const url = `${window.location.origin}${pathname}`
-    try {
-      await navigator.clipboard.writeText(url)
-      setNotice('Nakopya ang profile link.')
-    } catch {
-      setNotice(url)
-    }
-  }
-
   const uploadAvatar = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0]
     event.currentTarget.value = ''
     if (!file || !ownProfile || !data.currentUserId) return
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-      setActionError('Pumili ng JPG, PNG, o WEBP na larawan.')
+      setProfileError('Pumili ng JPG, PNG, o WEBP na larawan.')
       return
     }
     if (file.size <= 0 || file.size > 5 * 1024 * 1024) {
-      setActionError('Hanggang 5 MB lang ang profile picture.')
+      setProfileError('Hanggang 5 MB lang ang profile picture.')
       return
     }
 
     setAvatarUploading(true)
-    setActionError(null)
+    setProfileError(null)
     const supabase = getSupabaseClient()
     const extension = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/png' ? 'png' : 'webp'
     const avatarPath = `${data.currentUserId}/${crypto.randomUUID()}.${extension}`
@@ -671,6 +726,12 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
       setData((current) => ({
         ...current,
         profile: current.profile ? { ...current.profile, avatarPath, avatarUrl } : null,
+        posts: current.posts.map((post) => post.authorId === data.currentUserId ? { ...post, authorAvatarUrl: avatarUrl } : post),
+        likedPosts: current.likedPosts.map((post) => post.authorId === data.currentUserId ? { ...post, authorAvatarUrl: avatarUrl } : post),
+        savedPosts: current.savedPosts.map((post) => post.authorId === data.currentUserId ? { ...post, authorAvatarUrl: avatarUrl } : post),
+      }))
+      window.dispatchEvent(new CustomEvent('storylines:profile-avatar-updated', {
+        detail: { userId: data.currentUserId, avatarUrl },
       }))
       setNotice('Na-update na ang profile picture mo.')
 
@@ -678,11 +739,11 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
         const { error: cleanupError } = await supabase.storage.from('avatars').remove([previousAvatarPath])
         if (cleanupError) {
           console.error('Profile photo updated, but the previous photo could not be removed', cleanupError)
-          setActionError('Na-update ang larawan, pero hindi natanggal ang lumang file. Subukan ulit o makipag-ugnayan sa suporta.')
+          setProfileError('Na-update ang larawan, pero hindi natanggal ang lumang file. Subukan ulit o makipag-ugnayan sa suporta.')
         }
       }
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Hindi na-upload ang profile picture. Subukan ulit.')
+      setProfileError(error instanceof Error ? error.message : 'Hindi na-upload ang profile picture. Subukan ulit.')
     } finally {
       setAvatarUploading(false)
     }
@@ -790,34 +851,12 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
       <section className="overflow-hidden rounded-2xl border border-border bg-card">
         <div className="h-28 bg-[linear-gradient(115deg,color-mix(in_oklch,var(--primary)_96%,var(--accent)),color-mix(in_oklch,var(--accent)_72%,var(--primary)))] sm:h-36" aria-hidden="true" />
         <div className="flex flex-col gap-4 px-4 pb-4 sm:flex-row sm:items-end sm:px-6">
-          <div className="-mt-8 flex shrink-0 flex-col items-center gap-1.5 sm:-mt-10">
+          <div className="-mt-8 flex shrink-0 items-center sm:-mt-10">
             <span className="relative flex size-16 items-center justify-center overflow-hidden rounded-full border-4 border-card bg-secondary text-accent sm:size-20">
               {profile.avatarUrl
                 ? <Image src={profile.avatarUrl} alt={`${profile.displayName}'s profile picture`} fill sizes="80px" className="object-cover" />
                 : <UserRound className="size-8 sm:size-9" aria-hidden="true" />}
             </span>
-            {ownProfile && (
-              <>
-                <input
-                  ref={avatarInputRef}
-                  id="profile-avatar-upload"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  aria-label="Choose a profile picture"
-                  className="sr-only"
-                  onChange={(event) => void uploadAvatar(event)}
-                />
-                <button
-                  type="button"
-                  disabled={avatarUploading}
-                  onClick={() => avatarInputRef.current?.click()}
-                  className="inline-flex min-h-11 items-center gap-1 rounded-full px-2 text-xs font-semibold text-accent hover:bg-secondary focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-60"
-                >
-                  <Camera className="size-3.5" aria-hidden="true" />
-                  {avatarUploading ? 'Uploading…' : profile.avatarUrl ? 'Change photo' : 'Add photo'}
-                </button>
-              </>
-            )}
           </div>
           <div className="min-w-0 flex-1">
             <h1 className="break-words font-serif text-2xl font-bold sm:text-3xl">{profile.displayName}</h1>
@@ -832,24 +871,32 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
           </div>
           <div className="flex flex-wrap gap-2">
             {ownProfile ? (
-              <Button type="button" variant="outline" className="min-h-11 rounded-full" onClick={() => setEditing((value) => !value)}>
-                {editing ? 'Cancel edit' : 'Edit profile'}
+              <Button
+                ref={editProfileButtonRef}
+                type="button"
+                variant="outline"
+                className="min-h-11 rounded-full"
+                aria-haspopup="dialog"
+                aria-expanded={editing}
+                onClick={beginProfileEdit}
+              >
+                <Pencil className="size-4" aria-hidden="true" /> Edit profile
               </Button>
             ) : creatorProfile ? (
               <Button type="button" disabled={followPending} className="min-h-11 rounded-full bg-accent text-accent-foreground motion-reduce:transition-none" onClick={() => void followProfile()}>
                 <UsersRound className="size-4" /> {followPending ? 'Saving…' : data.isFollowing ? 'Following' : 'Follow'}
               </Button>
             ) : null}
-            <Button type="button" variant="outline" className="min-h-11 rounded-full" onClick={() => void shareProfile()}>
+            <Button type="button" variant="outline" className="min-h-11 rounded-full" onClick={() => setShareOpen(true)}>
               <Share2 className="size-4" /> Share profile
             </Button>
           </div>
         </div>
-        <div className="flex flex-wrap gap-x-3 gap-y-2 border-t border-border px-4 py-2 sm:px-6">
+        <div className="grid grid-cols-4 border-t border-border px-1 py-1 sm:px-3">
           <button
             type="button"
             onClick={() => setConnectionsDirection('followers')}
-            className="min-h-11 rounded-lg px-2 text-left text-xs hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+            className="min-h-11 rounded-lg px-1 text-center text-[11px] hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring sm:text-xs"
             aria-label={`Show ${data.counts.followers} followers`}
           >
             <strong>{data.counts.followers}</strong> Followers
@@ -857,13 +904,13 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
           <button
             type="button"
             onClick={() => setConnectionsDirection('following')}
-            className="min-h-11 rounded-lg px-2 text-left text-xs hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+            className="min-h-11 rounded-lg px-1 text-center text-[11px] hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring sm:text-xs"
             aria-label={`Show ${data.counts.following} following`}
           >
             <strong>{data.counts.following}</strong> Following
           </button>
-          <span><strong>{data.counts.works}</strong> Works</span>
-          <span><strong>{data.counts.posts}</strong> Posts</span>
+          <span className="flex min-h-11 items-center justify-center px-1 text-center text-[11px] sm:text-xs"><strong>{data.counts.works}&nbsp;Works</strong></span>
+          <span className="flex min-h-11 items-center justify-center px-1 text-center text-[11px] sm:text-xs"><strong>{data.counts.posts}&nbsp;Posts</strong></span>
         </div>
         <div className="flex min-h-12 gap-1 overflow-x-auto border-t border-border px-3" role="tablist" aria-label="Profile content" onKeyDown={selectTabWithKeyboard}>
           {profileTabs.map((tab) => (
@@ -885,57 +932,153 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
       </section>
 
       {editing && (
-        <Panel>
-          <form className="grid gap-4 sm:grid-cols-2" onSubmit={(event) => void editProfile(event)}>
-            <label className="text-sm font-semibold">
-              Display name
-              <input value={editable.displayName} maxLength={80} aria-invalid={Boolean(profileFieldErrors.displayName)} aria-describedby={profileFieldErrors.displayName ? 'profile-error-name' : undefined} onChange={(event) => setEditable((current) => ({ ...current, displayName: event.target.value }))} className="mt-2 min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" required />
-              {profileFieldErrors.displayName && <span id="profile-error-name" role="alert" className="mt-1 block text-xs text-destructive">{profileFieldErrors.displayName}</span>}
-            </label>
-            <label className="text-sm font-semibold sm:col-span-2">
-              Bio
-              <textarea value={editable.bio} maxLength={160} aria-invalid={Boolean(profileFieldErrors.bio)} aria-describedby={profileFieldErrors.bio ? 'profile-error-bio' : undefined} onChange={(event) => setEditable((current) => ({ ...current, bio: event.target.value }))} className="mt-2 min-h-20 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-              {profileFieldErrors.bio && <span id="profile-error-bio" role="alert" className="mt-1 block text-xs text-destructive">{profileFieldErrors.bio}</span>}
-              <span className="mt-1 block text-right text-xs font-normal text-muted-foreground">{editable.bio.length}/160</span>
-            </label>
-            <label className="text-sm font-semibold">
-              Writes in (comma-separated)
-              <input value={editable.writingLanguages} aria-invalid={Boolean(profileFieldErrors.writingLanguages)} aria-describedby={profileFieldErrors.writingLanguages ? 'profile-error-languages' : undefined} onChange={(event) => setEditable((current) => ({ ...current, writingLanguages: event.target.value }))} className="mt-2 min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-              {profileFieldErrors.writingLanguages && <span id="profile-error-languages" role="alert" className="mt-1 block text-xs text-destructive">{profileFieldErrors.writingLanguages}</span>}
-            </label>
-            <label className="text-sm font-semibold">
-              Favorite genres (comma-separated)
-              <input value={editable.favoriteGenres} aria-invalid={Boolean(profileFieldErrors.favoriteGenres)} aria-describedby={profileFieldErrors.favoriteGenres ? 'profile-error-genres' : undefined} onChange={(event) => setEditable((current) => ({ ...current, favoriteGenres: event.target.value }))} className="mt-2 min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-              {profileFieldErrors.favoriteGenres && <span id="profile-error-genres" role="alert" className="mt-1 block text-xs text-destructive">{profileFieldErrors.favoriteGenres}</span>}
-            </label>
-            <label className="text-sm font-semibold">
-              Facebook link
-              <input type="url" value={editable.facebookUrl} aria-invalid={Boolean(profileFieldErrors.facebookUrl)} aria-describedby={profileFieldErrors.facebookUrl ? 'profile-error-facebook' : undefined} onChange={(event) => setEditable((current) => ({ ...current, facebookUrl: event.target.value }))} className="mt-2 min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-              {profileFieldErrors.facebookUrl && <span id="profile-error-facebook" role="alert" className="mt-1 block text-xs text-destructive">{profileFieldErrors.facebookUrl}</span>}
-            </label>
-            <label className="text-sm font-semibold">
-              Instagram link
-              <input type="url" value={editable.instagramUrl} aria-invalid={Boolean(profileFieldErrors.instagramUrl)} aria-describedby={profileFieldErrors.instagramUrl ? 'profile-error-instagram' : undefined} onChange={(event) => setEditable((current) => ({ ...current, instagramUrl: event.target.value }))} className="mt-2 min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-              {profileFieldErrors.instagramUrl && <span id="profile-error-instagram" role="alert" className="mt-1 block text-xs text-destructive">{profileFieldErrors.instagramUrl}</span>}
-            </label>
-            <label className="text-sm font-semibold">
-              Portfolio link
-              <input type="url" value={editable.portfolioUrl} aria-invalid={Boolean(profileFieldErrors.portfolioUrl)} aria-describedby={profileFieldErrors.portfolioUrl ? 'profile-error-portfolio' : undefined} onChange={(event) => setEditable((current) => ({ ...current, portfolioUrl: event.target.value }))} className="mt-2 min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-              {profileFieldErrors.portfolioUrl && <span id="profile-error-portfolio" role="alert" className="mt-1 block text-xs text-destructive">{profileFieldErrors.portfolioUrl}</span>}
-            </label>
-            <label className="text-sm font-semibold">
-              Looking for (comma-separated)
-              <input value={editable.collaborationRoles} aria-invalid={Boolean(profileFieldErrors.collaborationRoles)} aria-describedby={profileFieldErrors.collaborationRoles ? 'profile-error-collaboration' : undefined} onChange={(event) => setEditable((current) => ({ ...current, collaborationRoles: event.target.value }))} className="mt-2 min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-              {profileFieldErrors.collaborationRoles && <span id="profile-error-collaboration" role="alert" className="mt-1 block text-xs text-destructive">{profileFieldErrors.collaborationRoles}</span>}
-            </label>
-            {profileError && <p role="alert" className="text-sm text-destructive sm:col-span-2">{profileError}</p>}
-            <div className="flex flex-wrap justify-end gap-2 sm:col-span-2">
-              <Button type="button" variant="outline" className="min-h-11" onClick={() => setEditing(false)}>Cancel</Button>
-              <Button type="submit" disabled={savingProfile} className="min-h-11 bg-accent text-accent-foreground">{savingProfile ? 'Saving…' : 'Save changes'}</Button>
-            </div>
-          </form>
-        </Panel>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-3 sm:p-6"
+          onClick={(event) => {
+            if (event.target === event.currentTarget && !savingProfile && !avatarUploading) cancelProfileEdit()
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-profile-title"
+            onKeyDown={handleEditDialogKeyDown}
+            className="flex max-h-[min(90dvh,55rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
+          >
+            <header className="flex items-center justify-between gap-3 border-b border-border px-5 py-4 sm:px-6">
+              <div>
+                <p className="eyebrow">Profile settings</p>
+                <h2 id="edit-profile-title" className="mt-1 font-serif text-2xl font-bold">Edit profile</h2>
+              </div>
+              <button
+                ref={editProfileCloseRef}
+                type="button"
+                aria-label="Close edit profile"
+                onClick={cancelProfileEdit}
+                disabled={savingProfile || avatarUploading}
+                className="flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-60"
+              >
+                <X className="size-5" />
+              </button>
+            </header>
+            <form id="edit-profile-form" className="min-h-0 flex-1 overflow-y-auto px-5 sm:px-6" onSubmit={(event) => void editProfile(event)}>
+              <div className="grid items-center gap-3 border-b border-border py-5 sm:grid-cols-[8rem_minmax(0,1fr)]">
+                <p className="text-sm font-semibold">Profile photo</p>
+                <div className="flex items-center gap-4">
+                  <input
+                    ref={avatarInputRef}
+                    id="profile-avatar-upload"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    aria-label="Choose a profile picture"
+                    className="hidden"
+                    onChange={(event) => void uploadAvatar(event)}
+                  />
+                  <span className="relative flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-accent">
+                    {profile.avatarUrl
+                      ? <Image src={profile.avatarUrl} alt={`${profile.displayName}'s profile picture`} fill sizes="96px" className="object-cover" />
+                      : <UserRound className="size-10" aria-hidden="true" />}
+                    <button
+                      type="button"
+                      disabled={avatarUploading}
+                      onClick={() => avatarInputRef.current?.click()}
+                      aria-label={profile.avatarUrl ? 'Change profile picture' : 'Add profile picture'}
+                      className="absolute bottom-0 right-0 flex size-9 items-center justify-center rounded-full border-2 border-card bg-background text-foreground shadow focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-60"
+                    >
+                      <Pencil className="size-4" aria-hidden="true" />
+                    </button>
+                  </span>
+                  <p className="text-xs leading-5 text-muted-foreground">JPG, PNG, o WEBP · hanggang 5 MB</p>
+                </div>
+              </div>
+              <div className="grid gap-2 border-b border-border py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3">
+                <label htmlFor="profile-username" className="text-sm font-semibold">Username</label>
+                <div>
+                  <input id="profile-username" value={`@${profile.username}`} readOnly className="min-h-11 w-full rounded-lg border border-input bg-muted px-3 text-sm text-muted-foreground" />
+                  <p className="mt-1 text-xs text-muted-foreground">Hindi mababago rito ang username mo.</p>
+                </div>
+              </div>
+              <div className="grid gap-2 border-b border-border py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3">
+                <label htmlFor="profile-display-name" className="text-sm font-semibold">Name</label>
+                <div>
+                  <input id="profile-display-name" value={editable.displayName} maxLength={80} aria-invalid={Boolean(profileFieldErrors.displayName)} aria-describedby={profileFieldErrors.displayName ? 'profile-error-name' : undefined} onChange={(event) => setEditable((current) => ({ ...current, displayName: event.target.value }))} className="min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" required />
+                  {profileFieldErrors.displayName && <span id="profile-error-name" role="alert" className="mt-1 block text-xs text-destructive">{profileFieldErrors.displayName}</span>}
+                </div>
+              </div>
+              <div className="grid gap-2 border-b border-border py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3">
+                <label htmlFor="profile-bio" className="text-sm font-semibold">Bio</label>
+                <div>
+                  <textarea id="profile-bio" value={editable.bio} maxLength={160} aria-invalid={Boolean(profileFieldErrors.bio)} aria-describedby={profileFieldErrors.bio ? 'profile-error-bio' : undefined} onChange={(event) => setEditable((current) => ({ ...current, bio: event.target.value }))} className="min-h-28 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                  {profileFieldErrors.bio && <span id="profile-error-bio" role="alert" className="mt-1 block text-xs text-destructive">{profileFieldErrors.bio}</span>}
+                  <span className="mt-1 block text-right text-xs text-muted-foreground">{editable.bio.length}/160</span>
+                </div>
+              </div>
+              <div className="grid gap-2 border-b border-border py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3">
+                <label htmlFor="profile-languages" className="text-sm font-semibold">Writes in</label>
+                <div>
+                  <input id="profile-languages" value={editable.writingLanguages} aria-invalid={Boolean(profileFieldErrors.writingLanguages)} aria-describedby={profileFieldErrors.writingLanguages ? 'profile-error-languages' : undefined} onChange={(event) => setEditable((current) => ({ ...current, writingLanguages: event.target.value }))} className="min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                  {profileFieldErrors.writingLanguages && <span id="profile-error-languages" role="alert" className="mt-1 block text-xs text-destructive">{profileFieldErrors.writingLanguages}</span>}
+                  <p className="mt-1 text-xs text-muted-foreground">Comma-separated · hanggang 5</p>
+                </div>
+              </div>
+              <div className="grid gap-2 border-b border-border py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3">
+                <label htmlFor="profile-genres" className="text-sm font-semibold">Favorite genres</label>
+                <div>
+                  <input id="profile-genres" value={editable.favoriteGenres} aria-invalid={Boolean(profileFieldErrors.favoriteGenres)} aria-describedby={profileFieldErrors.favoriteGenres ? 'profile-error-genres' : undefined} onChange={(event) => setEditable((current) => ({ ...current, favoriteGenres: event.target.value }))} className="min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                  {profileFieldErrors.favoriteGenres && <span id="profile-error-genres" role="alert" className="mt-1 block text-xs text-destructive">{profileFieldErrors.favoriteGenres}</span>}
+                  <p className="mt-1 text-xs text-muted-foreground">Comma-separated · hanggang 10</p>
+                </div>
+              </div>
+              <div className="grid gap-2 border-b border-border py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3">
+                <label htmlFor="profile-facebook" className="text-sm font-semibold">Facebook link</label>
+                <div>
+                  <input id="profile-facebook" type="url" value={editable.facebookUrl} aria-invalid={Boolean(profileFieldErrors.facebookUrl)} aria-describedby={profileFieldErrors.facebookUrl ? 'profile-error-facebook' : undefined} onChange={(event) => setEditable((current) => ({ ...current, facebookUrl: event.target.value }))} className="min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                  {profileFieldErrors.facebookUrl && <span id="profile-error-facebook" role="alert" className="mt-1 block text-xs text-destructive">{profileFieldErrors.facebookUrl}</span>}
+                </div>
+              </div>
+              <div className="grid gap-2 border-b border-border py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3">
+                <label htmlFor="profile-instagram" className="text-sm font-semibold">Instagram link</label>
+                <div>
+                  <input id="profile-instagram" type="url" value={editable.instagramUrl} aria-invalid={Boolean(profileFieldErrors.instagramUrl)} aria-describedby={profileFieldErrors.instagramUrl ? 'profile-error-instagram' : undefined} onChange={(event) => setEditable((current) => ({ ...current, instagramUrl: event.target.value }))} className="min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                  {profileFieldErrors.instagramUrl && <span id="profile-error-instagram" role="alert" className="mt-1 block text-xs text-destructive">{profileFieldErrors.instagramUrl}</span>}
+                </div>
+              </div>
+              <div className="grid gap-2 border-b border-border py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3">
+                <label htmlFor="profile-portfolio" className="text-sm font-semibold">Portfolio link</label>
+                <div>
+                  <input id="profile-portfolio" type="url" value={editable.portfolioUrl} aria-invalid={Boolean(profileFieldErrors.portfolioUrl)} aria-describedby={profileFieldErrors.portfolioUrl ? 'profile-error-portfolio' : undefined} onChange={(event) => setEditable((current) => ({ ...current, portfolioUrl: event.target.value }))} className="min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                  {profileFieldErrors.portfolioUrl && <span id="profile-error-portfolio" role="alert" className="mt-1 block text-xs text-destructive">{profileFieldErrors.portfolioUrl}</span>}
+                </div>
+              </div>
+              <div className="grid gap-2 py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3">
+                <label htmlFor="profile-collaboration-roles" className="text-sm font-semibold">Looking for</label>
+                <div>
+                  <input id="profile-collaboration-roles" value={editable.collaborationRoles} aria-invalid={Boolean(profileFieldErrors.collaborationRoles)} aria-describedby={profileFieldErrors.collaborationRoles ? 'profile-error-collaboration' : undefined} onChange={(event) => setEditable((current) => ({ ...current, collaborationRoles: event.target.value }))} className="min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                  {profileFieldErrors.collaborationRoles && <span id="profile-error-collaboration" role="alert" className="mt-1 block text-xs text-destructive">{profileFieldErrors.collaborationRoles}</span>}
+                  <p className="mt-1 text-xs text-muted-foreground">Comma-separated · hanggang 5 roles</p>
+                </div>
+              </div>
+            </form>
+            <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-card px-5 py-4 sm:px-6">
+              {profileError
+                ? <p role="alert" className="min-w-0 flex-1 text-sm text-destructive">{profileError}</p>
+                : <span className="text-xs text-muted-foreground">Your changes appear on your public profile.</span>}
+              <div className="flex shrink-0 gap-2">
+                <Button type="button" variant="outline" className="min-h-11" disabled={savingProfile || avatarUploading} onClick={cancelProfileEdit}>Cancel</Button>
+                <Button
+                  type="submit"
+                  form="edit-profile-form"
+                  disabled={savingProfile || avatarUploading}
+                  className="min-h-11 bg-accent text-accent-foreground"
+                >
+                  {savingProfile ? 'Saving…' : 'Save changes'}
+                </Button>
+              </div>
+            </footer>
+          </section>
+        </div>
       )}
+      {shareOpen && <ShareLinkDialog title="Share this profile" url={`${window.location.origin}${pathname}`} onClose={() => setShareOpen(false)} />}
 
       {guestPrompt && (
         <p className="rounded-xl border border-accent/30 bg-card px-4 py-3 text-sm" role="status">
@@ -1035,6 +1178,7 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
                   onEdit={editPost}
                   onDelete={deletePost}
                   onLoginRequired={askForLogin}
+                  onProfile={(authorId) => router.push(authorId === data.currentUserId ? '/profile' : `/profile/${encodeURIComponent(authorId)}`)}
                 />
               ))}
               {morePostsError && (
