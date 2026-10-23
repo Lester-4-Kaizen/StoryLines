@@ -177,6 +177,7 @@ html {
 .profile-avatar { display: inline-flex; align-items: center; justify-content: center; width: 5.5rem; height: 5.5rem; margin-top: -3.5rem; border: 5px solid var(--card); border-radius: 50%; background: var(--secondary); color: var(--accent); }
 .badge { display: inline-flex; align-items: center; gap: .3rem; border-radius: 999px; padding: .25rem .55rem; font-size: .65rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
 .badge-reader { background: var(--secondary); color: var(--primary); }
+.badge-writer { background: color-mix(in oklch, var(--accent) 12%, var(--card)); color: var(--accent); }
 .toggle { accent-color: var(--accent); width: 1.1rem; height: 1.1rem; }
 .back-to-top { position: fixed; right: 1rem; bottom: max(1rem, env(safe-area-inset-bottom)); z-index: 35; display: inline-flex; width: 3rem; height: 3rem; align-items: center; justify-content: center; border: 1px solid color-mix(in oklch, var(--primary-foreground) 30%, transparent); border-radius: 999px; background: var(--accent); color: var(--accent-foreground); box-shadow: 0 5px 18px color-mix(in oklch, var(--primary) 25%, transparent); opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(.6rem) scale(.88); transition: opacity .2s ease, visibility .2s ease, transform .2s ease, background-color .18s ease, box-shadow .18s ease; }
 .back-to-top-visible { opacity: 1; visibility: visible; pointer-events: auto; transform: translateY(0) scale(1); }

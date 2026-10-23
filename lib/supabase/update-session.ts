@@ -3,10 +3,11 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { safeNextPath } from '@/lib/auth/redirect'
 import { isSupabaseConfigured, supabaseKey, supabaseUrl } from '@/lib/supabase/config'
 
-const PROTECTED_PREFIXES = ['/create', '/library', '/settings', '/profile', '/collaborate']
+const PROTECTED_PREFIXES = ['/create', '/library', '/settings', '/collaborate']
 
 function isProtectedPath(pathname: string) {
-  return PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+  return pathname === '/profile'
+    || PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
 }
 
 function redirectWithCookies(url: URL, response: NextResponse) {

@@ -26,6 +26,7 @@ export function WorkEditorView({ work }: { work: Work }) {
   const [chapterTitle, setChapterTitle] = useState(work.chapterTitle ?? 'Chapter 1')
   const [chapterBody, setChapterBody] = useState(work.chapterBody ?? '')
   const [pageCount, setPageCount] = useState(work.pageCount ?? 0)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const backToWorks = () => router.push('/create/works')
 
@@ -43,10 +44,8 @@ export function WorkEditorView({ work }: { work: Work }) {
   }
 
   const remove = () => {
-    if (confirm(`Burahin ang "${work.title}"? Hindi na ito maibabalik.`)) {
-      deleteWork(work.id)
-      backToWorks()
-    }
+    deleteWork(work.id)
+    backToWorks()
   }
 
   return (
@@ -59,7 +58,7 @@ export function WorkEditorView({ work }: { work: Work }) {
           <span className="eyebrow mt-3 block">Editing {work.type === 'story' ? 'story' : 'comic'}</span>
           <h1 className="mt-1 font-serif text-5xl font-bold text-balance">{work.title}</h1>
         </div>
-        <Button variant="destructive" onClick={remove} className="shrink-0 rounded-lg">
+        <Button variant="destructive" onClick={() => setConfirmDelete(true)} className="shrink-0 rounded-lg">
           <Trash2 data-icon="inline-start" /> Delete
         </Button>
       </div>
@@ -132,6 +131,51 @@ export function WorkEditorView({ work }: { work: Work }) {
           </div>
         </div>
       </Panel>
+      {confirmDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-primary/45 p-4"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setConfirmDelete(false)
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-work-title"
+            className="w-full max-w-sm rounded-2xl border border-border bg-card p-5 shadow-xl"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                setConfirmDelete(false)
+                return
+              }
+              if (event.key !== 'Tab') return
+              const buttons = event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')
+              const first = buttons[0]
+              const last = buttons[buttons.length - 1]
+              if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault()
+                last?.focus()
+              } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault()
+                first?.focus()
+              }
+            }}
+          >
+            <h2 id="delete-work-title" className="font-serif text-xl font-bold">Delete this work?</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Burahin ang “{work.title}”? Hindi na ito maibabalik.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setConfirmDelete(false)} className="rounded-lg" autoFocus>
+                Cancel
+              </Button>
+              <Button type="button" variant="destructive" onClick={remove} className="rounded-lg">
+                <Trash2 data-icon="inline-start" /> Delete work
+              </Button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   )
 }

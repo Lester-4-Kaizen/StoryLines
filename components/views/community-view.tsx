@@ -1,13 +1,14 @@
 'use client'
 
 import { useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Bookmark,
   Brush,
   Check,
-  ChevronDown,
   Compass,
   Trash2,
+  MoreHorizontal,
   Handshake,
   Heart,
   ImagePlus,
@@ -98,8 +99,30 @@ async function compressImage(file: File): Promise<string> {
   })
 }
 
-function Avatar({ role, large = false }: { role?: 'writer' | 'artist'; large?: boolean }) {
+function Avatar({
+  role,
+  large = false,
+  onClick,
+  label,
+}: {
+  role?: 'writer' | 'artist'
+  large?: boolean
+  onClick?: () => void
+  label?: string
+}) {
   const Icon = role === 'artist' ? Brush : role === 'writer' ? PenLine : UsersRound
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className={`community-avatar${large ? ' community-avatar-large' : ''} community-avatar-link`}
+        onClick={onClick}
+        aria-label={label ?? 'Open profile'}
+      >
+        <Icon className={large ? 'size-5' : 'size-4'} />
+      </button>
+    )
+  }
   return (
     <span className={`community-avatar${large ? ' community-avatar-large' : ''}`} aria-hidden="true">
       <Icon className={large ? 'size-5' : 'size-4'} />
@@ -116,7 +139,7 @@ function FeedPost({
   onSave,
   onLoadComments,
   onAddComment,
-  onAuthorClick,
+  onProfileClick,
   canDelete,
   onDelete,
 }: {
@@ -128,7 +151,7 @@ function FeedPost({
   onSave: (id: string) => Promise<void>
   onLoadComments: (id: string) => Promise<CommunityComment[]>
   onAddComment: (id: string, content: string) => Promise<CommunityComment>
-  onAuthorClick: (id: string) => void
+  onProfileClick: (id: string) => void
   canDelete: boolean
   onDelete: (id: string) => Promise<void>
 }) {
@@ -143,6 +166,7 @@ function FeedPost({
   const [saveError, setSaveError] = useState<string | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const postAuthorId = post.authorId
   const images = post.imageUrls?.length ? post.imageUrls : post.imageUrl ? [post.imageUrl] : []
   const tags = post.tags ?? []
@@ -213,12 +237,11 @@ function FeedPost({
   }
 
   const deleteOwnPost = async () => {
-    if (!window.confirm('Delete this post? This cannot be undone.')) return
-
     setDeleting(true)
     setDeleteError(null)
     try {
       await onDelete(post.id)
+      setConfirmDelete(false)
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : 'Hindi mabura ang post. Subukan ulit.')
       setDeleting(false)
@@ -228,11 +251,11 @@ function FeedPost({
   return (
     <article className="community-card">
       <div className="flex items-start gap-3">
-        <Avatar role={post.authorRole} />
+        <Avatar role={post.authorRole} onClick={postAuthorId ? () => onProfileClick(postAuthorId) : undefined} label={`Open ${post.authorName ?? 'author'} profile`} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             {postAuthorId ? (
-              <button type="button" className="text-sm font-bold hover:text-accent hover:underline" onClick={() => onAuthorClick(postAuthorId)}>
+              <button type="button" className="text-sm font-bold hover:text-accent hover:underline" onClick={() => onProfileClick(postAuthorId)}>
                 {post.authorName || 'StoryLines creator'}
               </button>
             ) : (
@@ -249,22 +272,32 @@ function FeedPost({
             <span className="community-type">{postTypeLabel(post.type)}</span>
           </div>
         </div>
-        {canDelete ? (
-          <button
-            type="button"
-            className="community-icon-button text-destructive"
-            aria-label="Delete your post"
-            title="Delete your post"
-            onClick={() => void deleteOwnPost()}
-            disabled={deleting}
+        <details className="group relative">
+          <summary
+            className="community-icon-button list-none"
+            aria-label="Post actions"
+            title="Post actions"
           >
-            <Trash2 className="size-4" />
-          </button>
-        ) : (
-          <button type="button" className="community-icon-button" aria-label="Post options" title="Post options arrive in a later phase" disabled>
-            <ChevronDown className="size-4" />
-          </button>
-        )}
+            <MoreHorizontal className="size-4" />
+          </summary>
+          <div className="absolute right-0 z-20 mt-1 w-48 rounded-xl border border-border bg-card p-1 shadow-lg">
+            {canDelete ? (
+              <button
+                type="button"
+                role="menuitem"
+                className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-destructive hover:bg-destructive/10"
+                onClick={(event) => {
+                  event.currentTarget.closest('details')?.removeAttribute('open')
+                  setConfirmDelete(true)
+                }}
+              >
+                <Trash2 className="size-4" /> Delete post
+              </button>
+            ) : (
+              <span className="block px-3 py-2 text-xs text-muted-foreground">More actions coming soon</span>
+            )}
+          </div>
+        </details>
       </div>
 
       <div className="mt-4">
@@ -353,7 +386,7 @@ function FeedPost({
               {comments.map((comment) => (
                 <article key={comment.id} className="rounded-xl bg-secondary/55 px-3 py-2.5">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                    <button type="button" className="font-bold hover:text-accent hover:underline" onClick={() => onAuthorClick(comment.authorId)}>
+                    <button type="button" className="font-bold hover:text-accent hover:underline" onClick={() => onProfileClick(comment.authorId)}>
                       {comment.authorName}{comment.authorUsername ? ` · @${comment.authorUsername}` : ''}
                     </button>
                     <time className="text-muted-foreground" dateTime={new Date(comment.createdAt).toISOString()}>
@@ -399,6 +432,61 @@ function FeedPost({
           {commentError && <p role="alert" className="mt-2 text-xs text-destructive">{commentError}</p>}
         </section>
       )}
+      {confirmDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-primary/45 p-4"
+          onClick={(event) => {
+            if (event.target === event.currentTarget && !deleting) setConfirmDelete(false)
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`delete-post-title-${post.id}`}
+            className="w-full max-w-sm rounded-2xl border border-border bg-card p-5 shadow-xl"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && !deleting) {
+                setConfirmDelete(false)
+                return
+              }
+              if (event.key !== 'Tab') return
+              const buttons = event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')
+              const first = buttons[0]
+              const last = buttons[buttons.length - 1]
+              if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault()
+                last?.focus()
+              } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault()
+                first?.focus()
+              }
+            }}
+          >
+            <h2 id={`delete-post-title-${post.id}`} className="font-serif text-xl font-bold">Delete this post?</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">This will permanently remove your post and its comments. You can’t undo this action.</p>
+            {deleteError && <p role="alert" className="mt-3 text-sm text-destructive">{deleteError}</p>}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                className="min-h-11 rounded-xl border border-border px-4 text-sm font-semibold hover:bg-secondary"
+                onClick={() => setConfirmDelete(false)}
+                disabled={deleting}
+                autoFocus
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-destructive px-4 text-sm font-bold text-white hover:brightness-95 disabled:opacity-50"
+                onClick={() => void deleteOwnPost()}
+                disabled={deleting}
+              >
+                <Trash2 className="size-4" /> {deleting ? 'Deleting…' : 'Delete post'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </article>
   )
 }
@@ -414,6 +502,7 @@ export function CommunityView({
   role: Badge
   onUnlock: () => void
 }) {
+  const router = useRouter()
   const {
     posts,
     authors,
@@ -479,9 +568,8 @@ export function CommunityView({
     requestAnimationFrame(() => textareaRef.current?.focus())
   }
 
-  const showAuthorPosts = (authorId: string) => {
-    setSelectedAuthorId(authorId)
-    setFeedTab('for-you')
+  const openProfile = (authorId: string) => {
+    router.push(authorId === currentUserId ? '/profile' : `/profile/${encodeURIComponent(authorId)}`)
   }
 
   const addTag = (value = tagInput) => {
@@ -572,8 +660,13 @@ export function CommunityView({
         <aside className="community-left-sidebar" aria-label="Community shortcuts">
           {isLoggedIn ? (
             <Panel className="community-profile-card">
-              <Avatar role={creator ? role === 'artist' ? 'artist' : 'writer' : undefined} large />
-              <p className="mt-3 font-serif text-lg font-bold">Your StoryLines</p>
+              <Avatar
+                role={creator ? role === 'artist' ? 'artist' : 'writer' : undefined}
+                large
+                onClick={() => router.push('/profile')}
+                label="Open your profile"
+              />
+              <button type="button" className="mt-3 font-serif text-lg font-bold hover:text-accent hover:underline" onClick={() => router.push('/profile')}>Your StoryLines</button>
               <span className="community-role mt-1">{role === 'artist' ? 'Alagad ng sining' : role === 'writer' ? 'Writer' : 'Reader'}</span>
               <p className="mt-3 text-xs leading-5 text-muted-foreground">Profile details will appear here when community profiles are connected.</p>
             </Panel>
@@ -777,7 +870,7 @@ export function CommunityView({
                     <li key={author.id}>
                       <button
                         type="button"
-                        onClick={() => showAuthorPosts(author.id)}
+                        onClick={() => openProfile(author.id)}
                         className="flex min-h-16 w-full items-center gap-3 py-3 text-left hover:text-accent"
                       >
                         <Avatar role={author.roles.includes('artist') ? 'artist' : 'writer'} />
@@ -839,7 +932,7 @@ export function CommunityView({
                     onSave={toggleSaved}
                     onLoadComments={loadComments}
                     onAddComment={addComment}
-                    onAuthorClick={showAuthorPosts}
+                    onProfileClick={openProfile}
                     onDelete={deletePost}
                   />
                 </div>

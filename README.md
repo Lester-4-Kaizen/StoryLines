@@ -209,6 +209,8 @@ Apply [`supabase/migrations/20261023000200_community_comments_and_saved_posts.sq
 
 Apply [`supabase/migrations/20261023000300_allow_owners_to_delete_community_posts.sql`](./supabase/migrations/20261023000300_allow_owners_to_delete_community_posts.sql) to let signed-in authors delete their own shared posts. The delete policy checks the authenticated user ID; device-only legacy posts can be removed from that device.
 
+Apply [`supabase/migrations/20261023000400_creator_follows.sql`](./supabase/migrations/20261023000400_creator_follows.sql) to enable follows on Writer and Artist profiles. Any signed-in account can follow creators; Reader profiles are not followable. Public profiles are available at `/profile/<user-id>`, while `/profile` remains the signed-in user's own profile.
+
 ## Auth routes and behavior
 
 - `/login`, `/signup`, `/forgot-password`, and `/reset-password` are standalone pages.
