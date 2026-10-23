@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Bell, BookMarked, ChevronDown, Inbox, Library, LogOut, Menu, Search, Settings, UserRound, X } from 'lucide-react'
+import { BookMarked, ChevronDown, Inbox, Library, LogOut, Menu, Search, Settings, UserRound, X } from 'lucide-react'
 import { ProfileAvatar } from '@/components/shared/profile-avatar'
 import { getSupabaseClient } from '@/lib/supabase'
 import type { Route } from '@/lib/types'
@@ -206,6 +206,107 @@ function AccountMenu({ go, logout, userId }: { go: (route: Route) => void; logou
   )
 }
 
+function InboxMenu({ userId, active }: { userId: string | null; active: boolean }) {
+  const [open, setOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [error, setError] = useState<string | null>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const ref = useClickOutside<HTMLDivElement>(() => setOpen(false), open)
+
+  const refreshUnreadCount = useCallback(async () => {
+    if (!userId) {
+      setUnreadCount(0)
+      return
+    }
+    const { count, error: queryError } = await getSupabaseClient()
+      .from('user_notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('recipient_id', userId)
+      .is('read_at', null)
+    if (queryError) throw queryError
+    setUnreadCount(count ?? 0)
+    setError(null)
+  }, [userId])
+
+  useEffect(() => {
+    let mounted = true
+    const loadUnreadCount = () => {
+      void refreshUnreadCount().catch((loadError: unknown) => {
+        if (!mounted) return
+        setError(loadError instanceof Error ? loadError.message : 'Could not load unread updates.')
+        console.error('Could not load unread updates in the header', loadError)
+      })
+    }
+    loadUnreadCount()
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') loadUnreadCount()
+    }
+    window.addEventListener('storylines:notifications-updated', loadUnreadCount)
+    window.addEventListener('focus', loadUnreadCount)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      mounted = false
+      window.removeEventListener('storylines:notifications-updated', loadUnreadCount)
+      window.removeEventListener('focus', loadUnreadCount)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [active, refreshUnreadCount])
+
+  return (
+    <div ref={ref} className="relative" onKeyDown={(event) => {
+      if (event.key === 'Escape') {
+        setOpen(false)
+        triggerRef.current?.focus()
+      }
+    }}>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className={`flex size-10 items-center justify-center rounded-md bg-primary-foreground/10 text-primary-foreground transition-colors hover:bg-primary-foreground/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${active ? 'ring-1 ring-primary-foreground/25' : ''}`}
+        aria-label="Open inbox and updates"
+        aria-expanded={open}
+        aria-haspopup="true"
+        aria-controls="header-inbox-menu"
+      >
+        <Inbox className="size-5" />
+      </button>
+      {open && (
+        <nav id="header-inbox-menu" aria-label="Inbox and updates" className="absolute right-0 z-40 mt-2 w-48 overflow-hidden rounded-md border border-border bg-card py-1 text-card-foreground shadow-xl">
+          <Link
+            href="/messages"
+            onClick={() => setOpen(false)}
+            className="flex min-h-11 items-center justify-between px-3 text-base hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+          >
+            <span>Inbox</span>
+          </Link>
+          <Link
+            href="/updates"
+            onClick={() => setOpen(false)}
+            className="flex min-h-11 items-center justify-between px-3 text-base hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+          >
+            <span>Updates</span>
+            {unreadCount > 0 && (
+              <span className="flex size-6 items-center justify-center rounded-full bg-destructive text-xs font-extrabold text-white" aria-hidden="true">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+          </Link>
+          {error && (
+            <div className="border-t border-border px-3 py-2">
+              <p role="alert" className="text-xs text-destructive">Could not load unread updates.</p>
+              <button type="button" onClick={() => void refreshUnreadCount().catch((retryError: unknown) => {
+                setError(retryError instanceof Error ? retryError.message : 'Could not load unread updates.')
+                console.error('Could not refresh unread updates in the header', retryError)
+              })} className="mt-1 min-h-8 text-xs font-bold text-accent">Try again</button>
+            </div>
+          )}
+        </nav>
+      )}
+    </div>
+  )
+}
+
 function HeaderSearch() {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -361,14 +462,7 @@ export function SiteHeader({
             </div>
           )}
           {isLoggedIn && (
-            <>
-            <button type="button" onClick={() => go('/messages')} className="relative flex size-11 items-center justify-center rounded-full p-2 hover:bg-primary-foreground/10" aria-label="Messages">
-              <Inbox className="size-5" />
-            </button>
-            <button type="button" onClick={() => go('/updates')} className="relative flex size-11 items-center justify-center rounded-full p-2 hover:bg-primary-foreground/10" aria-label="Updates and notifications">
-              <Bell className="size-5" />
-            </button>
-            </>
+            <InboxMenu userId={currentUserId} active={route === '/messages' || route === '/updates'} />
           )}
           {isLoggedIn && <AccountMenu go={go} logout={logout} userId={currentUserId} />}
           <button onClick={() => setMobileNav(!mobileNav)} className="flex size-11 items-center justify-center rounded-full hover:bg-primary-foreground/10 min-[1200px]:hidden" aria-label={mobileNav ? 'Close menu' : 'Open menu'} aria-expanded={mobileNav}>
@@ -405,8 +499,6 @@ export function SiteHeader({
           </button>
           {isLoggedIn ? (
             <>
-              <button className="flex min-h-11 items-center rounded-lg px-3 text-left text-sm font-bold tracking-wide hover:bg-primary-foreground/10" onClick={() => go('/messages')}>MESSAGES</button>
-              <button className="flex min-h-11 items-center rounded-lg px-3 text-left text-sm font-bold tracking-wide hover:bg-primary-foreground/10" onClick={() => go('/updates')}>UPDATES</button>
               <button className="flex min-h-11 items-center rounded-lg px-3 text-left text-sm font-bold tracking-wide hover:bg-primary-foreground/10" onClick={() => go('/profile')}>
                 PROFILE
               </button>

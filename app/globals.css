@@ -178,6 +178,15 @@ html {
 .community-right-sidebar li { position: relative; padding-left: .85rem; }
 .community-right-sidebar li::before { position: absolute; top: .55rem; left: .1rem; width: .35rem; height: .35rem; border-radius: 50%; background: var(--accent); content: ''; }
 .community-floating-post { position: fixed; right: 1rem; bottom: max(5.25rem, calc(env(safe-area-inset-bottom) + 4.5rem)); z-index: 30; display: none; min-height: 3.25rem; align-items: center; justify-content: center; gap: .5rem; border-radius: 999px; background: var(--accent); padding: 0 1rem; color: var(--accent-foreground); box-shadow: 0 6px 20px color-mix(in oklch, var(--primary) 22%, transparent); font-size: .8rem; font-weight: 800; }
+.legal-document-copy p { margin: 0; }
+.legal-document-copy strong { color: var(--foreground); font-weight: 700; }
+.legal-document-copy ul { list-style: disc; padding-left: 1.25rem; }
+.legal-document-copy li { padding-left: .25rem; }
+.legal-document-copy li + li { margin-top: .5rem; }
+.legal-document-copy li::marker { color: var(--accent); }
+.legal-document-copy a { color: var(--accent); font-weight: 700; text-decoration: underline; text-decoration-color: color-mix(in oklch, var(--accent) 45%, transparent); text-underline-offset: 3px; }
+.legal-document-copy a:hover { text-decoration-color: currentColor; }
+.legal-document-copy a:focus-visible { border-radius: .15rem; outline: 2px solid var(--ring); outline-offset: 3px; }
 @media (min-width: 768px) {
   .community-columns { grid-template-columns: minmax(0, 1fr) 14.5rem; gap: 1.25rem; }
   .community-right-sidebar { display: flex; }

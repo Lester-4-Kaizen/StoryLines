@@ -163,6 +163,7 @@ export function UpdatesView() {
         return
       }
       setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, read_at: now } : item))
+      window.dispatchEvent(new Event('storylines:notifications-updated'))
     }
     if (notification.kind === 'message') {
       router.push(`/messages?user=${encodeURIComponent(notification.actor_id)}`)
@@ -186,6 +187,7 @@ export function UpdatesView() {
       return
     }
     setNotifications((current) => current.map((item) => ({ ...item, read_at: item.read_at ?? now })))
+    window.dispatchEvent(new Event('storylines:notifications-updated'))
   }
 
   const unreadCount = notifications.filter((notification) => !notification.read_at).length

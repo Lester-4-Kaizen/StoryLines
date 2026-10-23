@@ -30,6 +30,30 @@ function clearLocalAccountData(userId: string) {
   window.localStorage.setItem('storylines-community-posts', JSON.stringify(remaining))
 }
 
+async function accountFunctionErrorMessage(error: { message: string; context?: unknown }) {
+  let message = error.message
+  if (error.context instanceof Response) {
+    try {
+      const payload: unknown = await error.context.clone().json()
+      if (
+        typeof payload === 'object'
+        && payload !== null
+        && 'error' in payload
+        && typeof payload.error === 'string'
+      ) {
+        message = payload.error
+      }
+    } catch (parseError) {
+      console.error('Could not read the account maintenance error response', parseError)
+    }
+  }
+
+  if (/failed to send a request to the edge function/i.test(message)) {
+    return 'Account maintenance is unavailable because the delete-account Supabase Edge Function is not deployed or reachable. Ask the site owner to deploy it, then retry.'
+  }
+  return message
+}
+
 export function SettingsView({
   badges,
   activeRole,
@@ -123,25 +147,7 @@ export function SettingsView({
       const { data, error } = await supabase.functions.invoke('delete-account', {
         body: { action: 'reset', confirmation: resetConfirmation },
       })
-      if (error) {
-        let message = error.message
-        if (error.context instanceof Response) {
-          try {
-            const payload: unknown = await error.context.clone().json()
-            if (
-              typeof payload === 'object'
-              && payload !== null
-              && 'error' in payload
-              && typeof payload.error === 'string'
-            ) {
-              message = payload.error
-            }
-          } catch (parseError) {
-            console.error('Could not read the account reset error response', parseError)
-          }
-        }
-        throw new Error(message)
-      }
+      if (error) throw new Error(await accountFunctionErrorMessage(error))
 
       let notice = ''
       try {
@@ -197,25 +203,7 @@ export function SettingsView({
       const { error } = await supabase.functions.invoke('delete-account', {
         body: { confirmation: deleteConfirmation },
       })
-      if (error) {
-        let message = error.message
-        if (error.context instanceof Response) {
-          try {
-            const payload: unknown = await error.context.clone().json()
-            if (
-              typeof payload === 'object'
-              && payload !== null
-              && 'error' in payload
-              && typeof payload.error === 'string'
-            ) {
-              message = payload.error
-            }
-          } catch (parseError) {
-            console.error('Could not read the account deletion error response', parseError)
-          }
-        }
-        throw new Error(message)
-      }
+      if (error) throw new Error(await accountFunctionErrorMessage(error))
 
       let deviceCleanupFailed = false
       try {
