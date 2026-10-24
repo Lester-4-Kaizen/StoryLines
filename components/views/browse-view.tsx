@@ -4,7 +4,7 @@ import Image from 'next/image'
 import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Bookmark, BookOpen, Brush, LoaderCircle, MessageCircle, Search, UsersRound } from 'lucide-react'
+import { Bookmark, BookOpen, Brush, Eye, Heart, LoaderCircle, MessageCircle, Search, UsersRound } from 'lucide-react'
 import { EmptyState } from '@/components/shared/empty-state'
 import { Button } from '@/components/ui/button'
 import { getSupabaseClient } from '@/lib/supabase'
@@ -128,7 +128,7 @@ function WorkCard({
 }) {
   return (
     <article className="group flex h-full min-w-0 flex-col">
-      <Link href={`/works/${work.id}?chapter=1`} className="flex flex-1 flex-col rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent">
+      <Link href={`/works/${work.id}`} className="flex flex-1 flex-col rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent">
         <div className={`relative aspect-[.72] overflow-hidden rounded-2xl ${WORK_COLORS[index % WORK_COLORS.length]}`}>
           {work.coverImageUrl ? (
             <Image
@@ -151,6 +151,14 @@ function WorkCard({
         <div className="flex flex-1 flex-col pt-3">
           <h2 className="truncate font-serif text-base font-bold group-hover:text-accent">{work.title}</h2>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">ni {work.authorName ?? 'StoryLines creator'}</p>
+          {typeof work.viewCount === 'number' && typeof work.likeCount === 'number' ? (
+            <p className="mt-1 flex items-center gap-3 text-[11px] text-muted-foreground" aria-label={`${work.viewCount.toLocaleString()} views and ${work.likeCount.toLocaleString()} likes`}>
+              <span className="inline-flex items-center gap-1"><Eye className="size-3.5" aria-hidden="true" />{work.viewCount.toLocaleString()}</span>
+              <span className="inline-flex items-center gap-1"><Heart className="size-3.5" aria-hidden="true" />{work.likeCount.toLocaleString()}</span>
+            </p>
+          ) : (
+            <p className="mt-1 text-[11px] text-muted-foreground">Views and likes are unavailable until the engagement migration is applied.</p>
+          )}
           <p className="mt-1 text-[11px] text-muted-foreground">
             {[work.language, work.status === 'Complete' ? 'Kumpleto' : 'Ongoing'].filter(Boolean).join(' · ')}
           </p>
@@ -366,6 +374,19 @@ export function BrowseView({ initialData }: { initialData: BrowsePageData }) {
         ? await supabase.from('profiles').select('id, display_name').in('id', authorIds)
         : { data: [], error: null }
       if (authorProfilesResult.error) throw authorProfilesResult.error
+      const { data: engagementRows, error: engagementError } = pageWorks.length
+        ? await supabase.rpc('get_creator_work_engagement_counts', {
+          p_work_ids: pageWorks.map((work) => work.id),
+        })
+        : { data: [], error: null }
+      if (engagementError) {
+        console.warn('Browse work engagement counts are unavailable; apply 20261025001000_work_engagement_and_rankings.sql.')
+      }
+      const engagementByWorkId = new Map<string, { views: number; likes: number }>((engagementRows ?? []).map((row: {
+        work_id: string
+        view_count: number | string
+        like_count: number | string
+      }) => [row.work_id, { views: Number(row.view_count), likes: Number(row.like_count) }]))
       const authorNames = new Map(authorProfilesResult.data.map((profile) => [profile.id, profile.display_name]))
       setWorks((current) => [
         ...current,
@@ -382,6 +403,8 @@ export function BrowseView({ initialData }: { initialData: BrowsePageData }) {
           authorName: authorNames.get(work.author_id) ?? 'StoryLines creator',
           status: work.status as 'Ongoing' | 'Complete',
           createdAt: new Date(work.created_at).getTime(),
+          viewCount: engagementByWorkId.get(work.id)?.views,
+          likeCount: engagementByWorkId.get(work.id)?.likes,
         })),
       ])
       setHasMoreWorks(hasMore)

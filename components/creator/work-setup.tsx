@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronRight } from 'lucide-react'
+import { AlertTriangle, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { CreatorFrame } from '@/components/shared/creator-frame'
 import { CoverImageField } from '@/components/shared/cover-image-field'
@@ -75,6 +75,27 @@ export function WorkSetup({
 
   const saveDraft = async () => {
     await createProject(false)
+  }
+
+  if (type === 'Comic') {
+    return (
+      <CreatorFrame eyebrow="Creator studio / comic setup" title="Comic projects are unavailable." go={go}>
+        <Panel className="mx-auto w-full max-w-3xl">
+          <div role="status" className="flex items-start gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+            <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-700" aria-hidden="true" />
+            <div>
+              <h2 className="font-bold">Comic creation is temporarily unavailable</h2>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                StoryLines does not currently have image-hosting capacity for comic pages, so new comic projects are disabled for everyone. You can still create Story projects if your account has the Writer badge.
+              </p>
+            </div>
+          </div>
+          <Button type="button" onClick={() => go('/create/works/new')} className="mt-5 min-h-11 rounded-full bg-accent text-accent-foreground">
+            Back to project types
+          </Button>
+        </Panel>
+      </CreatorFrame>
+    )
   }
 
   return (

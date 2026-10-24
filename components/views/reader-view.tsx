@@ -1,11 +1,12 @@
 'use client'
 
 import Image from 'next/image'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Bookmark, ChevronLeft, ChevronRight, LoaderCircle } from 'lucide-react'
+import { Bookmark, ChevronLeft, ChevronRight, Eye, Heart, LoaderCircle, MessageCircle } from 'lucide-react'
 import { Panel } from '@/components/shared/panel'
+import { ChapterDiscussionPanel } from '@/components/shared/chapter-discussion-panel'
 import { getSupabaseClient } from '@/lib/supabase'
 import type { ReaderPageData } from '@/lib/reader-data'
 
@@ -14,31 +15,143 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
   const [storyTab, setStoryTab] = useState<'about' | 'contents' | 'read'>(initialChapterSelected && data.currentChapter ? 'read' : 'about')
   const [isSaved, setIsSaved] = useState(data.isSaved)
   const [saving, setSaving] = useState(false)
+  const [liked, setLiked] = useState(data.likedByMe)
+  const [likeCount, setLikeCount] = useState(data.likeCount)
+  const [viewCount, setViewCount] = useState(data.viewCount)
+  const [liking, setLiking] = useState(false)
+  const [likeError, setLikeError] = useState<string | null>(null)
+  const [engagementError, setEngagementError] = useState(data.engagementError)
   const [message, setMessage] = useState<string | null>(data.error)
-  const [progressError, setProgressError] = useState<string | null>(null)
+  const [progressError, setProgressError] = useState<string | null>(data.chapterProgressError)
+  const [chapterProgress, setChapterProgress] = useState(data.chapterProgress)
+  const [savedScrollProgress, setSavedScrollProgress] = useState(data.savedScrollProgress)
+  const [selectedDiscussion, setSelectedDiscussion] = useState<{ index: number; text: string } | null>(null)
   const [comicIndex, setComicIndex] = useState(0)
+  const completionInFlight = useRef(new Set<string>())
+  const scrollSaveTimer = useRef<number | null>(null)
 
   useEffect(() => {
     setIsSaved(data.isSaved)
+    setLiked(data.likedByMe)
+    setLikeCount(data.likeCount)
+    setViewCount(data.viewCount)
+    setEngagementError(data.engagementError)
     setMessage(data.error)
-  }, [data.isSaved, data.error])
+    setChapterProgress(data.chapterProgress)
+    setProgressError(data.chapterProgressError)
+    setSavedScrollProgress(data.savedScrollProgress)
+    setSelectedDiscussion(null)
+  }, [data.isSaved, data.likedByMe, data.likeCount, data.viewCount, data.engagementError, data.error, data.chapterProgress, data.chapterProgressError, data.savedScrollProgress])
 
   useEffect(() => {
-    if (!data.currentUserId || !data.work || !data.currentChapter || data.work.type !== 'story') return
+    setStoryTab(initialChapterSelected && data.currentChapter ? 'read' : 'about')
+  }, [data.work?.id, data.currentChapter?.id, initialChapterSelected])
+
+  useEffect(() => {
+    window.scrollTo({ top: 0 })
+  }, [data.currentChapter?.id])
+
+  useEffect(() => {
+    if (!data.currentUserId || !data.work) return
+    const workId = data.work.id
     let active = true
-    const supabase = getSupabaseClient()
-    void supabase.from('library_reading_progress').upsert({
-      user_id: data.currentUserId,
-      work_id: data.work.id,
-      chapter_id: data.currentChapter.id,
-      last_read_at: new Date().toISOString(),
-    }, { onConflict: 'user_id,work_id' }).then(({ error }) => {
-      if (active && error) setProgressError('Hindi na-save ang reading progress mo. Subukan ulit mamaya.')
-    })
+    void (async () => {
+      try {
+        const { data: recorded, error } = await getSupabaseClient()
+          .rpc('record_creator_work_view', { p_work_id: workId })
+        if (!active) return
+        if (error) {
+          setEngagementError('View tracking is unavailable. Apply migration 20261025001000_work_engagement_and_rankings.sql in Supabase.')
+          return
+        }
+        if (recorded) setViewCount((count) => count + 1)
+      } catch {
+        if (active) setEngagementError('Could not record this view. Check your connection and try again.')
+      }
+    })()
     return () => {
       active = false
     }
-  }, [data.currentChapter, data.currentUserId, data.work])
+  }, [data.currentUserId, data.work])
+
+  useEffect(() => {
+    const userId = data.currentUserId
+    const work = data.work
+    const chapter = data.currentChapter
+    if (!userId || !work || !chapter || work.type !== 'story' || storyTab !== 'read') return
+    let active = true
+    const supabase = getSupabaseClient()
+    void (async () => {
+      const { error: libraryError } = await supabase.from('library_reading_progress').upsert({
+        user_id: userId,
+        work_id: work.id,
+        chapter_id: chapter.id,
+        last_read_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,work_id' })
+      if (libraryError) {
+        if (active) setProgressError('Hindi na-save ang reading history mo. Tiyaking nailapat ang 20261023000700_library_and_reader.sql at naka-log in ka sa Supabase.')
+        return
+      }
+
+      const { data: recorded, error } = await supabase.rpc('record_my_chapter_reading_progress', {
+        p_chapter_id: chapter.id,
+        p_completed: false,
+      })
+      if (!active) return
+      if (error) {
+        setProgressError('Chapter status is unavailable. Apply migration 20261025001100_chapter_reading_completion.sql in Supabase.')
+        return
+      }
+      const status = recorded?.[0]?.status
+      if (status === 'in_progress' || status === 'completed') {
+        setChapterProgress((current) => current[chapter.id] === 'completed'
+          ? current
+          : { ...current, [chapter.id]: status })
+        setProgressError(null)
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [data.currentChapter, data.currentUserId, data.work, storyTab])
+
+  useEffect(() => {
+    const userId = data.currentUserId
+    const work = data.work
+    const chapter = data.currentChapter
+    if (!userId || !work || !chapter || work.type !== 'story' || storyTab !== 'read') return
+
+    const savePosition = () => {
+      if (scrollSaveTimer.current !== null) window.clearTimeout(scrollSaveTimer.current)
+      scrollSaveTimer.current = window.setTimeout(() => {
+        const scrollableHeight = document.documentElement.scrollHeight - window.innerHeight
+        const position = scrollableHeight > 0 ? Math.min(1, Math.max(0, window.scrollY / scrollableHeight)) : 0
+        void (async () => {
+          try {
+            const { data: saved, error } = await getSupabaseClient()
+              .from('library_reading_progress')
+              .update({ scroll_progress: position, last_read_at: new Date().toISOString() })
+              .eq('user_id', userId)
+              .eq('work_id', work.id)
+              .eq('chapter_id', chapter.id)
+              .select('chapter_id')
+              .maybeSingle()
+            if (error) throw error
+            if (!saved) return
+            setSavedScrollProgress(position)
+            setProgressError(null)
+          } catch {
+            setProgressError('Could not save your reading position. Check your connection and try again.')
+          }
+        })()
+      }, 900)
+    }
+    window.addEventListener('scroll', savePosition, { passive: true })
+    return () => {
+      window.removeEventListener('scroll', savePosition)
+      if (scrollSaveTimer.current !== null) window.clearTimeout(scrollSaveTimer.current)
+    }
+  }, [data.currentChapter, data.currentUserId, data.work, storyTab])
 
   const toggleSaved = async () => {
     if (!data.work) return
@@ -65,6 +178,33 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
     }
   }
 
+  const toggleLike = async () => {
+    if (!data.work) return
+    if (!data.currentUserId) {
+      const next = `/works/${data.work.id}?chapter=${data.currentChapter?.number ?? 1}`
+      router.push(`/login?next=${encodeURIComponent(next)}`)
+      return
+    }
+
+    setLiking(true)
+    setLikeError(null)
+    try {
+      const { data: result, error } = await getSupabaseClient().rpc('toggle_creator_work_like', {
+        p_work_id: data.work.id,
+        p_liked: !liked,
+      })
+      if (error) throw error
+      const updated = result?.[0]
+      if (!updated) throw new Error('Supabase did not return the updated like count.')
+      setLiked(Boolean(updated.liked))
+      setLikeCount(Number(updated.like_count))
+    } catch (error) {
+      setLikeError(error instanceof Error ? error.message : 'Could not update your like. Please try again.')
+    } finally {
+      setLiking(false)
+    }
+  }
+
   if (!data.work) {
     return (
       <div role="alert">
@@ -85,10 +225,9 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
   const workId = data.work.id
   const previousChapter = chapterIndex > 0 ? data.chapters[chapterIndex - 1] : null
   const nextChapter = chapterIndex >= 0 ? data.chapters[chapterIndex + 1] : null
-  const storyTabs: { id: 'about' | 'contents' | 'read'; label: string }[] = [
+  const storyTabs: { id: 'about' | 'contents'; label: string }[] = [
     { id: 'about', label: 'About' },
     { id: 'contents', label: 'Table of Contents' },
-    ...(data.currentChapter ? [{ id: 'read' as const, label: `Chapter ${data.currentChapter.number}` }] : []),
   ]
   const comicPages = data.comicReadingDirection === 'rtl' ? [...data.comicPages].reverse() : data.comicPages
   const readerBackground = {
@@ -101,6 +240,10 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
     small: 'gap-2',
     large: 'gap-6',
   }[data.comicPageSpacing]
+  const chapterParagraphs = data.currentChapter?.body
+    .split(/\r?\n+/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean) ?? []
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
@@ -123,25 +266,47 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
               by {data.work.authorName}{data.work.authorUsername ? ` · @${data.work.authorUsername}` : ''}
             </Link>
             <p className="mt-1 text-sm text-muted-foreground">{[data.work.genre, data.work.language].filter(Boolean).join(' · ')}</p>
-            <button
-              type="button"
-              onClick={() => void toggleSaved()}
-              disabled={saving}
-              aria-pressed={isSaved}
-              className="mt-auto inline-flex min-h-11 items-center gap-2 rounded-full border border-border px-4 text-sm font-bold hover:border-accent hover:text-accent disabled:opacity-60"
-            >
-              {saving ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Bookmark className={`size-4 ${isSaved ? 'fill-current' : ''}`} aria-hidden="true" />}
-              {isSaved ? 'Saved to library' : 'Add to library'}
-            </button>
+            <div className="mt-auto flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void toggleLike()}
+                disabled={liking || data.currentUserId === data.work.authorId}
+                aria-pressed={liked}
+                title={data.currentUserId === data.work.authorId ? 'Creators cannot like their own work' : undefined}
+                className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-4 text-sm font-bold disabled:opacity-60 ${liked ? 'border-destructive/50 text-destructive' : 'border-border hover:border-destructive/50 hover:text-destructive'}`}
+              >
+                {liking ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Heart className={`size-4 ${liked ? 'fill-current' : ''}`} aria-hidden="true" />}
+                {liked ? 'Liked' : 'Like'} · {likeCount.toLocaleString()}
+              </button>
+              {data.currentUserId === data.work.authorId && (
+                <span className="text-xs text-muted-foreground">Creators cannot like their own work.</span>
+              )}
+              <button
+                type="button"
+                onClick={() => void toggleSaved()}
+                disabled={saving}
+                aria-pressed={isSaved}
+                className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border px-4 text-sm font-bold hover:border-accent hover:text-accent disabled:opacity-60"
+              >
+                {saving ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Bookmark className={`size-4 ${isSaved ? 'fill-current' : ''}`} aria-hidden="true" />}
+                {isSaved ? 'Saved to library' : 'Add to library'}
+              </button>
+              <span className="inline-flex min-h-11 items-center gap-2 px-2 text-xs text-muted-foreground" aria-label={`${viewCount.toLocaleString()} views`}>
+                <Eye className="size-4" aria-hidden="true" />
+                {viewCount.toLocaleString()} views
+              </span>
+            </div>
           </div>
         </div>
 
         {message && <p role="alert" className="mt-4 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">{message}</p>}
+        {likeError && <p role="alert" className="mt-4 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">{likeError}</p>}
+        {engagementError && <p role="status" className="mt-4 rounded-lg border border-border bg-secondary/50 px-4 py-3 text-sm text-muted-foreground">{engagementError}</p>}
         {progressError && <p role="status" className="mt-4 text-sm text-muted-foreground">{progressError}</p>}
 
         {data.work.type === 'story' && (
           <>
-            <div role="tablist" aria-label="Story information" className="mt-4 flex gap-1 border-b border-border">
+            {storyTab !== 'read' && <div role="tablist" aria-label="Story information" className="mt-4 flex gap-1 border-b border-border">
               {storyTabs.map((tab, index) => (
                 <button
                   key={tab.id}
@@ -168,7 +333,7 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
                   {tab.label}
                 </button>
               ))}
-            </div>
+            </div>}
             {storyTab === 'about' && (
               <section id="reader-panel-about" role="tabpanel" aria-labelledby="reader-tab-about" className="py-6">
                 <h2 className="font-serif text-2xl font-bold">Synopsis</h2>
@@ -179,8 +344,8 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
                   <span className="rounded-full bg-secondary px-3 py-1.5 text-xs font-semibold">{data.work.status}</span>
                 </div>
                 {data.currentChapter && (
-                  <button type="button" onClick={() => setStoryTab('read')} className="mt-6 min-h-11 rounded-full bg-accent px-5 text-sm font-bold text-accent-foreground">
-                    Start reading
+                  <button type="button" onClick={() => setStoryTab('contents')} className="mt-6 min-h-11 rounded-full bg-accent px-5 text-sm font-bold text-accent-foreground">
+                    Choose a chapter
                   </button>
                 )}
               </section>
@@ -194,7 +359,16 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
                       <li key={chapter.id}>
                         <Link href={`/works/${workId}?chapter=${chapter.number}`} onClick={() => setStoryTab('read')} className="flex min-h-14 items-center gap-3 px-4 py-3 hover:bg-muted/50">
                           <span className="text-xs font-bold text-accent">{chapter.number}</span>
-                          <span className="font-semibold">{chapter.title}</span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-semibold">{chapter.title}</span>
+                            <span className={`mt-0.5 block text-xs ${chapterProgress[chapter.id] === 'completed' ? 'font-semibold text-green-700 dark:text-green-400' : 'text-muted-foreground'}`}>
+                              {chapterProgress[chapter.id] === 'completed'
+                                ? 'Read'
+                                : chapterProgress[chapter.id] === 'in_progress'
+                                  ? 'Continue reading'
+                                  : 'Start reading'}
+                            </span>
+                          </span>
                           <ChevronRight className="ml-auto size-4 text-muted-foreground" aria-hidden="true" />
                         </Link>
                       </li>
@@ -246,16 +420,80 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
             </div>
           )
         ) : data.currentChapter && storyTab === 'read' ? (
-          <article id="reader-panel-read" role="tabpanel" aria-labelledby="reader-tab-read" className="mx-auto max-w-2xl py-8">
+          <article id="reader-panel-read" className="mx-auto max-w-2xl py-8">
+            <button type="button" onClick={() => setStoryTab('contents')} className="mb-6 inline-flex min-h-11 items-center gap-1 rounded-lg pr-3 text-sm font-bold text-muted-foreground hover:text-accent">
+              <ChevronLeft className="size-4" aria-hidden="true" />
+              Back to chapters
+            </button>
             <p className="text-center text-xs font-bold uppercase tracking-widest text-accent">
               Chapter {data.currentChapter.number}
             </p>
             <h2 className="mt-2 text-center font-serif text-2xl font-bold">{data.currentChapter.title}</h2>
-            {data.currentChapter.body ? (
-              <div className="mt-8 whitespace-pre-wrap font-serif text-lg leading-8">{data.currentChapter.body}</div>
+            {chapterParagraphs.length ? (
+              <div className="mt-8 space-y-6 font-serif text-lg leading-8">
+                {chapterParagraphs.map((paragraph, index) => (
+                  <section key={`${data.currentChapter!.id}-${index}`} className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDiscussion((current) => current?.index === index ? null : { index, text: paragraph })}
+                      aria-expanded={selectedDiscussion?.index === index}
+                      className="mb-2 inline-flex min-h-9 items-center gap-1.5 rounded-full border border-border px-3 font-sans text-xs font-semibold text-muted-foreground hover:border-accent hover:text-accent"
+                    >
+                      <MessageCircle className="size-3.5" aria-hidden="true" />
+                      Discuss paragraph
+                    </button>
+                    <p className="whitespace-pre-wrap">{paragraph}</p>
+                    {selectedDiscussion?.index === index && (
+                      <div className="mt-4 font-sans text-base lg:fixed lg:right-6 lg:top-1/2 lg:z-30 lg:mt-0 lg:w-[min(26rem,calc(100vw-3rem))] lg:-translate-y-1/2">
+                        <ChapterDiscussionPanel
+                          chapterId={data.currentChapter!.id}
+                          paragraphIndex={index}
+                          anchorText={paragraph}
+                          currentUserId={data.currentUserId}
+                          onClose={() => setSelectedDiscussion(null)}
+                          onLoginRequired={() => router.push(`/login?next=${encodeURIComponent(`/works/${data.work!.id}?chapter=${data.currentChapter!.number}`)}`)}
+                        />
+                      </div>
+                    )}
+                  </section>
+                ))}
+              </div>
             ) : (
               <p className="mt-8 text-center text-sm text-muted-foreground">Wala pang laman ang kabanatang ito.</p>
             )}
+            <div
+              aria-hidden="true"
+              ref={(element) => {
+                const chapter = data.currentChapter
+                if (!element || !data.currentUserId || !chapter?.body.trim() || chapterProgress[chapter.id] !== 'in_progress') return
+                const chapterId = chapter.id
+                const observer = new IntersectionObserver((entries) => {
+                  if (!entries.some((entry) => entry.isIntersecting) || completionInFlight.current.has(chapterId)) return
+                  completionInFlight.current.add(chapterId)
+                  void (async () => {
+                    try {
+                      const { data: recorded, error } = await getSupabaseClient().rpc('record_my_chapter_reading_progress', {
+                        p_chapter_id: chapterId,
+                        p_completed: true,
+                      })
+                      if (error) {
+                        setProgressError('Could not save chapter completion. Check your connection and try again.')
+                        return
+                      }
+                      const status = recorded?.[0]?.status
+                      if (status === 'completed') setChapterProgress((current) => ({ ...current, [chapterId]: 'completed' }))
+                    } catch {
+                      setProgressError('Could not save chapter completion. Check your connection and try again.')
+                    } finally {
+                      completionInFlight.current.delete(chapterId)
+                    }
+                  })()
+                }, { threshold: 1 })
+                observer.observe(element)
+                return () => observer.disconnect()
+              }}
+              className="h-px"
+            />
           </article>
         ) : (
           <div className="py-10 text-center">
@@ -265,6 +503,7 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
         )}
 
         {data.work.type === 'story' && data.currentChapter && storyTab === 'read' && (
+          <>
           <nav aria-label="Chapter navigation" className="flex items-center justify-between gap-4 border-t border-border pt-4">
             {previousChapter ? (
               <Link href={`/works/${data.work.id}?chapter=${previousChapter.number}`} className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border px-4 text-sm font-bold hover:border-accent">
@@ -280,6 +519,17 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
               </Link>
             ) : <span />}
           </nav>
+          <button
+            type="button"
+            onClick={() => {
+              const scrollableHeight = document.documentElement.scrollHeight - window.innerHeight
+              window.scrollTo({ top: scrollableHeight * savedScrollProgress, behavior: 'smooth' })
+            }}
+            className="fixed bottom-4 right-4 z-20 inline-flex min-h-12 items-center gap-2 rounded-full bg-accent px-5 text-sm font-bold text-accent-foreground shadow-lg hover:brightness-95 sm:bottom-6 sm:right-6"
+          >
+            Continue Reading
+          </button>
+          </>
         )}
       </Panel>
     </div>

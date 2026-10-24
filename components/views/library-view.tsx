@@ -3,18 +3,18 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { BookMarked, Clock3, LoaderCircle, Trash2 } from 'lucide-react'
+import { BookMarked, Clock3, Heart, LoaderCircle, Trash2 } from 'lucide-react'
 import { EmptyState } from '@/components/shared/empty-state'
 import { Panel } from '@/components/shared/panel'
 import { getSupabaseClient } from '@/lib/supabase'
 import type { LibraryPageData, LibraryWork } from '@/lib/library-data'
 
-type LibraryTab = 'Saved' | 'History'
+type LibraryTab = 'Saved' | 'Liked' | 'History'
 type WorkFilter = 'All' | 'Stories' | 'Comics' | 'With new chapters'
 type WorkSort = 'recent' | 'title' | 'updated'
 
-function readerHref(work: LibraryWork, chapterNumber = work.resumeChapterNumber ?? 1) {
-  return `/works/${work.id}?chapter=${chapterNumber}`
+function readerHref(work: LibraryWork, chapterNumber?: number | null) {
+  return chapterNumber ? `/works/${work.id}?chapter=${chapterNumber}` : `/works/${work.id}`
 }
 
 function workHasNewChapter(work: LibraryWork) {
@@ -75,6 +75,41 @@ function SavedWorkCard({
       >
         <BookMarked className="size-3.5" aria-hidden="true" />
         Remove
+      </button>
+    </article>
+  )
+}
+
+function LikedWorkCard({
+  work,
+  onUnlike,
+  disabled,
+}: {
+  work: LibraryWork
+  onUnlike: (workId: string) => void
+  disabled: boolean
+}) {
+  return (
+    <article className="min-w-0">
+      <Link href={readerHref(work)} className="group block rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring">
+        <Cover work={work} className="aspect-[0.68] transition-transform group-hover:-translate-y-1 motion-reduce:transform-none motion-reduce:transition-none" />
+        <h3 className="mt-2 line-clamp-2 font-serif text-sm font-bold leading-5 group-hover:text-accent">{work.title}</h3>
+      </Link>
+      <p className="truncate text-xs text-muted-foreground">
+        {work.authorName}{work.authorUsername ? ` · @${work.authorUsername}` : ''}
+      </p>
+      <p className="truncate text-xs text-muted-foreground">
+        {work.type === 'story' ? 'Story' : 'Comic'}{work.genre ? ` · ${work.genre}` : ''}
+      </p>
+      <button
+        type="button"
+        onClick={() => onUnlike(work.id)}
+        disabled={disabled}
+        className="mt-1 inline-flex min-h-11 items-center gap-1 rounded-md text-xs font-semibold text-accent hover:text-destructive focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50"
+        aria-label={`Unlike ${work.title}`}
+      >
+        <Heart className="size-3.5 fill-current" aria-hidden="true" />
+        Unlike
       </button>
     </article>
   )
@@ -150,6 +185,20 @@ export function LibraryView({ initialData }: { initialData: LibraryPageData }) {
     })
   }, [data.savedWorks, filter, sort])
 
+  const visibleLiked = useMemo(() => {
+    const filtered = data.likedWorks.filter((work) => {
+      if (filter === 'Stories') return work.type === 'story'
+      if (filter === 'Comics') return work.type === 'comic'
+      if (filter === 'With new chapters') return workHasNewChapter(work)
+      return true
+    })
+    return [...filtered].sort((a, b) => {
+      if (sort === 'title') return a.title.localeCompare(b.title)
+      if (sort === 'updated') return (b.lastReadAt ?? b.likedAt ?? '').localeCompare(a.lastReadAt ?? a.likedAt ?? '')
+      return (b.likedAt ?? '').localeCompare(a.likedAt ?? '')
+    })
+  }, [data.likedWorks, filter, sort])
+
   const removeSavedWork = async (workId: string) => {
     if (busy) return
     const work = data.savedWorks.find((item) => item.id === workId)
@@ -170,6 +219,30 @@ export function LibraryView({ initialData }: { initialData: LibraryPageData }) {
     } catch (actionError) {
       setData((current) => ({ ...current, savedWorks: [...current.savedWorks, work] }))
       setError(actionError instanceof Error ? actionError.message : 'Hindi maalis ang gawa. Subukan ulit.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const unlikeWork = async (workId: string) => {
+    if (busy) return
+    const work = data.likedWorks.find((item) => item.id === workId)
+    if (!work) return
+    setError(null)
+    setBusy(workId)
+    setData((current) => ({ ...current, likedWorks: current.likedWorks.filter((item) => item.id !== workId) }))
+    try {
+      const { data: { user }, error: userError } = await getSupabaseClient().auth.getUser()
+      if (userError) throw userError
+      if (!user) throw new Error('Mag-log in para mapamahalaan ang mga nagustuhan mong gawa.')
+      const { error: unlikeError } = await getSupabaseClient().rpc('toggle_creator_work_like', {
+        p_work_id: workId,
+        p_liked: false,
+      })
+      if (unlikeError) throw unlikeError
+    } catch (actionError) {
+      setData((current) => ({ ...current, likedWorks: [...current.likedWorks, work] }))
+      setError(actionError instanceof Error ? actionError.message : 'Hindi maalis ang like. Subukan ulit.')
     } finally {
       setBusy(null)
     }
@@ -326,6 +399,7 @@ export function LibraryView({ initialData }: { initialData: LibraryPageData }) {
           genre: work.genre,
           coverImageUrl: work.cover_image_url,
           savedAt,
+          likedAt: null,
           lastReadAt: progress?.last_read_at ?? null,
           chapterCount: Number(summary?.chapter_count ?? 0),
           latestChapterNumber: summary?.latest_chapter_number ?? 0,
@@ -345,6 +419,110 @@ export function LibraryView({ initialData }: { initialData: LibraryPageData }) {
       }))
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Hindi ma-load ang susunod na mga gawa. Subukan ulit.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const loadMoreLiked = async () => {
+    if (!data.likedCursor || busy) return
+    setBusy('load-liked')
+    setError(null)
+    try {
+      const supabase = getSupabaseClient()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError) throw userError
+      if (!user) throw new Error('Mag-log in para makita ang mga nagustuhan mong gawa.')
+      const { data: likedRows, error: likedError } = await supabase
+        .from('creator_work_likes')
+        .select('work_id, created_at')
+        .eq('user_id', user.id)
+        .or(`created_at.lt.${data.likedCursor.createdAt},and(created_at.eq.${data.likedCursor.createdAt},work_id.lt.${data.likedCursor.workId})`)
+        .order('created_at', { ascending: false })
+        .order('work_id', { ascending: false })
+        .limit(25)
+      if (likedError) throw likedError
+
+      const workIds = likedRows.map((row) => row.work_id)
+      if (!workIds.length) {
+        setData((current) => ({ ...current, hasMoreLiked: false, likedCursor: null }))
+        return
+      }
+      const [worksResult, summariesResult, progressResult] = await Promise.all([
+        supabase
+          .from('creator_works')
+          .select('id, author_id, title, type, genre, cover_image_url')
+          .in('id', workIds)
+          .in('type', ['story', 'comic'])
+          .neq('status', 'Draft'),
+        supabase.rpc('get_published_work_chapter_summaries', { work_ids: workIds }),
+        supabase
+          .from('library_reading_progress')
+          .select('work_id, chapter_id, last_read_at')
+          .eq('user_id', user.id)
+          .in('work_id', workIds),
+      ])
+      if (worksResult.error) throw worksResult.error
+      if (summariesResult.error) throw summariesResult.error
+      if (progressResult.error) throw progressResult.error
+
+      const authorIds = Array.from(new Set(worksResult.data.map((work) => work.author_id)))
+      const chapterIds = progressResult.data.map((progress) => progress.chapter_id)
+      const [authorsResult, chaptersResult] = await Promise.all([
+        authorIds.length
+          ? supabase.from('profiles').select('id, display_name, username').in('id', authorIds)
+          : Promise.resolve({ data: [], error: null }),
+        chapterIds.length
+          ? supabase.from('creator_work_chapters').select('id, chapter_number, title').in('id', chapterIds)
+          : Promise.resolve({ data: [], error: null }),
+      ])
+      if (authorsResult.error) throw authorsResult.error
+      if (chaptersResult.error) throw chaptersResult.error
+
+      const authors = new Map(authorsResult.data.map((author) => [author.id, author]))
+      const progressByWork = new Map(progressResult.data.map((progress) => [progress.work_id, progress]))
+      const chapters = new Map(chaptersResult.data.map((chapter) => [chapter.id, chapter]))
+      const loadedWorks = likedRows.flatMap((row) => {
+        const work = worksResult.data.find((item) => item.id === row.work_id)
+        if (!work) return []
+        const author = authors.get(work.author_id)
+        const progress = progressByWork.get(work.id)
+        const chapter = progress ? chapters.get(progress.chapter_id) : undefined
+        const summary = summariesResult.data.find((item: {
+          work_id: string
+          chapter_count: number
+          latest_chapter_number: number
+          latest_chapter_title: string
+        }) => item.work_id === work.id)
+        return [{
+          id: work.id,
+          title: work.title,
+          type: work.type as LibraryWork['type'],
+          authorName: author?.display_name ?? 'StoryLines creator',
+          authorUsername: author?.username ?? '',
+          genre: work.genre,
+          coverImageUrl: work.cover_image_url,
+          savedAt: null,
+          likedAt: row.created_at,
+          lastReadAt: progress?.last_read_at ?? null,
+          chapterCount: Number(summary?.chapter_count ?? 0),
+          latestChapterNumber: summary?.latest_chapter_number ?? 0,
+          latestChapterTitle: summary?.latest_chapter_title ?? null,
+          resumeChapterNumber: chapter?.chapter_number ?? null,
+          resumeChapterTitle: chapter?.title ?? null,
+        } satisfies LibraryWork]
+      })
+      const nextPageHasMore = likedRows.length === 25
+      setData((current) => ({
+        ...current,
+        likedWorks: [...current.likedWorks, ...loadedWorks],
+        hasMoreLiked: nextPageHasMore,
+        likedCursor: nextPageHasMore
+          ? { createdAt: likedRows[23].created_at, workId: likedRows[23].work_id }
+          : null,
+      }))
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Hindi ma-load ang mga nagustuhan mong gawa. Subukan ulit.')
     } finally {
       setBusy(null)
     }
@@ -419,6 +597,7 @@ export function LibraryView({ initialData }: { initialData: LibraryPageData }) {
           genre: work.genre,
           coverImageUrl: work.cover_image_url,
           savedAt: null,
+          likedAt: null,
           lastReadAt: row.last_read_at,
           chapterCount: Number(summary?.chapter_count ?? 0),
           latestChapterNumber: summary?.latest_chapter_number ?? 0,
@@ -456,7 +635,7 @@ export function LibraryView({ initialData }: { initialData: LibraryPageData }) {
     else return
     event.preventDefault()
     tabs[nextIndex].focus()
-    setTab(nextIndex === 0 ? 'Saved' : 'History')
+    setTab((['Saved', 'Liked', 'History'] as LibraryTab[])[nextIndex])
   }
 
   return (
@@ -464,7 +643,7 @@ export function LibraryView({ initialData }: { initialData: LibraryPageData }) {
       <header>
         <span className="eyebrow">Sarili mong estante</span>
         <h1 className="mt-2 font-serif text-5xl font-bold">Library.</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Nandito ang mga sinave mong gawa at mga huli mong binasa.</p>
+        <p className="mt-2 text-sm text-muted-foreground">Nandito ang mga sinave mo, mga nagustuhan mong gawa, at mga huli mong binasa.</p>
       </header>
 
       {data.error ? (
@@ -512,7 +691,7 @@ export function LibraryView({ initialData }: { initialData: LibraryPageData }) {
                         </div>
                       </div>
                       <Link
-                        href={readerHref(work)}
+                        href={readerHref(work, work.resumeChapterNumber)}
                         className="inline-flex min-h-11 shrink-0 items-center rounded-full bg-accent px-3 text-xs font-bold text-accent-foreground hover:brightness-95"
                       >
                         Resume
@@ -529,7 +708,7 @@ export function LibraryView({ initialData }: { initialData: LibraryPageData }) {
           </section>
 
           <div role="tablist" aria-label="Library categories" onKeyDown={handleTabKeyDown} className="flex gap-5 border-b border-border">
-            {(['Saved', 'History'] as LibraryTab[]).map((item) => (
+            {(['Saved', 'Liked', 'History'] as LibraryTab[]).map((item) => (
               <button
                 key={item}
                 type="button"
@@ -624,6 +803,82 @@ export function LibraryView({ initialData }: { initialData: LibraryPageData }) {
                 </div>
               )}
 
+            </section>
+          ) : tab === 'Liked' ? (
+            <section
+              role="tabpanel"
+              id="library-panel-liked"
+              aria-labelledby="library-tab-liked"
+              tabIndex={0}
+              className="flex flex-col gap-5"
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Filter liked works">
+                  {filters.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      aria-pressed={filter === item}
+                      onClick={() => setFilter(item)}
+                      className={`min-h-11 shrink-0 rounded-full border px-3 text-xs font-bold ${
+                        filter === item ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card hover:border-accent'
+                      }`}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+                <label className="flex min-h-11 shrink-0 items-center gap-2 self-start rounded-full border border-border bg-card px-3 text-xs font-bold sm:self-auto">
+                  Sort:
+                  <select
+                    value={sort}
+                    onChange={(event) => setSort(event.target.value as WorkSort)}
+                    className="max-w-44 bg-transparent text-xs outline-none"
+                    aria-label="Sort liked works"
+                  >
+                    <option value="recent">Recently liked</option>
+                    <option value="updated">Recently read</option>
+                    <option value="title">Title A–Z</option>
+                  </select>
+                </label>
+              </div>
+              {data.likedError ? (
+                <p role="alert" className="rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                  {data.likedError}
+                </p>
+              ) : visibleLiked.length ? (
+                <section aria-label="Liked works" className="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+                  {visibleLiked.map((work) => (
+                    <LikedWorkCard
+                      key={work.id}
+                      work={work}
+                      disabled={busy !== null}
+                      onUnlike={(id) => void unlikeWork(id)}
+                    />
+                  ))}
+                </section>
+              ) : (
+                <EmptyState
+                  icon={<Heart />}
+                  title={data.likedWorks.length ? 'Walang gawa sa filter na ito' : 'Wala ka pang nagugustuhang gawa'}
+                  message={data.likedWorks.length ? 'Pumili ng ibang filter para makita ang ibang gawa.' : 'I-like ang isang Story o Comic para makita ito rito.'}
+                  action={!data.likedWorks.length ? 'Mag-browse ng mga gawa' : undefined}
+                  onAction={!data.likedWorks.length ? () => router.push('/browse') : undefined}
+                />
+              )}
+              {data.hasMoreLiked && (
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => void loadMoreLiked()}
+                    disabled={busy !== null}
+                    className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border bg-card px-5 text-sm font-bold hover:border-accent disabled:opacity-60"
+                  >
+                    {busy === 'load-liked' && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}
+                    Load more liked works
+                  </button>
+                </div>
+              )}
             </section>
           ) : (
             <section role="tabpanel" id="library-panel-history" aria-labelledby="library-tab-history" tabIndex={0}>

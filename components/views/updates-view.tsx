@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { Bell, Heart, MessageCircle, UserPlus } from 'lucide-react'
+import { Bell, Heart, UserPlus } from 'lucide-react'
 import { CommunityView } from '@/components/views/community-view'
 import { Panel } from '@/components/shared/panel'
 import { ProfileAvatar } from '@/components/shared/profile-avatar'
@@ -14,7 +14,7 @@ type UpdatesTab = 'feed' | 'notifications'
 type Notification = {
   id: string
   actor_id: string
-  kind: 'follow' | 'post_like' | 'comment' | 'comment_reply' | 'comment_reaction' | 'message'
+  kind: 'follow' | 'post_like' | 'comment' | 'comment_reply' | 'comment_reaction'
   post_id: string | null
   created_at: string
   read_at: string | null
@@ -29,14 +29,12 @@ function notificationText(kind: Notification['kind']) {
   if (kind === 'post_like') return 'liked your post'
   if (kind === 'comment') return 'commented on your post'
   if (kind === 'comment_reply') return 'replied to your comment'
-  if (kind === 'comment_reaction') return 'reacted to your comment'
-  return 'sent you a message'
+  return 'reacted to your comment'
 }
 
 function notificationIcon(kind: Notification['kind']) {
   if (kind === 'follow') return <UserPlus className="size-4" />
   if (kind === 'post_like' || kind === 'comment_reaction') return <Heart className="size-4" />
-  if (kind === 'message') return <MessageCircle className="size-4" />
   return <Bell className="size-4" />
 }
 
@@ -66,6 +64,7 @@ export function UpdatesView() {
         .from('user_notifications')
         .select('id, actor_id, kind, post_id, created_at, read_at')
         .eq('recipient_id', currentUserId)
+        .neq('kind', 'message')
         .order('created_at', { ascending: false })
         .order('id', { ascending: false })
         .limit(NOTIFICATION_PAGE_SIZE)
@@ -115,6 +114,7 @@ export function UpdatesView() {
         .from('user_notifications')
         .select('id, actor_id, kind, post_id, created_at, read_at')
         .eq('recipient_id', currentUserId)
+        .neq('kind', 'message')
         .or(`created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`)
         .order('created_at', { ascending: false })
         .order('id', { ascending: false })
@@ -165,9 +165,7 @@ export function UpdatesView() {
       setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, read_at: now } : item))
       window.dispatchEvent(new Event('storylines:notifications-updated'))
     }
-    if (notification.kind === 'message') {
-      router.push(`/messages?user=${encodeURIComponent(notification.actor_id)}`)
-    } else if (notification.kind === 'follow') {
+    if (notification.kind === 'follow') {
       router.push(`/profile/${encodeURIComponent(notification.actor_id)}`)
     } else if (notification.post_id) {
       router.push(`/community#post-${notification.post_id}`)
@@ -181,6 +179,7 @@ export function UpdatesView() {
       .from('user_notifications')
       .update({ read_at: now })
       .eq('recipient_id', currentUserId)
+      .neq('kind', 'message')
       .is('read_at', null)
     if (updateError) {
       setError(updateError.message)
@@ -236,7 +235,7 @@ export function UpdatesView() {
             <div className="px-5 py-16 text-center">
               <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-secondary text-accent"><Bell className="size-5" /></span>
               <h2 className="mt-4 font-serif text-xl font-bold">No notifications yet</h2>
-              <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">When someone follows you, reacts to your posts, comments, or sends you a message, you’ll see it here.</p>
+              <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">Follows, post reactions, and comments appear here. New direct messages have their own unread count in your Inbox.</p>
               <Link href="/browse" className="mt-4 inline-flex min-h-11 items-center rounded-full bg-accent px-5 text-sm font-bold text-accent-foreground">Find creators</Link>
             </div>
           )}

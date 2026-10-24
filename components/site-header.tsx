@@ -206,9 +206,74 @@ function AccountMenu({ go, logout, userId }: { go: (route: Route) => void; logou
   )
 }
 
+function unreadCountErrorMessage(error: unknown) {
+  const readField = (field: string) => (
+    typeof error === 'object' && error !== null && field in error
+      ? String(Reflect.get(error, field))
+      : ''
+  )
+  const code = readField('code')
+  const message = readField('message')
+
+  if (message.toLowerCase().includes('refresh token') || code === 'refresh_token_not_found' || code === 'PGRST301') {
+    return 'Your Supabase session has expired. Sign out and sign in again to reload unread counts.'
+  }
+  if (code === '42703' || code === 'PGRST204' || code === 'PGRST205') {
+    return 'Unread counts need the latest Supabase migrations. Apply migrations 20261023001400 and 20261025001200, then retry.'
+  }
+  if (code === '42501') {
+    return 'Supabase denied access to unread counts. Apply migrations 20261025000100, 20261023001400, and 20261025001200.'
+  }
+  return message || 'Could not load unread updates.'
+}
+
+function logUnreadCountError(context: string, error: unknown) {
+  const readField = (field: string) => (
+    typeof error === 'object' && error !== null && field in error
+      ? Reflect.get(error, field)
+      : undefined
+  )
+  const cause = readField('cause')
+  const readCauseField = (field: string) => (
+    typeof cause === 'object' && cause !== null && field in cause
+      ? Reflect.get(cause, field)
+      : undefined
+  )
+  const causeProperties = typeof cause === 'object' && cause !== null
+    ? Object.fromEntries(Object.getOwnPropertyNames(cause).map((field) => {
+      const value = Reflect.get(cause, field)
+      return [field, value === null || ['string', 'number', 'boolean'].includes(typeof value) ? value : String(value)]
+    }))
+    : String(cause ?? '')
+  const diagnostic = {
+    query: readField('query'),
+    code: readField('code') ?? readCauseField('code'),
+    message: readField('message') || readCauseField('message') || String(cause ?? error),
+    details: readField('details') ?? readCauseField('details'),
+    hint: readField('hint') ?? readCauseField('hint'),
+    status: readCauseField('status'),
+    cause: causeProperties,
+  }
+  console.error(`${context}: ${JSON.stringify(diagnostic)}`)
+}
+
+function unreadCountQueryError(
+  query: string,
+  error: { message: string; code: string; details: string; hint: string; status?: number },
+) {
+  return Object.assign(new Error(error.message || `Supabase request failed for ${query}.`), {
+    query,
+    code: error.code,
+    details: error.details,
+    hint: error.hint,
+    cause: error,
+  })
+}
+
 function InboxMenu({ userId, active }: { userId: string | null; active: boolean }) {
   const [open, setOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const ref = useClickOutside<HTMLDivElement>(() => setOpen(false), open)
@@ -216,15 +281,28 @@ function InboxMenu({ userId, active }: { userId: string | null; active: boolean 
   const refreshUnreadCount = useCallback(async () => {
     if (!userId) {
       setUnreadCount(0)
+      setUnreadMessageCount(0)
       return
     }
-    const { count, error: queryError } = await getSupabaseClient()
-      .from('user_notifications')
-      .select('id', { count: 'exact', head: true })
-      .eq('recipient_id', userId)
-      .is('read_at', null)
-    if (queryError) throw queryError
-    setUnreadCount(count ?? 0)
+    const supabase = getSupabaseClient()
+    const [updatesResult, messagesResult] = await Promise.all([
+      supabase
+        .from('user_notifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('recipient_id', userId)
+        .neq('kind', 'message')
+        .is('read_at', null),
+      supabase
+        .from('community_direct_messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('recipient_id', userId)
+        .eq('is_deleted', false)
+        .is('read_at', null),
+    ])
+    if (updatesResult.error) throw unreadCountQueryError('user_notifications', updatesResult.error)
+    if (messagesResult.error) throw unreadCountQueryError('community_direct_messages', messagesResult.error)
+    setUnreadCount(updatesResult.count ?? 0)
+    setUnreadMessageCount(messagesResult.count ?? 0)
     setError(null)
   }, [userId])
 
@@ -233,8 +311,8 @@ function InboxMenu({ userId, active }: { userId: string | null; active: boolean 
     const loadUnreadCount = () => {
       void refreshUnreadCount().catch((loadError: unknown) => {
         if (!mounted) return
-        setError(loadError instanceof Error ? loadError.message : 'Could not load unread updates.')
-        console.error('Could not load unread updates in the header', loadError)
+        setError(unreadCountErrorMessage(loadError))
+        logUnreadCountError('Could not load unread updates in the header', loadError)
       })
     }
     loadUnreadCount()
@@ -242,11 +320,13 @@ function InboxMenu({ userId, active }: { userId: string | null; active: boolean 
       if (document.visibilityState === 'visible') loadUnreadCount()
     }
     window.addEventListener('storylines:notifications-updated', loadUnreadCount)
+    window.addEventListener('storylines:messages-updated', loadUnreadCount)
     window.addEventListener('focus', loadUnreadCount)
     document.addEventListener('visibilitychange', onVisibilityChange)
     return () => {
       mounted = false
       window.removeEventListener('storylines:notifications-updated', loadUnreadCount)
+      window.removeEventListener('storylines:messages-updated', loadUnreadCount)
       window.removeEventListener('focus', loadUnreadCount)
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
@@ -279,6 +359,11 @@ function InboxMenu({ userId, active }: { userId: string | null; active: boolean 
             className="flex min-h-11 items-center justify-between px-3 text-base hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
           >
             <span>Inbox</span>
+            {unreadMessageCount > 0 && (
+              <span className="flex size-6 items-center justify-center rounded-full bg-destructive text-xs font-extrabold text-white" aria-label={`${unreadMessageCount} unread messages`}>
+                {unreadMessageCount > 99 ? '99+' : unreadMessageCount}
+              </span>
+            )}
           </Link>
           <Link
             href="/updates"
@@ -294,10 +379,10 @@ function InboxMenu({ userId, active }: { userId: string | null; active: boolean 
           </Link>
           {error && (
             <div className="border-t border-border px-3 py-2">
-              <p role="alert" className="text-xs text-destructive">Could not load unread updates.</p>
+              <p role="alert" className="text-xs text-destructive">{error}</p>
               <button type="button" onClick={() => void refreshUnreadCount().catch((retryError: unknown) => {
-                setError(retryError instanceof Error ? retryError.message : 'Could not load unread updates.')
-                console.error('Could not refresh unread updates in the header', retryError)
+                setError(unreadCountErrorMessage(retryError))
+                logUnreadCountError('Could not refresh unread updates in the header', retryError)
               })} className="mt-1 min-h-8 text-xs font-bold text-accent">Try again</button>
             </div>
           )}

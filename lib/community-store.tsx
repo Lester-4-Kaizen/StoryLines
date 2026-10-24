@@ -9,6 +9,7 @@ import type { Badge, CommunityAuthor, CommunityComment, CommunityPostType, Post 
 type CommunityState = {
   posts: Post[]
   authors: CommunityAuthor[]
+  currentProfile: { displayName: string; username: string; avatarUrl: string | null; bio: string; roles: Badge[] } | null
   savedPostIds: string[]
   currentUserId: string | null
   hydrated: boolean
@@ -56,6 +57,7 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
   const [sharedPosts, setSharedPosts] = useState<Post[]>([])
   const [devicePosts, setDevicePosts, devicePostsHydrated] = useLocalStorageList<Post>(LEGACY_STORAGE_KEY)
   const [authors, setAuthors] = useState<CommunityAuthor[]>([])
+  const [currentProfile, setCurrentProfile] = useState<CommunityState['currentProfile']>(null)
   const [savedPostIds, setSavedPostIds] = useState<string[]>([])
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [hydrated, setHydrated] = useState(false)
@@ -107,14 +109,36 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
       let savedIds: string[] = []
       const user = sessionResult.data.session?.user
       setCurrentUserId(user?.id ?? null)
+      let nextCurrentProfile: CommunityState['currentProfile'] = null
       if (user) {
-        const { data: savedRows, error: savedError } = await supabase
-          .from('community_saved_posts')
-          .select('post_id')
-          .eq('user_id', user.id)
-          .limit(500)
-        if (savedError) throw savedError
-        savedIds = (savedRows ?? []).map((saved) => saved.post_id)
+        const [savedResult, profileResult] = await Promise.all([
+          supabase
+            .from('community_saved_posts')
+            .select('post_id')
+            .eq('user_id', user.id)
+            .limit(500),
+          supabase
+            .from('profiles')
+            .select('display_name, username, avatar_path, bio, roles')
+            .eq('id', user.id)
+            .maybeSingle(),
+        ])
+        if (savedResult.error) throw savedResult.error
+        if (profileResult.error) throw profileResult.error
+        if (profileResult.data) {
+          nextCurrentProfile = {
+            displayName: profileResult.data.display_name,
+            username: profileResult.data.username,
+            avatarUrl: profileResult.data.avatar_path
+              ? supabase.storage.from('avatars').getPublicUrl(profileResult.data.avatar_path).data.publicUrl
+              : null,
+            bio: profileResult.data.bio ?? '',
+            roles: Array.isArray(profileResult.data.roles)
+              ? profileResult.data.roles.filter(isBadge)
+              : [],
+          }
+        }
+        savedIds = (savedResult.data ?? []).map((saved) => saved.post_id)
       }
 
       const feedRows = postsResult.data ?? []
@@ -184,6 +208,7 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
 
       setSharedPosts(nextPosts)
       setAuthors(nextAuthors)
+      setCurrentProfile(nextCurrentProfile)
       setSavedPostIds(savedIds)
     } catch (refreshError) {
       setError(describeLoadError(refreshError))
@@ -211,13 +236,16 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
       setAuthors((current) => current.map((author) => (
         author.id === detail.userId ? { ...author, avatarUrl: detail.avatarUrl } : author
       )))
+      if (detail.userId === currentUserId) {
+        setCurrentProfile((profile) => profile ? { ...profile, avatarUrl: detail.avatarUrl } : profile)
+      }
       setSharedPosts((current) => current.map((post) => (
         post.authorId === detail.userId ? { ...post, authorAvatarUrl: detail.avatarUrl } : post
       )))
     }
     window.addEventListener('storylines:profile-avatar-updated', onAvatarUpdated)
     return () => window.removeEventListener('storylines:profile-avatar-updated', onAvatarUpdated)
-  }, [])
+  }, [currentUserId])
 
   const addPost: CommunityState['addPost'] = async (input) => {
     const supabase = getSupabaseClient()
@@ -532,6 +560,7 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
       value={{
         posts,
         authors,
+        currentProfile,
         savedPostIds,
         currentUserId,
         hydrated: hydrated && devicePostsHydrated,

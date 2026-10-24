@@ -51,6 +51,8 @@ export type Work = {
   // Work"). Undefined for solo works.
   coCreatorId?: string
   coCreatorRole?: 'writer' | 'artist'
+  viewCount?: number
+  likeCount?: number
 }
 
 export type ComicPage = {

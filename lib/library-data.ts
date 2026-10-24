@@ -10,6 +10,7 @@ export type LibraryWork = {
   genre: string | null
   coverImageUrl: string | null
   savedAt: string | null
+  likedAt: string | null
   lastReadAt: string | null
   chapterCount: number
   latestChapterNumber: number
@@ -20,24 +21,32 @@ export type LibraryWork = {
 
 export type LibraryPageData = {
   savedWorks: LibraryWork[]
+  likedWorks: LibraryWork[]
   readingHistory: LibraryWork[]
   continueReading: LibraryWork[]
   hasMoreSaved: boolean
   savedCursor: { createdAt: string; workId: string } | null
+  hasMoreLiked: boolean
+  likedCursor: { createdAt: string; workId: string } | null
   hasMoreHistory: boolean
   historyCursor: { lastReadAt: string; workId: string } | null
+  likedError: string | null
   error: string | null
 }
 
-function emptyLibraryPageData(error: string | null = null): LibraryPageData {
+function emptyLibraryPageData(error: string | null = null, likedError: string | null = null): LibraryPageData {
   return {
     savedWorks: [],
+    likedWorks: [],
     readingHistory: [],
     continueReading: [],
     hasMoreSaved: false,
     savedCursor: null,
+    hasMoreLiked: false,
+    likedCursor: null,
     hasMoreHistory: false,
     historyCursor: null,
+    likedError,
     error,
   }
 }
@@ -52,6 +61,16 @@ function libraryLoadError(error: unknown) {
   return 'Hindi ma-load ang library ngayon. Tingnan ang connection at subukan ulit.'
 }
 
+function likedWorksLoadError(error: unknown) {
+  const code = typeof error === 'object' && error !== null && 'code' in error
+    ? String(Reflect.get(error, 'code'))
+    : ''
+  if (['PGRST202', 'PGRST204', 'PGRST205', '42P01', '42883', '42501'].includes(code)) {
+    return 'Liked works are not available yet. Apply migration 20261025001300_library_liked_works.sql in Supabase.'
+  }
+  return 'Could not load liked works. Check your connection and try again.'
+}
+
 export async function getLibraryPageData(): Promise<LibraryPageData> {
   if (!isSupabaseConfigured) {
     return emptyLibraryPageData('Hindi pa naka-configure ang library database.')
@@ -64,9 +83,16 @@ export async function getLibraryPageData(): Promise<LibraryPageData> {
     if (!userResult.user) return emptyLibraryPageData('Mag-log in para makita ang iyong library.')
     const userId = userResult.user.id
 
-    const [savedResult, historyResult] = await Promise.all([
+    const [savedResult, likedResult, historyResult] = await Promise.all([
       supabase
         .from('library_saved_works')
+        .select('work_id, created_at')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .order('work_id', { ascending: false })
+        .limit(25),
+      supabase
+        .from('creator_work_likes')
         .select('work_id, created_at')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
@@ -83,14 +109,18 @@ export async function getLibraryPageData(): Promise<LibraryPageData> {
     if (historyResult.error) throw historyResult.error
 
     const savedRows = savedResult.data
+    const likedRows = likedResult.error ? [] : likedResult.data
+    const likedError = likedResult.error ? likedWorksLoadError(likedResult.error) : null
+    if (likedResult.error) console.error('Failed to load liked works for library', likedResult.error)
     const historyRows = historyResult.data
     const workIds = Array.from(new Set([
       ...savedRows.map((row) => row.work_id),
+      ...likedRows.map((row) => row.work_id),
       ...historyRows.map((row) => row.work_id),
     ]))
     const chapterIds = Array.from(new Set(historyRows.map((row) => row.chapter_id)))
 
-    if (workIds.length === 0) return emptyLibraryPageData()
+    if (workIds.length === 0) return emptyLibraryPageData(null, likedError)
 
     const [worksResult, chaptersResult, summariesResult] = await Promise.all([
       supabase
@@ -140,6 +170,7 @@ export async function getLibraryPageData(): Promise<LibraryPageData> {
         genre: work.genre,
         coverImageUrl: work.cover_image_url,
         savedAt: null,
+        likedAt: null,
         lastReadAt: progress?.last_read_at ?? null,
         chapterCount: Number(chapterSummary?.chapter_count ?? 0),
         latestChapterNumber: chapterSummary?.latest_chapter_number ?? 0,
@@ -152,6 +183,10 @@ export async function getLibraryPageData(): Promise<LibraryPageData> {
     const savedWorks = savedRows.flatMap((row) => {
       const work = works.get(row.work_id)
       return work ? [{ ...work, savedAt: row.created_at }] : []
+    })
+    const likedWorks = likedRows.flatMap((row) => {
+      const work = works.get(row.work_id)
+      return work ? [{ ...work, likedAt: row.created_at }] : []
     })
     const readingHistory = historyRows.flatMap((row) => {
       const work = works.get(row.work_id)
@@ -168,16 +203,22 @@ export async function getLibraryPageData(): Promise<LibraryPageData> {
 
     return {
       savedWorks: savedWorks.slice(0, 24),
+      likedWorks: likedWorks.slice(0, 24),
       readingHistory: readingHistory.slice(0, 24),
       continueReading: readingHistory.slice(0, 3),
       hasMoreSaved: savedRows.length === 25,
       savedCursor: savedRows.length === 25
         ? { createdAt: savedRows[23].created_at, workId: savedRows[23].work_id }
         : null,
+      hasMoreLiked: likedRows.length === 25,
+      likedCursor: likedRows.length === 25
+        ? { createdAt: likedRows[23].created_at, workId: likedRows[23].work_id }
+        : null,
       hasMoreHistory: historyRows.length === 25,
       historyCursor: historyRows.length === 25
         ? { lastReadAt: historyRows[23].last_read_at, workId: historyRows[23].work_id }
         : null,
+      likedError,
       error: null,
     }
   } catch (error) {

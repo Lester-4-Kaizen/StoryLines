@@ -38,8 +38,11 @@ function creatorWorksError(error: unknown) {
 
 function creatorWorksErrorMessage(error: unknown, stage: string) {
   const { message, code, details, hint } = creatorWorksError(error)
-  if (code === '42501' || code === 'PGRST301') {
-    return 'Supabase denied access while loading your works. Apply the Creator Studio migrations 20261023000500, 20261023000700, 20261023000800, 20261023000900, and 20261023001100 in order, then refresh. Check that your account has the Writer role.'
+  if (message.toLowerCase().includes('refresh token') || code === 'refresh_token_not_found' || code === 'PGRST301') {
+    return 'Your Supabase session is no longer valid. Sign out and sign in again, then reload your projects.'
+  }
+  if (code === '42501') {
+    return 'Supabase denied access while loading your works. Apply the Creator Studio migrations 20261023000500, 20261023000700, 20261023000800, 20261023000900, and 20261023001100 in order, then refresh.'
   }
   if (code === 'PGRST204' || code === '42703' || code === '42P01' || code === 'PGRST205') {
     return 'The Creator Studio database schema is out of date. Apply migrations 20261023000500, 20261023000700, 20261023000800, 20261023000900, and 20261023001100 in order, then refresh.'

@@ -1,12 +1,84 @@
 'use client'
 
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowRight, BookOpen, Compass, PenLine, Search, Sparkles } from 'lucide-react'
+import Link from 'next/link'
+import { ArrowRight, BookOpen, Compass, Eye, Heart, LoaderCircle, PenLine, Search, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/shared/empty-state'
 import { SectionHeading } from '@/components/shared/section-heading'
+import { loadWorkRankings, type WorkRankingEntry } from '@/lib/work-engagement'
 import type { Route } from '@/lib/types'
+
+function TrendingSection({ go }: { go: (route: Route) => void }) {
+  const [entries, setEntries] = useState<WorkRankingEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void loadWorkRankings('works', 'This week')
+      .then((results) => {
+        if (active) setEntries(results.slice(0, 4))
+      })
+      .catch((loadError: unknown) => {
+        if (active) setError(loadError instanceof Error ? loadError.message : 'Could not load trending works.')
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  return (
+    <section className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <SectionHeading
+          icon={<Sparkles />}
+          title="Trending ngayong linggo"
+          description="Nakaayos ayon sa views at likes ngayong linggo."
+        />
+        <button type="button" onClick={() => go('/ranking')} className="min-h-11 text-sm font-bold text-accent hover:underline">
+          Tingnan ang ranking <ArrowRight className="ml-1 inline size-4" aria-hidden="true" />
+        </button>
+      </div>
+      {loading ? (
+        <p role="status" className="flex items-center gap-2 rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
+          <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> Kinukuha ang trending works…
+        </p>
+      ) : error ? (
+        <p role="alert" className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">{error}</p>
+      ) : entries.length ? (
+        <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {entries.map((entry, index) => (
+            <li key={entry.entity_id}>
+              <Link href={`/works/${encodeURIComponent(entry.entity_id)}`} className="block h-full rounded-2xl border border-border bg-card p-4 transition hover:-translate-y-0.5 hover:border-accent/50">
+                <span className="text-xs font-bold uppercase tracking-wider text-accent">#{index + 1} · {entry.work_type === 'comic' ? 'Comic' : 'Story'}</span>
+                <span className="mt-2 block line-clamp-2 font-serif text-lg font-bold">{entry.title}</span>
+                <span className="mt-1 block truncate text-xs text-muted-foreground">by {entry.creator_name}</span>
+                <span className="mt-4 flex items-center gap-3 text-xs text-muted-foreground">
+                  <span className="inline-flex items-center gap-1"><Eye className="size-3.5" aria-hidden="true" />{entry.view_count.toLocaleString()}</span>
+                  <span className="inline-flex items-center gap-1"><Heart className="size-3.5" aria-hidden="true" />{entry.like_count.toLocaleString()}</span>
+                  <span className="ml-auto font-bold text-foreground">{entry.score.toLocaleString()} pts</span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <EmptyState
+          icon={<Compass />}
+          title="May puwang pa sa estante"
+          message="Wala pang nailalathalang public works. Ikaw kaya ang maglagay ng unang kuwentong babalikan dito?"
+          action="Tuklasin ang browse"
+          onAction={() => go('/browse')}
+        />
+      )}
+    </section>
+  )
+}
 
 export function HomeView({
   creator,
@@ -90,25 +162,7 @@ export function HomeView({
         </button>
       </section>
 
-      <section className="flex flex-col gap-5">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <SectionHeading
-            icon={<Sparkles />}
-            title="Trending ngayong linggo"
-            description="Mga kuwentong hinihintay nating mapuno ng community."
-          />
-          <button type="button" onClick={() => go('/ranking')} className="min-h-11 text-sm font-bold text-accent hover:underline">
-            Tingnan ang ranking <ArrowRight className="ml-1 inline size-4" aria-hidden="true" />
-          </button>
-        </div>
-        <EmptyState
-          icon={<Compass />}
-          title="May puwang pa sa estante"
-          message="Wala pang nailalathalang public works. Ikaw kaya ang maglagay ng unang kuwentong babalikan dito?"
-          action="Tuklasin ang browse"
-          onAction={() => go('/browse')}
-        />
-      </section>
+      <TrendingSection go={go} />
 
       <section className="home-community-panel -mx-4 px-5 py-9 sm:-mx-6 sm:px-10 sm:py-12 lg:-mx-8 lg:px-14">
         <span className="eyebrow home-dark-eyebrow">Sama-samang lumikha</span>

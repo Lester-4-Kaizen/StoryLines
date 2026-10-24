@@ -53,22 +53,26 @@ grant insert (comment_id, user_id, reaction) on public.community_comment_reactio
 grant update (reaction) on public.community_comment_reactions to authenticated;
 grant delete on public.community_comment_reactions to authenticated;
 
+drop policy if exists "Users can see their own comment reactions" on public.community_comment_reactions;
 create policy "Users can see their own comment reactions"
   on public.community_comment_reactions for select
   to authenticated
   using ((select auth.uid()) = user_id);
 
+drop policy if exists "Users can react as themselves" on public.community_comment_reactions;
 create policy "Users can react as themselves"
   on public.community_comment_reactions for insert
   to authenticated
   with check ((select auth.uid()) = user_id);
 
+drop policy if exists "Users can change their own comment reactions" on public.community_comment_reactions;
 create policy "Users can change their own comment reactions"
   on public.community_comment_reactions for update
   to authenticated
   using ((select auth.uid()) = user_id)
   with check ((select auth.uid()) = user_id);
 
+drop policy if exists "Users can remove their own comment reactions" on public.community_comment_reactions;
 create policy "Users can remove their own comment reactions"
   on public.community_comment_reactions for delete
   to authenticated
@@ -119,11 +123,13 @@ grant select (id, recipient_id, actor_id, kind, post_id, comment_id, message_id,
   on public.user_notifications to authenticated;
 grant update (read_at) on public.user_notifications to authenticated;
 
+drop policy if exists "Users can read their own notifications" on public.user_notifications;
 create policy "Users can read their own notifications"
   on public.user_notifications for select
   to authenticated
   using ((select auth.uid()) = recipient_id);
 
+drop policy if exists "Users can mark their own notifications as read" on public.user_notifications;
 create policy "Users can mark their own notifications as read"
   on public.user_notifications for update
   to authenticated

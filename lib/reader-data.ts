@@ -24,6 +24,9 @@ export type ReaderPageData = {
     authorUsername: string
   } | null
   chapters: Omit<ReaderChapter, 'body'>[]
+  chapterProgress: Record<string, 'in_progress' | 'completed'>
+  chapterProgressError: string | null
+  savedScrollProgress: number
   currentChapter: ReaderChapter | null
   comicPages: { id: string; number: number; imageUrl: string; altText: string; transcript: string }[]
   comicAuthorNote: string
@@ -32,6 +35,10 @@ export type ReaderPageData = {
   comicPageSpacing: 'none' | 'small' | 'large'
   currentUserId: string | null
   isSaved: boolean
+  viewCount: number
+  likeCount: number
+  likedByMe: boolean
+  engagementError: string | null
   error: string | null
 }
 
@@ -39,6 +46,9 @@ function emptyReaderPageData(error: string | null = null): ReaderPageData {
   return {
     work: null,
     chapters: [],
+    chapterProgress: {},
+    chapterProgressError: null,
+    savedScrollProgress: 0,
     currentChapter: null,
     comicPages: [],
     comicAuthorNote: '',
@@ -47,6 +57,10 @@ function emptyReaderPageData(error: string | null = null): ReaderPageData {
     comicPageSpacing: 'small',
     currentUserId: null,
     isSaved: false,
+    viewCount: 0,
+    likeCount: 0,
+    likedByMe: false,
+    engagementError: null,
     error,
   }
 }
@@ -107,15 +121,42 @@ export async function getReaderPageData(workId: string, requestedChapter: number
 
     const currentUserId = userResult.user?.id ?? null
     let isSaved = false
+    let viewCount = 0
+    let likeCount = 0
+    let likedByMe = false
+    let engagementError: string | null = null
     if (currentUserId) {
-      const { data: savedRow, error: savedError } = await supabase
-        .from('library_saved_works')
-        .select('work_id')
-        .eq('user_id', currentUserId)
-        .eq('work_id', workId)
-        .maybeSingle()
+      const [{ data: savedRow, error: savedError }, { data: engagementRows, error: engagementLoadError }] = await Promise.all([
+        supabase
+          .from('library_saved_works')
+          .select('work_id')
+          .eq('user_id', currentUserId)
+          .eq('work_id', workId)
+          .maybeSingle(),
+        supabase.rpc('get_creator_work_engagement', { p_work_id: workId }),
+      ])
       if (savedError) throw savedError
+      if (engagementLoadError) {
+        engagementError = 'Engagement counts are unavailable. Apply migration 20261025001000_work_engagement_and_rankings.sql in Supabase.'
+      } else {
+        const engagement = engagementRows?.[0]
+        viewCount = Number(engagement?.view_count ?? 0)
+        likeCount = Number(engagement?.like_count ?? 0)
+        likedByMe = Boolean(engagement?.liked_by_me)
+      }
       isSaved = Boolean(savedRow)
+    } else {
+      const { data: engagementRows, error: engagementLoadError } = await supabase.rpc(
+        'get_creator_work_engagement',
+        { p_work_id: workId },
+      )
+      if (engagementLoadError) {
+        engagementError = 'Engagement counts are unavailable. Apply migration 20261025001000_work_engagement_and_rankings.sql in Supabase.'
+      } else {
+        const engagement = engagementRows?.[0]
+        viewCount = Number(engagement?.view_count ?? 0)
+        likeCount = Number(engagement?.like_count ?? 0)
+      }
     }
 
     const chapters = chapterRows.map((chapter) => ({
@@ -124,6 +165,42 @@ export async function getReaderPageData(workId: string, requestedChapter: number
       title: chapter.title,
     }))
     const selected = chapters.find((chapter) => chapter.number === requestedChapter) ?? chapters[0]
+    let chapterProgress: ReaderPageData['chapterProgress'] = {}
+    let chapterProgressError: string | null = null
+    let savedScrollProgress = 0
+    let savedScrollChapterId: string | null = null
+    if (currentUserId && workResult.data.type === 'story') {
+      const [chapterProgressResult, readingProgressResult] = await Promise.all([
+        supabase.rpc('get_my_chapter_reading_progress', { p_work_id: workId }),
+        supabase
+          .from('library_reading_progress')
+          .select('chapter_id, scroll_progress')
+          .eq('user_id', currentUserId)
+          .eq('work_id', workId)
+          .maybeSingle(),
+      ])
+      const { data: progressRows, error: progressLoadError } = chapterProgressResult
+      if (progressLoadError) {
+        console.error('Failed to load chapter reading progress', progressLoadError)
+        chapterProgressError = 'Chapter reading status is unavailable. Apply migration 20261025001100_chapter_reading_completion.sql in Supabase.'
+      } else {
+        chapterProgress = Object.fromEntries(
+          (progressRows ?? []).map((progress: {
+            chapter_id: string
+            status: 'in_progress' | 'completed'
+          }) => [progress.chapter_id, progress.status]),
+        )
+      }
+      if (readingProgressResult.error) {
+        console.error('Failed to load saved reader position', readingProgressResult.error)
+        chapterProgressError ??= 'Saved reading position is unavailable. Apply migration 20261025001200_chapter_discussions_chat_unsend_and_reader_position.sql in Supabase.'
+      } else {
+        savedScrollChapterId = readingProgressResult.data?.chapter_id ?? null
+        if (savedScrollChapterId === selected?.id) {
+          savedScrollProgress = Number(readingProgressResult.data?.scroll_progress ?? 0)
+        }
+      }
+    }
     let currentChapter: ReaderChapter | null = null
     if (selected) {
       const { data: bodyRow, error: bodyError } = await supabase
@@ -152,6 +229,9 @@ export async function getReaderPageData(workId: string, requestedChapter: number
         authorUsername: author?.username ?? '',
       },
       chapters,
+      chapterProgress,
+      chapterProgressError,
+      savedScrollProgress,
       currentChapter,
       comicPages: comicPageRows.map((page) => ({
         id: page.id,
@@ -166,6 +246,10 @@ export async function getReaderPageData(workId: string, requestedChapter: number
       comicPageSpacing: workResult.data.comic_page_spacing ?? 'small',
       currentUserId,
       isSaved,
+      viewCount,
+      likeCount,
+      likedByMe,
+      engagementError,
       error: null,
     }
   } catch (error) {

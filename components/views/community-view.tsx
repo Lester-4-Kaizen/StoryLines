@@ -57,7 +57,7 @@ const SUGGESTED_TAGS: Record<CommunityPostType, string[]> = {
   random: ['random-thought', 'mini-story', 'writing-prompt', 'just-for-fun'],
 }
 
-type FeedTab = 'for-you' | 'following' | 'latest' | 'collaborators' | 'authors' | 'saved'
+type FeedTab = 'for-you' | 'following' | 'latest' | 'collaborators' | 'authors' | 'saved' | 'my-posts'
 type PreviewImage = { name: string; dataUrl: string }
 
 function timeAgo(ts: number) {
@@ -646,6 +646,7 @@ export function CommunityView({
   const {
     posts,
     authors,
+    currentProfile,
     savedPostIds,
     currentUserId,
     hydrated,
@@ -682,6 +683,7 @@ export function CommunityView({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const canPost = isLoggedIn && creator && role !== 'reader'
   const openRoleSettings = isLoggedIn && creator && role === 'reader'
+  const profileRole = currentProfile?.roles.find((badge) => badge !== 'reader') ?? 'reader'
 
   useEffect(() => {
     if (!currentUserId) {
@@ -713,6 +715,7 @@ export function CommunityView({
   const visiblePosts = posts
     .filter((post) => feedTab !== 'collaborators' || post.type === 'collaborator')
     .filter((post) => feedTab !== 'following' || followingIds.includes(post.authorId ?? ''))
+    .filter((post) => feedTab !== 'my-posts' || post.authorId === currentUserId)
     .filter((post) => feedTab !== 'saved' || savedPostIds.includes(post.id))
     .filter((post) => selectedAuthorId === null || post.authorId === selectedAuthorId)
     .slice()
@@ -834,16 +837,22 @@ export function CommunityView({
       <div className="community-columns">
         <aside className="community-left-sidebar" aria-label="Community shortcuts">
           {isLoggedIn ? (
-            <Panel className="community-profile-card">
+            <Panel className="community-profile-card flex min-h-[18.5rem] flex-col items-center px-6 py-6">
               <Avatar
-                role={creator ? role === 'artist' ? 'artist' : 'writer' : undefined}
+                role={profileRole === 'reader' ? undefined : profileRole}
                 large
                 onClick={() => router.push('/profile')}
                 label="Open your profile"
+                src={currentProfile?.avatarUrl}
+                name={currentProfile?.displayName ?? 'Your StoryLines'}
               />
-              <button type="button" className="mt-3 font-serif text-lg font-bold hover:text-accent hover:underline" onClick={() => router.push('/profile')}>Your StoryLines</button>
-              <span className="community-role mt-1">{role === 'artist' ? 'Alagad ng sining' : role === 'writer' ? 'Writer' : 'Reader'}</span>
-              <p className="mt-3 text-xs leading-5 text-muted-foreground">Profile details will appear here when community profiles are connected.</p>
+              <button type="button" className="mt-4 font-serif text-lg font-bold hover:text-accent hover:underline" onClick={() => router.push('/profile')}>{currentProfile?.displayName ?? 'Your StoryLines'}</button>
+              <div className="mt-1 flex items-center justify-center gap-1.5">
+                <span className="max-w-40 truncate text-xs text-muted-foreground">@{currentProfile?.username ?? 'reader'}</span>
+                <span className="community-role">{profileRole === 'artist' ? 'Artist' : profileRole === 'writer' ? 'Writer' : 'Reader'}</span>
+              </div>
+              <p className="mt-4 line-clamp-3 text-xs leading-5 text-muted-foreground">{currentProfile?.bio || 'Add a bio to introduce yourself to the community.'}</p>
+              <button type="button" onClick={() => router.push('/profile')} className="mt-auto min-h-10 pt-3 text-sm font-semibold text-accent hover:underline">View profile</button>
             </Panel>
           ) : (
             <Panel className="community-profile-card">
@@ -857,7 +866,18 @@ export function CommunityView({
             <p className="community-sidebar-label">Your space</p>
             <button className={`community-shortcut ${feedTab === 'for-you' ? 'community-shortcut-active' : ''}`} type="button" onClick={() => setFeedTab('for-you')}><Compass /> Feed</button>
             <button className={`community-shortcut ${feedTab === 'authors' ? 'community-shortcut-active' : ''}`} type="button" onClick={() => setFeedTab('authors')}><Search /> Authors</button>
-            <button className="community-shortcut" type="button" disabled title="Following feed arrives in a later phase"><UsersRound /> Following</button>
+            <button
+              className={`community-shortcut ${feedTab === 'following' ? 'community-shortcut-active' : ''}`}
+              type="button"
+              onClick={() => {
+                if (!isLoggedIn) {
+                  onUnlock()
+                  return
+                }
+                setSelectedAuthorId(null)
+                setFeedTab('following')
+              }}
+            ><UsersRound /> Following</button>
             <button
               className={`community-shortcut ${feedTab === 'saved' ? 'community-shortcut-active' : ''}`}
               type="button"
@@ -872,7 +892,18 @@ export function CommunityView({
             >
               <Bookmark /> Saved
             </button>
-            <button className="community-shortcut" type="button" disabled title="Your posts view arrives in a later phase"><PenLine /> My Posts</button>
+            <button
+              className={`community-shortcut ${feedTab === 'my-posts' ? 'community-shortcut-active' : ''}`}
+              type="button"
+              onClick={() => {
+                if (!isLoggedIn) {
+                  onUnlock()
+                  return
+                }
+                setSelectedAuthorId(null)
+                setFeedTab('my-posts')
+              }}
+            ><PenLine /> My Posts</button>
             <button className={`community-shortcut ${feedTab === 'collaborators' ? 'community-shortcut-active' : ''}`} type="button" onClick={() => setFeedTab('collaborators')}><Handshake /> Collaboration Board</button>
           </Panel>
         </aside>
@@ -1121,12 +1152,14 @@ export function CommunityView({
             {visiblePosts.length === 0 ? (
             <div className="community-empty">
               <span className="empty-icon"><MessageCircle className="size-5" /></span>
-              <h2 className="mt-4 font-serif text-xl font-bold">{feedTab === 'collaborators' ? 'Wala pang naghahanap ng ka-collab' : feedTab === 'saved' ? 'Wala ka pang naka-save na post' : 'Wala pang kuwentuhan dito'}</h2>
+              <h2 className="mt-4 font-serif text-xl font-bold">{feedTab === 'collaborators' ? 'Wala pang naghahanap ng ka-collab' : feedTab === 'saved' ? 'Wala ka pang naka-save na post' : feedTab === 'my-posts' ? 'You haven’t posted yet' : 'Wala pang kuwentuhan dito'}</h2>
               <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
                 {feedTab === 'collaborators'
                   ? 'Baka ikaw ang unang mag-post ng collaboration request at makahanap ng kaagapay.'
                   : feedTab === 'saved'
                     ? 'I-save ang mga post na gusto mong balikan para makita rito.'
+                    : feedTab === 'my-posts'
+                      ? 'Your posts will appear here after you share them with the community.'
                     : 'Walang pang post, ikaw na ang mauna! Ibahagi ang ginagawa mo o ang kuwentong tumatak sa iyo.'}
               </p>
               {canPost && <Button type="button" onClick={focusComposer} className="mt-4 min-h-11 rounded-xl bg-accent text-accent-foreground">Start a post</Button>}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { MessageSquareReply, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { MessageSquareReply, ThumbsDown, ThumbsUp, Trash2 } from 'lucide-react'
 import { ProfileAvatar } from '@/components/shared/profile-avatar'
 import type { CommunityComment } from '@/lib/types'
 
@@ -20,6 +20,7 @@ export function CommunityCommentThread({
   onProfile,
   onReply,
   onReaction,
+  onDelete,
   onLoginRequired,
 }: {
   comments: CommunityComment[]
@@ -27,12 +28,14 @@ export function CommunityCommentThread({
   onProfile: (id: string) => void
   onReply: (comment: CommunityComment) => void
   onReaction: (comment: CommunityComment, reaction: 'like' | 'dislike') => Promise<void>
+  onDelete?: (comment: CommunityComment) => Promise<void>
   onLoginRequired: () => void
 }) {
   const [expandedReplies, setExpandedReplies] = useState<string[]>([])
   const [pendingReactions, setPendingReactions] = useState<string[]>([])
   const [reactionOverrides, setReactionOverrides] = useState<Record<string, Pick<CommunityComment, 'likes' | 'dislikes' | 'myReaction'>>>({})
   const [reactionError, setReactionError] = useState<string | null>(null)
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null)
   const roots = comments.filter((comment) => !comment.parentCommentId)
   const repliesByParent = new Map<string, CommunityComment[]>()
   for (const comment of comments) {
@@ -104,6 +107,22 @@ export function CommunityCommentThread({
             {!nested && (
               <button type="button" onClick={() => currentUserId ? onReply(comment) : onLoginRequired()} className="inline-flex min-h-8 items-center gap-1 font-semibold hover:text-accent focus-visible:outline-2 focus-visible:outline-ring">
                 <MessageSquareReply className="size-3.5" /> Reply
+              </button>
+            )}
+            {currentUserId === comment.authorId && onDelete && (
+              <button
+                type="button"
+                disabled={deletingCommentId === comment.id}
+                onClick={() => {
+                  setDeletingCommentId(comment.id)
+                  void onDelete(comment).catch((error: unknown) => {
+                    setReactionError(error instanceof Error ? error.message : 'Could not delete this comment.')
+                  }).finally(() => setDeletingCommentId(null))
+                }}
+                className="inline-flex min-h-8 items-center gap-1 font-semibold hover:text-destructive focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
+                aria-label="Delete your comment"
+              >
+                <Trash2 className="size-3.5" /> Delete
               </button>
             )}
             {!nested && replies.length > 0 && (

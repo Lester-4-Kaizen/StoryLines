@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -36,11 +36,12 @@ type Message = {
   sender_id: string
   recipient_id: string
   content: string
+  is_deleted: boolean
   created_at: string
   read_at: string | null
   reply_to_message_id: string | null
   reactions?: MessageReactionView[]
-  replyPreview?: Pick<Message, 'id' | 'sender_id' | 'content'>
+  replyPreview?: Pick<Message, 'id' | 'sender_id' | 'content' | 'is_deleted'>
 }
 type MessageReaction = { message_id: string; user_id: string; reaction: string }
 type MessageReactionView = { emoji: string; count: number; reactedByMe: boolean }
@@ -56,6 +57,26 @@ type Confirmation = { kind: 'conversation'; partnerId: string; status: Conversat
 const MESSAGE_PAGE_SIZE = 100
 const MESSAGE_REACTIONS = ['❤️', '😂', '😮', '😢', '👍', '🔥'] as const
 const EmojiPicker = dynamic(() => import('emoji-picker-react'), { ssr: false })
+
+function messageDateLabel(date: Date) {
+  const now = new Date()
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const dateStart = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const dayDifference = Math.round((todayStart.getTime() - dateStart.getTime()) / 86_400_000)
+  if (dayDifference === 0) return 'Today'
+  if (dayDifference === 1) return 'Yesterday'
+  return date.toLocaleDateString([], {
+    month: 'long',
+    day: 'numeric',
+    year: date.getFullYear() === now.getFullYear() ? undefined : 'numeric',
+  })
+}
+
+function sameMessageDay(first: Date, second: Date) {
+  return first.getFullYear() === second.getFullYear()
+    && first.getMonth() === second.getMonth()
+    && first.getDate() === second.getDate()
+}
 
 function isConversationStateResult(value: unknown): value is ConversationStateResult {
   if (typeof value !== 'object' || value === null) return false
@@ -76,8 +97,11 @@ function isMessageAccess(value: unknown): value is MessageAccess {
 
 function describeMessageError(error: unknown, fallback: string) {
   if (typeof error === 'object' && error !== null && 'code' in error) {
-    if (error.code === '42P01' || error.code === 'PGRST202' || error.code === 'PGRST205') {
+    if (error.code === '42P01' || error.code === 'PGRST205') {
       return 'Messaging privacy features are not installed. Apply migrations 20261025000400 through 20261025000800 in Supabase.'
+    }
+    if (error.code === 'PGRST202') {
+      return 'A messaging database function is missing. Apply migrations 20261025000400 through 20261025000800 and 20261025001200_chapter_discussions_chat_unsend_and_reader_position.sql in Supabase.'
     }
     if (error.code === '42501') {
       return 'Supabase denied this message action. Apply migrations 20261025000400 through 20261025000800, then sign in again.'
@@ -86,7 +110,7 @@ function describeMessageError(error: unknown, fallback: string) {
       return 'The direct-message database policy is recursive. Apply migration 20261025000300 in Supabase to fix it.'
     }
     if (error.code === '42703' || error.code === 'PGRST204') {
-      return 'The chat database is missing the latest message fields. Apply migration 20261025000200 in Supabase.'
+      return 'The chat database is missing the latest message fields. Apply migration 20261025001200_chapter_discussions_chat_unsend_and_reader_position.sql in Supabase.'
     }
   }
   if (typeof error === 'object' && error !== null) {
@@ -193,7 +217,7 @@ export function MessagesView() {
         .select('message_id, user_id, reaction')
         .in('message_id', messageIds),
       replyIds.length
-        ? supabase.from('community_direct_messages').select('id, sender_id, content').in('id', replyIds)
+        ? supabase.from('community_direct_messages').select('id, sender_id, content, is_deleted').in('id', replyIds)
         : Promise.resolve({ data: [], error: null }),
     ])
     if (reactionsResult.error) throw reactionsResult.error
@@ -247,7 +271,7 @@ export function MessagesView() {
       const supabase = getSupabaseClient()
       const inboxPromise = supabase
           .from('community_direct_messages')
-          .select('id, sender_id, recipient_id, content, created_at, read_at, reply_to_message_id')
+          .select('id, sender_id, recipient_id, content, is_deleted, created_at, read_at, reply_to_message_id')
           .or(`sender_id.eq.${currentUserId},recipient_id.eq.${currentUserId}`)
           .order('created_at', { ascending: false })
           .order('id', { ascending: false })
@@ -269,7 +293,7 @@ export function MessagesView() {
       const selectedThreadPromise = targetUserId
         ? supabase
           .from('community_direct_messages')
-          .select('id, sender_id, recipient_id, content, created_at, read_at, reply_to_message_id')
+          .select('id, sender_id, recipient_id, content, is_deleted, created_at, read_at, reply_to_message_id')
           .or(`and(sender_id.eq.${currentUserId},recipient_id.eq.${targetUserId}),and(sender_id.eq.${targetUserId},recipient_id.eq.${currentUserId})`)
           .order('created_at', { ascending: false })
           .order('id', { ascending: false })
@@ -365,7 +389,7 @@ export function MessagesView() {
       const supabase = getSupabaseClient()
       const { data, error: olderError } = await supabase
         .from('community_direct_messages')
-        .select('id, sender_id, recipient_id, content, created_at, read_at, reply_to_message_id')
+        .select('id, sender_id, recipient_id, content, is_deleted, created_at, read_at, reply_to_message_id')
         .or(`and(sender_id.eq.${currentUserId},created_at.lt.${cursor.created_at}),and(recipient_id.eq.${currentUserId},created_at.lt.${cursor.created_at}),and(sender_id.eq.${currentUserId},created_at.eq.${cursor.created_at},id.lt.${cursor.id}),and(recipient_id.eq.${currentUserId},created_at.eq.${cursor.created_at},id.lt.${cursor.id})`)
         .order('created_at', { ascending: false })
         .order('id', { ascending: false })
@@ -517,6 +541,7 @@ export function MessagesView() {
         .eq('recipient_id', currentUserId)
       if (updateError) throw updateError
       setMessages((current) => current.map((message) => unreadIds.includes(message.id) ? { ...message, read_at: readAt } : message))
+      window.dispatchEvent(new Event('storylines:messages-updated'))
     })().catch((updateError: unknown) => {
       setError(describeMessageError(updateError, 'Could not mark messages as read.'))
     })
@@ -552,6 +577,32 @@ export function MessagesView() {
   const cancelMessageLongPress = () => {
     if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current)
     longPressTimerRef.current = null
+  }
+
+  const unsendMessage = async (message: Message) => {
+    setError(null)
+    try {
+      const { error: unsendError } = await getSupabaseClient()
+        .rpc('unsend_community_direct_message', { p_message_id: message.id })
+      if (unsendError) throw unsendError
+      setMessages((current) => current.map((item) => {
+        if (item.id === message.id) {
+          return { ...item, content: 'This message was deleted', is_deleted: true, reactions: [] }
+        }
+        if (item.replyPreview?.id === message.id) {
+          return {
+            ...item,
+            replyPreview: { ...item.replyPreview, content: 'This message was deleted', is_deleted: true },
+          }
+        }
+        return item
+      }))
+      setMessageMenuFor(null)
+      setActiveMessageActionsFor(null)
+      setReactionPickerFor(null)
+    } catch (unsendError) {
+      setError(describeMessageError(unsendError, 'Could not unsend this message.'))
+    }
   }
 
   const toggleInfoSection = (section: typeof infoSection) => {
@@ -612,7 +663,7 @@ export function MessagesView() {
           content,
           reply_to_message_id: replyingTo?.id ?? null,
         })
-        .select('id, sender_id, recipient_id, content, created_at, read_at, reply_to_message_id')
+        .select('id, sender_id, recipient_id, content, is_deleted, created_at, read_at, reply_to_message_id')
         .single()
       if (sendError) throw sendError
       const newMessage: Message = {
@@ -1012,13 +1063,25 @@ export function MessagesView() {
                 </div>
               )}
               <div className="flex-1 space-y-4 overflow-y-auto bg-[#e7ddc8] p-4 sm:p-6" aria-live="polite">
-                {displayedThreadMessages.length ? displayedThreadMessages.map((message) => {
+                {displayedThreadMessages.length ? displayedThreadMessages.map((message, index) => {
                   const isMine = message.sender_id === currentUserId
                   const reply = threadMessages.find((item) => item.id === message.reply_to_message_id) ?? message.replyPreview
                   const sender = isMine ? 'You' : selectedPerson.name
-                  const showActions = activeMessageActionsFor === message.id
+                  const showActions = !message.is_deleted && activeMessageActionsFor === message.id
+                  const messageDate = new Date(message.created_at)
+                  const previousMessageDate = index > 0 ? new Date(displayedThreadMessages[index - 1].created_at) : null
                   return (
-                    <div key={message.id} className={`group flex items-end gap-2 ${isMine ? 'justify-end' : 'justify-start'}`}>
+                    <Fragment key={message.id}>
+                    {(!previousMessageDate || !sameMessageDay(messageDate, previousMessageDate)) && (
+                      <div className="my-5 flex items-center gap-3" role="separator" aria-label={messageDateLabel(messageDate)}>
+                        <span className="h-px flex-1 bg-[#c7b99d]" />
+                        <time dateTime={messageDate.toISOString()} className="rounded-full bg-[#f8f3e9] px-3 py-1 text-xs font-semibold text-[#75684f]">
+                          {messageDateLabel(messageDate)}
+                        </time>
+                        <span className="h-px flex-1 bg-[#c7b99d]" />
+                      </div>
+                    )}
+                    <div className={`group flex items-end gap-2 ${isMine ? 'justify-end' : 'justify-start'}`}>
                       <div className={`flex max-w-[min(82%,38rem)] flex-col ${isMine ? 'items-end' : 'items-start'}`}>
                         <div className={`mb-1 flex items-center gap-2 px-1 text-[11px] text-[#83765d] ${isMine ? 'justify-end' : ''}`}>
                           {!isMine && <ProfileAvatar src={selectedPerson.avatarUrl} name={selectedPerson.name} className="size-7" imageSizes="28px" />}
@@ -1029,13 +1092,14 @@ export function MessagesView() {
                         <div ref={showActions ? activeMessageRef : null} className={`flex items-center gap-1 ${isMine ? 'flex-row-reverse' : ''}`}>
                           <div className="relative max-w-full">
                             <div
-                              role="button"
-                              tabIndex={0}
-                              onPointerDown={() => startMessageLongPress(message.id)}
-                              onPointerUp={cancelMessageLongPress}
-                              onPointerLeave={cancelMessageLongPress}
-                              onPointerCancel={cancelMessageLongPress}
+                              role={message.is_deleted ? undefined : 'button'}
+                              tabIndex={message.is_deleted ? undefined : 0}
+                              onPointerDown={message.is_deleted ? undefined : () => startMessageLongPress(message.id)}
+                              onPointerUp={message.is_deleted ? undefined : cancelMessageLongPress}
+                              onPointerLeave={message.is_deleted ? undefined : cancelMessageLongPress}
+                              onPointerCancel={message.is_deleted ? undefined : cancelMessageLongPress}
                               onClick={() => {
+                                if (message.is_deleted) return
                                 if (longPressTriggeredRef.current) {
                                   longPressTriggeredRef.current = false
                                   return
@@ -1043,26 +1107,27 @@ export function MessagesView() {
                                 setActiveMessageActionsFor((current) => current === message.id ? null : message.id)
                               }}
                               onKeyDown={(event) => {
+                                if (message.is_deleted) return
                                 if (event.key === 'Enter' || event.key === ' ') {
                                   event.preventDefault()
                                   setActiveMessageActionsFor((current) => current === message.id ? null : message.id)
                                 }
                               }}
-                              aria-label="Message. Tap for actions or press and hold to react."
-                              className={`w-fit max-w-full cursor-pointer overflow-hidden rounded-2xl px-4 py-2.5 shadow-sm focus-visible:outline-2 focus-visible:outline-ring ${isMine ? 'rounded-br-md bg-[#956c16] text-white' : 'rounded-bl-md bg-[#f4eddf] text-foreground'}`}
+                              aria-label={message.is_deleted ? 'This message was deleted' : 'Message. Tap for actions or press and hold to react.'}
+                              className={`w-fit max-w-full overflow-hidden rounded-2xl px-4 py-2.5 shadow-sm ${message.is_deleted ? 'border border-[#d7c9ad] bg-[#f4eddf] italic text-[#75684f]' : `cursor-pointer focus-visible:outline-2 focus-visible:outline-ring ${isMine ? 'rounded-br-md bg-[#956c16] text-white' : 'rounded-bl-md bg-[#f4eddf] text-foreground'}`}`}
                             >
                               {reply && (
                                 <div className={`mb-2 border-l-2 pl-2 text-xs ${isMine ? 'border-white/50 text-white/75' : 'border-accent text-muted-foreground'}`}>
                                   <p className="font-semibold">{reply.sender_id === currentUserId ? 'You' : selectedPerson.name}</p>
-                                  <p className="line-clamp-2">{reply.content}</p>
+                                  <p className="line-clamp-2">{reply.is_deleted ? 'This message was deleted' : reply.content}</p>
                                 </div>
                               )}
-                              <p className="whitespace-pre-wrap break-words text-sm leading-6">{message.content}</p>
-                              {isMine && message.read_at && (
+                              <p className={`whitespace-pre-wrap break-words text-sm leading-6 ${message.is_deleted ? 'text-xs' : ''}`}>{message.is_deleted ? 'This message was deleted' : message.content}</p>
+                              {isMine && !message.is_deleted && message.read_at && (
                                 <p className="mt-1 flex items-center justify-end gap-1 text-[10px] text-white/70"><Check className="size-3" /> Seen</p>
                               )}
                             </div>
-                            {reactionPickerFor === message.id && (
+                            {!message.is_deleted && reactionPickerFor === message.id && (
                               <div className={`absolute bottom-full z-10 mb-1 flex gap-1 rounded-full border border-[#d7c9ad] bg-[#f8f3e9] p-2 shadow-lg ${isMine ? 'right-0' : 'left-0'}`}>
                                 {MESSAGE_REACTIONS.map((emoji) => (
                                   <button key={emoji} type="button" onClick={() => void reactToMessage(message, emoji)} className="flex size-8 items-center justify-center rounded-full text-lg hover:bg-white" aria-label={`React ${emoji}`}>
@@ -1088,12 +1153,17 @@ export function MessagesView() {
                                   <button type="button" onClick={() => void copyMessage(message)} className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-semibold hover:bg-muted">
                                     <Copy className="size-4" /> Copy
                                   </button>
+                                  {isMine && (
+                                    <button type="button" onClick={() => void unsendMessage(message)} className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-semibold text-destructive hover:bg-destructive/10">
+                                      <Trash2 className="size-4" /> Unsend
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </div>
                           </div>
                         </div>
-                        {!!message.reactions?.length && (
+                        {!message.is_deleted && !!message.reactions?.length && (
                           <div className={`mt-1 flex flex-wrap gap-1 ${isMine ? 'justify-end' : ''}`}>
                             {message.reactions.map((reaction) => (
                               <button
@@ -1110,6 +1180,7 @@ export function MessagesView() {
                         )}
                       </div>
                     </div>
+                    </Fragment>
                   )
                 }) : <p className="mt-10 text-center text-sm text-[#83765d]">{searchQuery ? 'No messages match your search.' : `Start the conversation with ${selectedPerson.name}.`}</p>}
                 {selectedPendingRequest && (

@@ -2,20 +2,20 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { BookOpen, Brush, ChevronRight, Sparkles } from 'lucide-react'
+import { AlertTriangle, BookOpen, Brush, ChevronRight, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { CreatorFrame } from '@/components/shared/creator-frame'
 import { Panel } from '@/components/shared/panel'
 import type { Badge, Route } from '@/lib/types'
 
-const FORMATS: { value: 'story' | 'comic'; label: string; description: string; icon: React.ReactNode; requires: Badge }[] = [
-  { value: 'story', label: 'Story project', description: 'Gumawa ng project, idagdag ang story details, at isulat ang mga kabanata kapag handa ka na.', icon: <BookOpen />, requires: 'writer' },
-  { value: 'comic', label: 'Comic project', description: 'Gumawa ng project, ayusin ang episode details, at idagdag ang mga pahina kapag handa na.', icon: <Brush />, requires: 'artist' },
+const FORMATS: { value: 'story' | 'comic'; label: string; description: string; icon: React.ReactNode; requires: Badge; available: boolean }[] = [
+  { value: 'story', label: 'Story project', description: 'Gumawa ng project, idagdag ang story details, at isulat ang mga kabanata kapag handa ka na.', icon: <BookOpen />, requires: 'writer', available: true },
+  { value: 'comic', label: 'Comic project', description: 'Gumawa ng project, ayusin ang episode details, at idagdag ang mga pahina kapag handa na.', icon: <Brush />, requires: 'artist', available: false },
 ]
 
 export function NewWorkView({ go, badges, activeRole }: { go: (route: Route) => void; badges: Badge[]; activeRole: Badge }) {
   const [type, setType] = useState<'story' | 'comic' | null>(
-    activeRole === 'writer' && badges.includes('writer') ? 'story' : activeRole === 'artist' && badges.includes('artist') ? 'comic' : null,
+    activeRole === 'writer' && badges.includes('writer') ? 'story' : null,
   )
   return (
     <CreatorFrame eyebrow="Creator studio / bagong gawa" title="Simulan na natin 'yan." go={go}>
@@ -28,7 +28,7 @@ export function NewWorkView({ go, badges, activeRole }: { go: (route: Route) => 
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             {FORMATS.map((format) => {
-              const allowed = badges.includes(format.requires)
+              const allowed = format.available && badges.includes(format.requires)
               const requiredLabel = format.requires === 'writer' ? 'Writer' : 'Alagad ng sining'
               return (
                 <button
@@ -48,12 +48,25 @@ export function NewWorkView({ go, badges, activeRole }: { go: (route: Route) => 
                   <span className="flex size-12 items-center justify-center rounded-xl bg-secondary text-accent">{format.icon}</span>
                   <h3 className="mt-4 font-serif text-2xl font-bold">{format.label}</h3>
                   <p className="mt-2 text-sm leading-6 text-muted-foreground">{format.description}</p>
-                  <p className={`mt-4 text-xs font-bold ${allowed ? 'text-accent' : 'text-muted-foreground'}`}>
-                    {allowed ? type === format.value ? 'Selected' : `Use ${requiredLabel} tools` : `Writer badge required for stories · Artist / Comics badge required for comics`}
+                  <p className={`mt-4 inline-flex items-start gap-2 text-xs font-bold ${allowed ? 'text-accent' : 'text-muted-foreground'}`}>
+                    {!allowed && <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" aria-hidden="true" />}
+                    <span>
+                      {allowed
+                        ? type === format.value ? 'Selected' : `Use ${requiredLabel} tools`
+                        : format.value === 'comic'
+                          ? 'Unavailable to everyone right now: comic image hosting is not available.'
+                          : 'Writer badge required to create story projects.'}
+                    </span>
                   </p>
                 </button>
               )
             })}
+          </div>
+          <div role="status" className="flex items-start gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-700" aria-hidden="true" />
+            <p className="text-muted-foreground">
+              Comic creation is temporarily unavailable to all users because the project does not currently have image-hosting capacity for comic pages. Story projects remain available to accounts with the Writer badge.
+            </p>
           </div>
           {!badges.includes('writer') && !badges.includes('artist') && (
             <div className="flex items-start gap-3 rounded-xl border border-border bg-secondary/50 p-4 text-sm">

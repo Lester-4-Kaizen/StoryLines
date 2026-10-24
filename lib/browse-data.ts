@@ -30,12 +30,41 @@ export type BrowsePageData = {
 const WORK_PAGE_SIZE = 20
 const CREATOR_PAGE_SIZE = 20
 
+function supabaseError(error: unknown, query: string) {
+  if (typeof error !== 'object' || error === null) {
+    return Object.assign(new Error(String(error)), { query })
+  }
+  const read = (field: string) => (
+    field in error ? Reflect.get(error, field) : undefined
+  )
+  return Object.assign(new Error(String(read('message') ?? 'Unknown Supabase error')), {
+    query,
+    code: read('code'),
+    details: read('details'),
+    hint: read('hint'),
+  })
+}
+
+function logBrowseError(context: string, error: unknown) {
+  const fields = ['query', 'code', 'message', 'details', 'hint'] as const
+  const diagnostic = Object.fromEntries(fields.map((field) => [
+    field,
+    typeof error === 'object' && error !== null && field in error
+      ? Reflect.get(error, field)
+      : undefined,
+  ]))
+  console.error(`${context}: ${JSON.stringify(diagnostic)}`)
+}
+
 function browseLoadError(error: unknown) {
   const code = typeof error === 'object' && error !== null && 'code' in error
     ? String(Reflect.get(error, 'code'))
     : ''
   if (['PGRST204', 'PGRST205', '42P01'].includes(code)) {
-    return 'Hindi pa naka-set up ang published works. I-run ang 20261023000500_profile_page_data.sql sa Supabase SQL Editor.'
+    return 'Hindi pa kumpleto ang Browse database setup. I-run ang Supabase migrations mula 20261023000000 hanggang 20261023001100 ayon sa filename order.'
+  }
+  if (code === '42501') {
+    return 'Walang pahintulot ang Browse query sa Supabase. I-run ang migrations mula 20261023000000 hanggang 20261023001100 ayon sa filename order; kung na-run na, tingnan ang Supabase grants at RLS policies.'
   }
   return 'Hindi ma-load ang mga nailathalang gawa. Tingnan ang connection at subukan ulit.'
 }
@@ -73,13 +102,26 @@ export async function getBrowsePageData(): Promise<BrowsePageData> {
         .order('id', { ascending: false })
         .limit(CREATOR_PAGE_SIZE + 1),
     ])
-    if (worksResult.error) throw worksResult.error
+    if (worksResult.error) throw supabaseError(worksResult.error, 'creator_works')
 
     const workAuthorIds = Array.from(new Set(worksResult.data.map((work) => work.author_id)))
     const authorProfilesResult = workAuthorIds.length
       ? await supabase.from('profiles').select('id, display_name').in('id', workAuthorIds)
       : { data: [], error: null }
-    if (authorProfilesResult.error) throw authorProfilesResult.error
+    if (authorProfilesResult.error) throw supabaseError(authorProfilesResult.error, 'profiles (work authors)')
+    const { data: engagementRows, error: engagementError } = worksResult.data.length
+      ? await supabase.rpc('get_creator_work_engagement_counts', {
+        p_work_ids: worksResult.data.slice(0, WORK_PAGE_SIZE).map((work) => work.id),
+      })
+      : { data: [], error: null }
+    if (engagementError) {
+      console.warn('Browse work engagement counts are unavailable; apply 20261025001000_work_engagement_and_rankings.sql.')
+    }
+    const engagementByWorkId = new Map<string, { views: number; likes: number }>((engagementRows ?? []).map((row: {
+      work_id: string
+      view_count: number | string
+      like_count: number | string
+    }) => [row.work_id, { views: Number(row.view_count), likes: Number(row.like_count) }]))
     const pageWorks = worksResult.data.slice(0, WORK_PAGE_SIZE)
     const hasMoreWorks = worksResult.data.length > WORK_PAGE_SIZE
     const lastWork = pageWorks.at(-1)
@@ -90,7 +132,7 @@ export async function getBrowsePageData(): Promise<BrowsePageData> {
     let creators: BrowseCreator[] = []
     let creatorsError: string | null = null
     if (creatorsResult.error) {
-      console.error('Failed to load browse creators', creatorsResult.error)
+      logBrowseError('Failed to load browse creators', supabaseError(creatorsResult.error, 'profiles (browse creators)'))
       creatorsError = browseLoadError(creatorsResult.error)
     } else if (pageCreators.length) {
       const { data: stats, error: statsError } = await supabase.rpc('get_browse_creator_stats', {
@@ -104,7 +146,7 @@ export async function getBrowsePageData(): Promise<BrowsePageData> {
           console.warn('Browse creator statistics are unavailable; apply 20261023001000_browse_creator_stats.sql.')
           creatorsError = 'Naka-display ang directory, pero kailangan munang i-run ang 20261023001000_browse_creator_stats.sql para lumabas ang follower at work counts.'
         } else {
-          console.error('Failed to load browse creator stats', statsError)
+          logBrowseError('Failed to load browse creator stats', supabaseError(statsError, 'get_browse_creator_stats'))
           creatorsError = 'Naka-display ang directory, pero hindi ma-load ang follower at work counts. Subukan ulit.'
         }
       } else {
@@ -143,6 +185,8 @@ export async function getBrowsePageData(): Promise<BrowsePageData> {
         authorName: authorProfilesResult.data.find((profile) => profile.id === work.author_id)?.display_name ?? 'StoryLines creator',
         status: work.status as 'Ongoing' | 'Complete',
         createdAt: new Date(work.created_at).getTime(),
+        viewCount: engagementByWorkId.get(work.id)?.views,
+        likeCount: engagementByWorkId.get(work.id)?.likes,
       })),
       workCursor: hasMoreWorks && lastWork ? { createdAt: lastWork.created_at, id: lastWork.id } : null,
       hasMoreWorks,
@@ -153,7 +197,7 @@ export async function getBrowsePageData(): Promise<BrowsePageData> {
       creatorsError,
     }
   } catch (error) {
-    console.error('Failed to load browse works', error)
+    logBrowseError('Failed to load browse works', error)
     return {
       works: [],
       workCursor: null,
