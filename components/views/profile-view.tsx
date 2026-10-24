@@ -115,10 +115,6 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
   const [guestPrompt, setGuestPrompt] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [messageOpen, setMessageOpen] = useState(false)
-  const [messageDraft, setMessageDraft] = useState('')
-  const [messageSending, setMessageSending] = useState(false)
-  const [messageError, setMessageError] = useState<string | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
   const [connectionsDirection, setConnectionsDirection] = useState<'followers' | 'following' | null>(null)
   const [avatarUploading, setAvatarUploading] = useState(false)
@@ -836,36 +832,6 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
     }
   }
 
-  const sendMessage = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!data.currentUserId) {
-      askForLogin('Magpadala ng mensahe')
-      return
-    }
-    const content = messageDraft.trim()
-    if (!content || content.length > 2000) {
-      setMessageError('Maglagay ng mensaheng 1 hanggang 2,000 characters.')
-      return
-    }
-    setMessageSending(true)
-    setMessageError(null)
-    try {
-      const { error } = await getSupabaseClient().from('community_direct_messages').insert({
-        sender_id: data.currentUserId,
-        recipient_id: profile.id,
-        content,
-      })
-      if (error) throw error
-      setMessageDraft('')
-      setMessageOpen(false)
-      setNotice('Naipadala na ang mensahe.')
-    } catch (error) {
-      setMessageError(error instanceof Error ? error.message : 'Hindi naipadala ang mensahe. Subukan ulit.')
-    } finally {
-      setMessageSending(false)
-    }
-  }
-
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 sm:gap-4">
       <section className="overflow-hidden rounded-2xl border border-border bg-card">
@@ -902,11 +868,21 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
               >
                 <Pencil className="size-4" aria-hidden="true" /> Edit profile
               </Button>
-            ) : creatorProfile ? (
-              <Button type="button" disabled={followPending} className="min-h-11 rounded-full bg-accent text-accent-foreground motion-reduce:transition-none" onClick={() => void followProfile()}>
-                <UsersRound className="size-4" /> {followPending ? 'Saving…' : data.isFollowing ? 'Following' : 'Follow'}
-              </Button>
-            ) : null}
+            ) : (
+              <>
+                <Link
+                  href={`/messages?user=${encodeURIComponent(profile.id)}`}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-border bg-background px-4 text-sm font-semibold transition-colors hover:bg-muted"
+                >
+                  <MessageCircle className="size-4" aria-hidden="true" /> Message
+                </Link>
+                {creatorProfile && (
+                  <Button type="button" disabled={followPending} className="min-h-11 rounded-full bg-accent text-accent-foreground motion-reduce:transition-none" onClick={() => void followProfile()}>
+                    <UsersRound className="size-4" /> {followPending ? 'Saving…' : data.isFollowing ? 'Following' : 'Follow'}
+                  </Button>
+                )}
+              </>
+            )}
             <Button type="button" variant="outline" className="min-h-11 rounded-full" onClick={() => setShareOpen(true)}>
               <Share2 className="size-4" /> Share profile
             </Button>
@@ -1316,21 +1292,14 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
               <button type="button" className="mt-2 min-h-11 rounded-full border border-border px-3 text-xs font-semibold hover:bg-muted" onClick={() => setEditing(true)}>
                 {editing ? 'Edit collaboration roles above' : 'Edit collaboration preferences'}
               </button>
-            ) : profile.openForCollaboration ? (
-              <button type="button" className="mt-2 min-h-11 rounded-full border border-border px-3 text-xs font-semibold hover:bg-muted" onClick={() => data.currentUserId ? setMessageOpen((value) => !value) : askForLogin('Magpadala ng mensahe')}>
-                Send a message
-              </button>
-            ) : null}
-            {messageOpen && (
-              <form className="mt-3 flex flex-col gap-2 border-t border-border pt-3" onSubmit={(event) => void sendMessage(event)}>
-                <label htmlFor="profile-message" className="text-xs font-bold">Message {profile.displayName}</label>
-                <textarea id="profile-message" value={messageDraft} maxLength={2000} onChange={(event) => setMessageDraft(event.target.value)} className="min-h-24 rounded-lg border border-input bg-background p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" required />
-                {messageError && <p role="alert" className="text-xs text-destructive">{messageError}</p>}
-                <div className="flex justify-end gap-2">
-                  <button type="button" className="min-h-11 px-3 text-xs font-semibold" onClick={() => setMessageOpen(false)}>Cancel</button>
-                  <Button type="submit" disabled={messageSending} className="min-h-11 bg-accent text-accent-foreground">{messageSending ? 'Sending…' : 'Send'}</Button>
-                </div>
-              </form>
+            ) : (
+              <Link
+                href={`/messages?user=${encodeURIComponent(profile.id)}`}
+                className="mt-2 inline-flex min-h-11 items-center gap-2 rounded-full border border-border px-3 text-xs font-semibold hover:bg-muted"
+              >
+                <MessageCircle className="size-4" aria-hidden="true" />
+                Message {profile.openForCollaboration ? 'about collaborating' : 'this creator'}
+              </Link>
             )}
           </Panel>
           <Panel className="p-4">

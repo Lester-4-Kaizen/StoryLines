@@ -188,15 +188,16 @@ function PasswordStrength({ password }: { password: string }) {
   ]
   const score = checks.filter(Boolean).length
   const label = !password ? 'At least 8 characters ang kailangan' : score < 2 ? 'Dagdagan pa natin ang tibay' : score < 4 ? 'Mas tumitibay na!' : 'Strong na ang password mo'
+  const labelColor = score === checks.length ? 'text-success' : score >= 2 ? 'text-accent' : 'text-muted-foreground'
 
   return (
     <div className="mt-2" aria-live="polite">
       <div className="flex gap-1" aria-hidden="true">
         {checks.map((passed, index) => (
-          <span key={index} className={`h-1 flex-1 rounded-full ${passed ? 'bg-accent' : 'bg-border'}`} />
+          <span key={index} className={`h-1 flex-1 rounded-full ${passed ? 'bg-success' : 'bg-border'}`} />
         ))}
       </div>
-      <p className="mt-1 text-xs text-muted-foreground">{label}</p>
+      <p className={`mt-1 text-xs ${labelColor}`}>{label}</p>
     </div>
   )
 }
@@ -491,7 +492,7 @@ export function AuthPage({
                 )}
               </div>
             )}
-            {successMessage && <p role="status" className="mb-4 rounded-xl border border-border bg-secondary/60 p-3.5 text-sm leading-5">{successMessage}</p>}
+            {successMessage && <p role="status" className="mb-4 rounded-xl border border-success/30 bg-success/10 p-3.5 text-sm leading-5 text-success">{successMessage}</p>}
 
             <form onSubmit={(event) => void handleSubmit(event)} noValidate className="flex flex-col gap-4">
               {isSignup && (
@@ -505,7 +506,7 @@ export function AuthPage({
                     <label htmlFor="username" className="text-sm font-bold">Username</label>
                     <input id="username" name="username" value={username} onChange={(event) => { setUsername(event.target.value); setFieldErrors((current) => ({ ...current, username: undefined })) }} autoComplete="username" inputMode="text" required minLength={3} maxLength={20} className={inputClasses(Boolean(fieldErrors.username))} aria-invalid={Boolean(fieldErrors.username)} aria-describedby="username-help username-error" placeholder="e.g. kuwentista_ana" />
                     <p id="username-help" className="text-xs text-muted-foreground">3–20 character: letters, numbers, o underscore (_).</p>
-                    <p id="username-error" aria-live="polite" className={`text-sm ${fieldErrors.username || usernameState === 'taken' || usernameState === 'error' ? 'font-medium text-destructive' : usernameState === 'available' ? 'text-accent' : 'text-muted-foreground'}`}>
+                    <p id="username-error" aria-live="polite" className={`text-sm ${fieldErrors.username || usernameState === 'taken' || usernameState === 'error' ? 'font-medium text-destructive' : usernameState === 'available' ? 'font-medium text-success' : 'text-muted-foreground'}`}>
                       {fieldErrors.username ?? (usernameState === 'taken' ? 'May gumagamit na ng username na iyan.' : usernameState === 'available' ? 'Puwede ang username na ito!' : usernameState === 'checking' ? 'Tinitingnan kung puwede pa…' : usernameState === 'error' ? 'Hindi ma-check ngayon. Subukan ulit sandali.' : '')}
                     </p>
                     {usernameState === 'error' && (

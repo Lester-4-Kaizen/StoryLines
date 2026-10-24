@@ -1,6 +1,7 @@
-import { createServerClient } from '@supabase/ssr'
+import { clearAuthCookiesAtScopes, createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { safeNextPath } from '@/lib/auth/redirect'
+import { isStaleRefreshTokenError } from '@/lib/supabase/auth-errors'
 import { isSupabaseConfigured, supabaseKey, supabaseUrl } from '@/lib/supabase/config'
 
 const PROTECTED_PREFIXES = ['/community', '/create', '/library', '/settings', '/collaborate', '/messages', '/updates']
@@ -44,10 +45,37 @@ export async function updateSession(request: NextRequest) {
     },
   })
 
-  const { data, error } = await supabase.auth.getClaims()
-  if (error && error.name !== 'AuthSessionMissingError') throw error
+  const storageKey = `sb-${new URL(supabaseUrl).hostname.split('.')[0]}-auth-token`
+  const clearStaleSession = async () => {
+    await clearAuthCookiesAtScopes({
+      getAll: () => request.cookies.getAll(),
+      setAll: (cookiesToSet) => {
+        cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options))
+      },
+      storageKey,
+      scopes: [{}],
+    })
 
-  const isLoggedIn = Boolean(data?.claims?.sub)
+    if (isProtectedPath(request.nextUrl.pathname)) {
+      const login = new URL('/login', request.url)
+      login.searchParams.set('next', safeNextPath(`${request.nextUrl.pathname}${request.nextUrl.search}`))
+      return redirectWithCookies(login, response)
+    }
+
+    return response
+  }
+
+  let isLoggedIn = false
+  try {
+    const result = await supabase.auth.getClaims()
+    if (isStaleRefreshTokenError(result.error)) return clearStaleSession()
+    if (result.error && result.error.name !== 'AuthSessionMissingError') throw result.error
+    isLoggedIn = Boolean(result.data?.claims?.sub)
+  } catch (error) {
+    if (isStaleRefreshTokenError(error)) return clearStaleSession()
+    throw error
+  }
+
   if (isLoggedIn && ['/login', '/signup'].includes(request.nextUrl.pathname)) {
     return redirectWithCookies(new URL('/', request.url), response)
   }

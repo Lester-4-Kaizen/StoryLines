@@ -4,7 +4,7 @@ import Image from 'next/image'
 import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Bookmark, BookOpen, Brush, LoaderCircle, Search, UsersRound } from 'lucide-react'
+import { Bookmark, BookOpen, Brush, LoaderCircle, MessageCircle, Search, UsersRound } from 'lucide-react'
 import { EmptyState } from '@/components/shared/empty-state'
 import { Button } from '@/components/ui/button'
 import { getSupabaseClient } from '@/lib/supabase'
@@ -87,19 +87,25 @@ function AuthorCard({
       ) : (
         <p className="mt-3 text-xs text-muted-foreground">Work and follower totals need database setup.</p>
       )}
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-4 grid grid-cols-2 gap-2">
         <button
           type="button"
           onClick={() => onFollow(creator)}
           disabled={pending || ownProfile}
           aria-pressed={following}
-          className={`inline-flex min-h-11 flex-1 items-center justify-center rounded-full px-4 text-xs font-bold transition disabled:opacity-60 ${
+          className={`inline-flex min-h-11 w-full items-center justify-center rounded-full px-4 text-xs font-bold transition disabled:opacity-60 ${
             following ? 'border border-border bg-card hover:border-destructive hover:text-destructive' : 'bg-accent text-accent-foreground hover:brightness-95'
           }`}
         >
           {ownProfile ? 'Your profile' : pending ? 'Saving…' : following ? 'Following' : 'Follow'}
         </button>
-        <Link href={`/profile/${creator.id}`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-border px-4 text-xs font-bold hover:border-accent hover:text-accent">
+        {!ownProfile && (
+          <Link href={`/messages?user=${encodeURIComponent(creator.id)}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-border px-4 text-xs font-bold hover:border-accent hover:text-accent">
+            <MessageCircle className="size-4" aria-hidden="true" />
+            Message
+          </Link>
+        )}
+        <Link href={`/profile/${creator.id}`} className="col-span-2 inline-flex min-h-11 items-center justify-center rounded-full border border-border px-4 text-xs font-bold hover:border-accent hover:text-accent">
           View profile
         </Link>
       </div>
@@ -121,8 +127,8 @@ function WorkCard({
   onSave: (workId: string) => void
 }) {
   return (
-    <article className="group min-w-0">
-      <Link href={`/works/${work.id}?chapter=1`} className="block rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent">
+    <article className="group flex h-full min-w-0 flex-col">
+      <Link href={`/works/${work.id}?chapter=1`} className="flex flex-1 flex-col rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent">
         <div className={`relative aspect-[.72] overflow-hidden rounded-2xl ${WORK_COLORS[index % WORK_COLORS.length]}`}>
           {work.coverImageUrl ? (
             <Image
@@ -142,15 +148,15 @@ function WorkCard({
             {work.genre || (work.type === 'story' ? 'Story' : 'Comic')}
           </span>
         </div>
-        <div className="pt-3">
+        <div className="flex flex-1 flex-col pt-3">
           <h2 className="truncate font-serif text-base font-bold group-hover:text-accent">{work.title}</h2>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">ni {work.authorName ?? 'StoryLines creator'}</p>
           <p className="mt-1 text-[11px] text-muted-foreground">
             {[work.language, work.status === 'Complete' ? 'Kumpleto' : 'Ongoing'].filter(Boolean).join(' · ')}
           </p>
-          {work.moods?.length ? (
-            <p className="mt-1 truncate text-[11px] font-medium text-accent">{work.moods.join(' · ')}</p>
-          ) : null}
+          <p className={`mt-1 line-clamp-1 min-h-4 text-[11px] font-medium ${work.moods?.length ? 'text-accent' : 'invisible'}`}>
+            {work.moods?.join(' · ') || '\u00a0'}
+          </p>
         </div>
       </Link>
       <button
@@ -158,7 +164,7 @@ function WorkCard({
         onClick={() => onSave(work.id)}
         disabled={pending}
         aria-pressed={saved}
-        className="mt-2 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-border bg-card px-3 text-xs font-bold hover:border-accent hover:text-accent disabled:opacity-60"
+        className="mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-border bg-card px-3 text-xs font-bold hover:border-accent hover:text-accent disabled:opacity-60"
       >
         <Bookmark className={`size-4 ${saved ? 'fill-current' : ''}`} aria-hidden="true" />
         {saved ? 'Saved to library' : 'Save to library'}
@@ -531,7 +537,7 @@ export function BrowseView({ initialData }: { initialData: BrowsePageData }) {
           placeholder={tab === 'Authors' ? 'Hanap pangalan, username, o genre...' : 'Hanap pamagat, author, genre, o keyword...'}
           className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         />
-        <Button type="submit" className="min-h-10 rounded-full bg-accent px-5 text-accent-foreground hover:bg-accent/90">
+        <Button type="submit" className="min-h-11 rounded-full bg-accent px-5 text-accent-foreground hover:bg-accent/90">
           Hanapin
         </Button>
       </form>

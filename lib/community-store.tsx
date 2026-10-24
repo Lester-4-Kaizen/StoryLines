@@ -150,12 +150,20 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
       if (nextPosts.length) {
         const ids = nextPosts.map((post) => post.id)
         const idBatches = Array.from({ length: Math.ceil(ids.length / 50) }, (_, index) => ids.slice(index * 50, index * 50 + 50))
-        const countResults = await Promise.all(idBatches.map((postIds) => (
-          supabase.rpc('get_community_post_like_counts', { post_ids: postIds })
-        )))
+        const [countResults, commentCountResults] = await Promise.all([
+          Promise.all(idBatches.map((postIds) => (
+            supabase.rpc('get_community_post_like_counts', { post_ids: postIds })
+          ))),
+          Promise.all(idBatches.map((postIds) => (
+            supabase.rpc('get_community_post_comment_counts', { post_ids: postIds })
+          ))),
+        ])
         const countError = countResults.find((result) => result.error)?.error
         if (countError) throw countError
+        const commentCountError = commentCountResults.find((result) => result.error)?.error
+        if (commentCountError) throw commentCountError
         const counts = countResults.flatMap((result) => result.data ?? [])
+        const commentCounts = commentCountResults.flatMap((result) => result.data ?? [])
         const likeResults = user
           ? await Promise.all(idBatches.map((postIds) => (
             supabase.from('community_post_likes').select('post_id').eq('user_id', user.id).in('post_id', postIds)
@@ -164,11 +172,13 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
         const likeError = likeResults.find((result) => result.error)?.error
         if (likeError) throw likeError
         const countsByPost = new Map<string, number>(counts.map((row: { post_id: string; like_count: number | string }) => [row.post_id, Number(row.like_count)]))
+        const commentCountsByPost = new Map<string, number>(commentCounts.map((row: { post_id: string; comment_count: number | string }) => [row.post_id, Number(row.comment_count)]))
         const myLikedIds = new Set(likeResults.flatMap((result) => result.data ?? []).map((row) => row.post_id))
         nextPosts = nextPosts.map((post) => ({
           ...post,
           likes: countsByPost.get(post.id) ?? 0,
           likedByMe: myLikedIds.has(post.id),
+          commentsCount: commentCountsByPost.get(post.id) ?? 0,
         }))
       }
 

@@ -63,7 +63,7 @@ export function HomeView({
                 placeholder="Hanap kuwento, komiks, o creator..."
                 className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               />
-              <Button type="submit" size="sm" className="min-h-9 rounded-full bg-primary px-4 text-primary-foreground hover:bg-primary/90">
+              <Button type="submit" className="rounded-full bg-primary px-4 text-primary-foreground hover:bg-primary/90">
                 Hanapin
               </Button>
             </form>

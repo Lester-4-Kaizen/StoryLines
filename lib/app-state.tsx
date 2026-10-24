@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
 import { isSupabaseConfigured } from '@/lib/supabase/config'
 import { getSupabaseClient } from '@/lib/supabase'
+import { isStaleRefreshTokenError } from '@/lib/supabase/auth-errors'
 import type { Badge, Route } from '@/lib/types'
 
 type AppState = {
@@ -119,6 +120,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setHydrated(true)
     }).catch((error: unknown) => {
       if (!active) return
+      if (isStaleRefreshTokenError(error)) {
+        applyUser(null)
+        setHydrated(true)
+        return
+      }
       setNotice(error instanceof Error ? error.message : 'Could not restore your Supabase session.')
       setHydrated(true)
     })

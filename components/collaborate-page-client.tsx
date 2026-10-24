@@ -8,9 +8,9 @@ import { useAppState } from '@/lib/app-state'
 // Collaborate dropdown) can sit inside the Suspense boundary Next.js
 // requires for it.
 export function CollaboratePageClient() {
-  const { creator, role, go, setUpgradeOpen } = useAppState()
+  const { creator, role, setUpgradeOpen } = useAppState()
   const searchParams = useSearchParams()
   const tabParam = searchParams.get('tab')
   const initialTab = tabParam === 'active' || tabParam === 'pending' || tabParam === 'past' ? tabParam : 'find'
-  return <CollaborateView creator={creator} role={role} go={go} onUpgrade={() => setUpgradeOpen(true)} initialTab={initialTab} />
+  return <CollaborateView creator={creator} role={role} onUpgrade={() => setUpgradeOpen(true)} initialTab={initialTab} />
 }
