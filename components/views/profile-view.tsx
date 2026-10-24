@@ -120,7 +120,13 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
   const [avatarUploading, setAvatarUploading] = useState(false)
   const [pendingAvatar, setPendingAvatar] = useState<File | null>(null)
   const [pendingAvatarPreview, setPendingAvatarPreview] = useState<string | null>(null)
+  const [pendingBanner, setPendingBanner] = useState<File | null>(null)
+  const [pendingBannerPreview, setPendingBannerPreview] = useState<string | null>(null)
+  const [removeBanner, setRemoveBanner] = useState(false)
+  const [bannerWidth, setBannerWidth] = useState(initialData.profile?.bannerWidth ?? 125)
+  const [bannerPosition, setBannerPosition] = useState(initialData.profile?.bannerPosition ?? 50)
   const avatarInputRef = useRef<HTMLInputElement>(null)
+  const bannerInputRef = useRef<HTMLInputElement>(null)
   const editProfileButtonRef = useRef<HTMLButtonElement>(null)
   const editProfileCloseRef = useRef<HTMLButtonElement>(null)
   const wasEditingProfile = useRef(false)
@@ -141,6 +147,8 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
   useEffect(() => {
     setData(initialData)
     setPostCursor(initialData.postCursor)
+    setBannerWidth(initialData.profile?.bannerWidth ?? 125)
+    setBannerPosition(initialData.profile?.bannerPosition ?? 50)
     setEditable({
       displayName: initialData.profile?.displayName ?? '',
       bio: initialData.profile?.bio ?? '',
@@ -162,6 +170,16 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
     setPendingAvatarPreview(previewUrl)
     return () => URL.revokeObjectURL(previewUrl)
   }, [pendingAvatar])
+
+  useEffect(() => {
+    if (!pendingBanner) {
+      setPendingBannerPreview(null)
+      return
+    }
+    const previewUrl = URL.createObjectURL(pendingBanner)
+    setPendingBannerPreview(previewUrl)
+    return () => URL.revokeObjectURL(previewUrl)
+  }, [pendingBanner])
 
   useEffect(() => {
     if (!editing) {
@@ -196,6 +214,7 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
 
   const profile = data.profile
   const profileImagePreview = pendingAvatarPreview ?? profile.avatarUrl
+  const bannerImagePreview = pendingBannerPreview ?? (removeBanner ? null : profile.bannerUrl)
   const ownProfile = data.currentUserId === profile.id
   const creatorProfile = profile.roles.some((role) => role === 'writer' || role === 'artist')
   const canPost = ownProfile && creatorProfile
@@ -220,6 +239,10 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
 
   const beginProfileEdit = () => {
     setPendingAvatar(null)
+    setPendingBanner(null)
+    setRemoveBanner(false)
+    setBannerWidth(profile.bannerWidth)
+    setBannerPosition(profile.bannerPosition)
     setEditable({
       displayName: profile.displayName,
       bio: profile.bio,
@@ -239,6 +262,10 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
     setProfileError(null)
     setProfileFieldErrors({})
     setPendingAvatar(null)
+    setPendingBanner(null)
+    setRemoveBanner(false)
+    setBannerWidth(profile.bannerWidth)
+    setBannerPosition(profile.bannerPosition)
     setEditing(false)
   }
 
@@ -716,6 +743,24 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
     setNotice('Napili ang bagong profile picture. Pindutin ang Save changes para i-upload ito.')
   }
 
+  const stageBanner = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!file || !ownProfile || !data.currentUserId) return
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setProfileError('Pumili ng JPG, PNG, o WEBP na larawan.')
+      return
+    }
+    if (file.size <= 0 || file.size > 5 * 1024 * 1024) {
+      setProfileError('Hanggang 5 MB lang ang background photo.')
+      return
+    }
+    setPendingBanner(file)
+    setRemoveBanner(false)
+    setProfileError(null)
+    setNotice('Napili ang bagong background photo. Pindutin ang Save changes para i-upload ito.')
+  }
+
   const editProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!ownProfile || !data.currentUserId) return
@@ -746,12 +791,13 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
       return
     }
     setSavingProfile(true)
-    setAvatarUploading(Boolean(pendingAvatar))
+    setAvatarUploading(Boolean(pendingAvatar || pendingBanner))
     setProfileError(null)
     setNotice(null)
     const supabase = getSupabaseClient()
     let uploadedAvatarPath: string | null = null
-    let previousAvatarCleanupFailed = false
+    let uploadedBannerPath: string | null = null
+    let previousMediaCleanupFailed = false
     try {
       if (pendingAvatar) {
         const extension = pendingAvatar.type === 'image/jpeg' ? 'jpg' : pendingAvatar.type === 'image/png' ? 'png' : 'webp'
@@ -764,6 +810,17 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
         if (uploadError) throw uploadError
         uploadedAvatarPath = nextAvatarPath
       }
+      if (pendingBanner) {
+        const extension = pendingBanner.type === 'image/jpeg' ? 'jpg' : pendingBanner.type === 'image/png' ? 'png' : 'webp'
+        const nextBannerPath = `${data.currentUserId}/${crypto.randomUUID()}.${extension}`
+        const { error: uploadError } = await supabase.storage.from('avatars').upload(nextBannerPath, pendingBanner, {
+          cacheControl: '3600',
+          contentType: pendingBanner.type,
+          upsert: false,
+        })
+        if (uploadError) throw uploadError
+        uploadedBannerPath = nextBannerPath
+      }
 
       const patch = {
         display_name: displayName,
@@ -775,6 +832,10 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
         portfolio_url: portfolioUrl || null,
         collaboration_roles: collaborationRoles,
         ...(uploadedAvatarPath ? { avatar_path: uploadedAvatarPath } : {}),
+        ...(uploadedBannerPath ? { profile_banner_path: uploadedBannerPath } : {}),
+        ...(removeBanner ? { profile_banner_path: null } : {}),
+        profile_banner_width: bannerWidth,
+        profile_banner_position: bannerPosition,
       }
       const { error } = await supabase.from('profiles').update(patch).eq('id', profile.id)
       if (error) throw error
@@ -782,11 +843,18 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
       const avatarUrl = uploadedAvatarPath
         ? supabase.storage.from('avatars').getPublicUrl(uploadedAvatarPath).data.publicUrl
         : profile.avatarUrl
+      const bannerUrl = uploadedBannerPath
+        ? supabase.storage.from('avatars').getPublicUrl(uploadedBannerPath).data.publicUrl
+        : removeBanner ? null : profile.bannerUrl
       setData((current) => ({
         ...current,
         profile: current.profile ? {
           ...current.profile,
           ...(uploadedAvatarPath ? { avatarPath: uploadedAvatarPath, avatarUrl } : {}),
+          bannerPath: uploadedBannerPath ?? (removeBanner ? null : current.profile.bannerPath),
+          bannerUrl,
+          bannerWidth,
+          bannerPosition,
           displayName,
           bio,
           writingLanguages: patch.writing_languages,
@@ -811,19 +879,29 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
           const { error: cleanupError } = await supabase.storage.from('avatars').remove([previousAvatarPath])
           if (cleanupError) {
             console.error('Profile photo updated, but the previous photo could not be removed', cleanupError)
-            previousAvatarCleanupFailed = true
+            previousMediaCleanupFailed = true
           }
         }
       }
+      if ((uploadedBannerPath || removeBanner) && profile.bannerPath) {
+        const { error: cleanupError } = await supabase.storage.from('avatars').remove([profile.bannerPath])
+        if (cleanupError) {
+          console.error('Profile updated, but the previous background photo could not be removed', cleanupError)
+          previousMediaCleanupFailed = true
+        }
+      }
       setPendingAvatar(null)
+      setPendingBanner(null)
+      setRemoveBanner(false)
       setEditing(false)
-      setNotice(previousAvatarCleanupFailed
+      setNotice(previousMediaCleanupFailed
         ? 'Na-save ang profile, pero hindi natanggal ang lumang profile picture.'
-        : uploadedAvatarPath ? 'Na-save na ang profile at profile picture mo.' : 'Na-save na ang profile mo.')
+        : uploadedAvatarPath || uploadedBannerPath || removeBanner ? 'Na-save na ang profile at mga pagbabago sa larawan.' : 'Na-save na ang profile mo.')
     } catch (error) {
-      if (uploadedAvatarPath) {
-        const { error: cleanupError } = await supabase.storage.from('avatars').remove([uploadedAvatarPath])
-        if (cleanupError) console.error('Could not clean up an uncommitted profile photo', cleanupError)
+      const uncommittedPaths = [uploadedAvatarPath, uploadedBannerPath].filter((path): path is string => path !== null)
+      if (uncommittedPaths.length) {
+        const { error: cleanupError } = await supabase.storage.from('avatars').remove(uncommittedPaths)
+        if (cleanupError) console.error('Could not clean up uncommitted profile media', cleanupError)
       }
       setProfileError(error instanceof Error ? error.message : 'Hindi na-save ang profile. Subukan ulit.')
     } finally {
@@ -835,7 +913,21 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 sm:gap-4">
       <section className="overflow-hidden rounded-2xl border border-border bg-card">
-        <div className="h-28 bg-[linear-gradient(115deg,color-mix(in_oklch,var(--primary)_96%,var(--accent)),color-mix(in_oklch,var(--accent)_72%,var(--primary)))] sm:h-36" aria-hidden="true" />
+        <div className="relative h-28 overflow-hidden bg-[linear-gradient(115deg,color-mix(in_oklch,var(--primary)_96%,var(--accent)),color-mix(in_oklch,var(--accent)_72%,var(--primary)))] sm:h-36" aria-hidden="true">
+          {profile.bannerUrl && (
+            <Image
+              src={profile.bannerUrl}
+              alt=""
+              fill
+              sizes="(max-width: 1024px) 100vw, 1024px"
+              className="object-cover"
+              style={{
+                objectPosition: `50% ${profile.bannerPosition}%`,
+                transform: `scaleX(${profile.bannerWidth / 100})`,
+              }}
+            />
+          )}
+        </div>
         <div className="flex flex-col gap-4 px-4 pb-4 sm:flex-row sm:items-end sm:px-6">
           <div className="-mt-8 flex shrink-0 items-center sm:-mt-10">
             <span className="relative flex size-16 items-center justify-center overflow-hidden rounded-full border-4 border-card bg-secondary text-accent sm:size-20">
@@ -988,6 +1080,91 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
                     JPG, PNG, o WEBP · hanggang 5 MB.
                     {pendingAvatar ? ' Napili na; isi-save lang kapag pinindot ang Save changes.' : ' Hindi pa ia-upload hangga’t hindi naka-save ang changes.'}
                   </p>
+                </div>
+              </div>
+              <div className="grid gap-3 border-b border-border py-5 sm:grid-cols-[8rem_minmax(0,1fr)]">
+                <p className="text-sm font-semibold">Background photo</p>
+                <div className="min-w-0">
+                  <input
+                    ref={bannerInputRef}
+                    id="profile-banner-upload"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    aria-label="Choose a profile background photo"
+                    className="hidden"
+                    onChange={stageBanner}
+                  />
+                  <div className="relative h-24 overflow-hidden rounded-xl bg-[linear-gradient(115deg,color-mix(in_oklch,var(--primary)_96%,var(--accent)),color-mix(in_oklch,var(--accent)_72%,var(--primary)))]">
+                    {bannerImagePreview && (
+                      <Image
+                        src={bannerImagePreview}
+                        alt="Profile background preview"
+                        fill
+                        sizes="(max-width: 640px) 100vw, 512px"
+                        className="object-cover"
+                        style={{
+                          objectPosition: `50% ${bannerPosition}%`,
+                          transform: `scaleX(${bannerWidth / 100})`,
+                        }}
+                        unoptimized={Boolean(pendingBannerPreview) || !isSupabaseStorageImage(bannerImagePreview)}
+                      />
+                    )}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" className="min-h-10" disabled={savingProfile || avatarUploading} onClick={() => bannerInputRef.current?.click()}>
+                      <Camera className="size-4" aria-hidden="true" /> {bannerImagePreview ? 'Change photo' : 'Add photo'}
+                    </Button>
+                    {bannerImagePreview && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="min-h-10"
+                        disabled={savingProfile || avatarUploading}
+                        onClick={() => {
+                          setPendingBanner(null)
+                          setRemoveBanner(true)
+                          setBannerWidth(125)
+                          setBannerPosition(50)
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                    JPG, PNG, o WEBP · hanggang 5 MB. Ayusin ang lapad at patayong kuha gamit ang mga slider.
+                    {pendingBanner ? ' Isi-save lang kapag pinindot ang Save changes.' : ''}
+                  </p>
+                  <label htmlFor="profile-banner-width" className="mt-3 flex items-center justify-between gap-3 text-xs font-semibold">
+                    <span>Image width</span><span>{bannerWidth}%</span>
+                  </label>
+                  <input
+                    id="profile-banner-width"
+                    type="range"
+                    min={100}
+                    max={200}
+                    step={5}
+                    value={bannerWidth}
+                    onChange={(event) => setBannerWidth(Number(event.target.value))}
+                    disabled={!bannerImagePreview || savingProfile || avatarUploading}
+                    className="mt-2 w-full accent-accent disabled:opacity-50"
+                  />
+                  <div className="flex justify-between text-[11px] text-muted-foreground"><span>Fit</span><span>Wider</span></div>
+                  <label htmlFor="profile-banner-position" className="mt-3 flex items-center justify-between gap-3 text-xs font-semibold">
+                    <span>Vertical position</span><span>{bannerPosition < 50 ? 'Up' : bannerPosition > 50 ? 'Down' : 'Center'}</span>
+                  </label>
+                  <input
+                    id="profile-banner-position"
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={bannerPosition}
+                    onChange={(event) => setBannerPosition(Number(event.target.value))}
+                    disabled={!bannerImagePreview || savingProfile || avatarUploading}
+                    className="mt-2 w-full accent-accent disabled:opacity-50"
+                  />
+                  <div className="flex justify-between text-[11px] text-muted-foreground"><span>Up</span><span>Down</span></div>
                 </div>
               </div>
               <div className="grid gap-2 border-b border-border py-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3">

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, type KeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import { X } from 'lucide-react'
 import { ProfileAvatar } from '@/components/shared/profile-avatar'
@@ -25,6 +26,7 @@ export function PostDetailDialog({
   onClose: () => void
 }) {
   const closeRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     closeRef.current?.focus()
@@ -56,11 +58,18 @@ export function PostDetailDialog({
 
   const isoDate = typeof createdAt === 'number' ? new Date(createdAt).toISOString() : createdAt
 
-  return (
-    <div className="fixed inset-0 z-[55] flex items-center justify-center bg-black/65 p-3 sm:p-6" onClick={(event) => {
-      if (event.target === event.currentTarget) onClose()
-    }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="post-detail-title" onKeyDown={handleKeyDown} className="flex max-h-[min(92dvh,54rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl md:flex-row">
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[55] flex items-center justify-center bg-black/65 p-3 sm:p-6"
+      onPointerDown={(event) => {
+        event.stopPropagation()
+        if (!dialogRef.current?.contains(event.target as Node)) onClose()
+      }}
+      onClick={(event) => {
+        event.stopPropagation()
+      }}
+    >
+      <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="post-detail-title" onKeyDown={handleKeyDown} className="flex max-h-[min(92dvh,54rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl md:flex-row">
         {images.length > 0 && (
           <div className="relative min-h-56 bg-black md:min-h-[34rem] md:flex-1">
             {images.length === 1 ? (
@@ -99,6 +108,7 @@ export function PostDetailDialog({
           </div>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   )
 }

@@ -219,10 +219,10 @@ function unreadCountErrorMessage(error: unknown) {
     return 'Your Supabase session has expired. Sign out and sign in again to reload unread counts.'
   }
   if (code === '42703' || code === 'PGRST204' || code === 'PGRST205') {
-    return 'Unread counts need the latest Supabase migrations. Apply migrations 20261023001400 and 20261025001200, then retry.'
+    return 'Unread counts need the latest Supabase migrations. Apply the messaging and read-permissions migrations, then retry.'
   }
   if (code === '42501') {
-    return 'Supabase denied access to unread counts. Apply migrations 20261025000100, 20261023001400, and 20261025001200.'
+    return 'Supabase denied access to unread counts. Apply migration 20261025001500_profile_banner_and_read_permissions.sql, then reload.'
   }
   return message || 'Could not load unread updates.'
 }
@@ -251,7 +251,7 @@ function logUnreadCountError(context: string, error: unknown) {
     message: readField('message') || readCauseField('message') || String(cause ?? error),
     details: readField('details') ?? readCauseField('details'),
     hint: readField('hint') ?? readCauseField('hint'),
-    status: readCauseField('status'),
+    status: readField('status') ?? readCauseField('status'),
     cause: causeProperties,
   }
   console.error(`${context}: ${JSON.stringify(diagnostic)}`)
@@ -261,7 +261,11 @@ function unreadCountQueryError(
   query: string,
   error: { message: string; code: string; details: string; hint: string; status?: number },
 ) {
-  return Object.assign(new Error(error.message || `Supabase request failed for ${query}.`), {
+  const message = error.message
+    || (error.status === 403
+      ? `Supabase denied access to ${query}. Apply the latest messaging and unread-count database migrations, then verify the signed-in user's RLS permissions.`
+      : `Supabase request failed for ${query}.`)
+  return Object.assign(new Error(message), {
     query,
     code: error.code,
     details: error.details,

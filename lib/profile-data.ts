@@ -9,6 +9,10 @@ export type ProfileRecord = {
   username: string
   avatarPath: string | null
   avatarUrl: string | null
+  bannerPath: string | null
+  bannerUrl: string | null
+  bannerWidth: number
+  bannerPosition: number
   roles: Badge[]
   bio: string
   writingLanguages: string[]
@@ -150,6 +154,11 @@ function mapProfile(profile: {
   display_name: string
   username: string
   avatar_path: string | null
+  profile_banner_path: string | null
+  profile_banner_url: string | null
+  profile_banner_scale: number | null
+  profile_banner_width: number | null
+  profile_banner_position: number | null
   avatar_url: string | null
   roles: string[] | null
   bio: string | null
@@ -168,6 +177,10 @@ function mapProfile(profile: {
     username: profile.username,
     avatarPath: profile.avatar_path,
     avatarUrl: profile.avatar_url,
+    bannerPath: profile.profile_banner_path,
+    bannerUrl: profile.profile_banner_url,
+    bannerWidth: profile.profile_banner_width ?? 125,
+    bannerPosition: profile.profile_banner_position ?? 50,
     roles: (profile.roles ?? []).filter(isBadge),
     bio: profile.bio ?? '',
     writingLanguages: normalizeWritingLanguages(profile.writing_languages ?? []),
@@ -199,7 +212,7 @@ export async function getProfilePageData(profileId?: string): Promise<ProfilePag
       await Promise.all([
         supabase
           .from('profiles')
-          .select('id, display_name, username, avatar_path, roles, bio, writing_languages, favorite_genres, facebook_url, instagram_url, portfolio_url, open_for_collaboration, collaboration_roles, created_at')
+          .select('id, display_name, username, avatar_path, profile_banner_path, profile_banner_scale, profile_banner_width, profile_banner_position, roles, bio, writing_languages, favorite_genres, facebook_url, instagram_url, portfolio_url, open_for_collaboration, collaboration_roles, created_at')
           .eq('id', targetId)
           .maybeSingle(),
         supabase
@@ -275,6 +288,9 @@ export async function getProfilePageData(profileId?: string): Promise<ProfilePag
       avatar_path: profileResult.data.avatar_path,
       avatar_url: profileResult.data.avatar_path
         ? supabase.storage.from('avatars').getPublicUrl(profileResult.data.avatar_path).data.publicUrl
+        : null,
+      profile_banner_url: profileResult.data.profile_banner_path
+        ? supabase.storage.from('avatars').getPublicUrl(profileResult.data.profile_banner_path).data.publicUrl
         : null,
     })
     const postRows = postsResult.data ?? []

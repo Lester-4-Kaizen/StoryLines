@@ -101,6 +101,7 @@ html {
 ::-webkit-scrollbar-corner { background: var(--background); }
 
 .font-serif { font-family: 'DM Serif Display', Georgia, serif; }
+.emoji-glyph { font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif; }
 .paper-panel { border: 1px solid var(--border); border-radius: 1rem; background: color-mix(in oklch, var(--card) 86%, transparent); box-shadow: 0 2px 0 color-mix(in oklch, var(--primary) 12%, transparent), 0 14px 35px color-mix(in oklch, var(--primary) 7%, transparent); }
 .auth-card { border: 1px solid var(--border); border-radius: 1.25rem; background: var(--card); box-shadow: 0 2px 0 color-mix(in oklch, var(--primary) 10%, transparent), 0 18px 50px color-mix(in oklch, var(--primary) 10%, transparent); }
 .auth-primary { display: inline-flex; min-height: 3rem; align-items: center; justify-content: center; gap: .5rem; border: 1px solid var(--accent); border-radius: .75rem; background: var(--accent); padding: .75rem 1rem; color: var(--accent-foreground); font-size: .9rem; font-weight: 800; transition: filter .15s ease, transform .15s ease; }

@@ -687,6 +687,8 @@ export function MessagesView() {
       event.key !== 'Enter'
       || event.shiftKey
       || event.nativeEvent.isComposing
+      || event.nativeEvent.keyCode === 229
+      || sending
       || !draft.trim()
     ) return
     event.preventDefault()
@@ -769,22 +771,27 @@ export function MessagesView() {
 
   const reactToMessage = async (message: Message, emoji: string) => {
     if (!currentUserId) return
-    const existing = message.reactions?.find((reaction) => reaction.emoji === emoji)
-    const currentReactionByMe = existing?.reactedByMe ?? false
+    const myReaction = message.reactions?.find((reaction) => reaction.reactedByMe)
+    const isRemovingReaction = myReaction?.emoji === emoji
     try {
       const supabase = getSupabaseClient()
-      const result = currentReactionByMe
+      const result = isRemovingReaction
         ? await supabase.from('community_message_reactions')
           .delete()
           .eq('message_id', message.id)
           .eq('user_id', currentUserId)
-        : await supabase.from('community_message_reactions')
-          .upsert({ message_id: message.id, user_id: currentUserId, reaction: emoji }, { onConflict: 'message_id,user_id' })
+        : myReaction
+          ? await supabase.from('community_message_reactions')
+            .update({ reaction: emoji })
+            .eq('message_id', message.id)
+            .eq('user_id', currentUserId)
+          : await supabase.from('community_message_reactions')
+            .insert({ message_id: message.id, user_id: currentUserId, reaction: emoji })
       if (result.error) throw result.error
       setMessages((current) => current.map((item) => {
         if (item.id !== message.id) return item
         const reactions = new Map((item.reactions ?? []).map((reaction) => [reaction.emoji, { ...reaction }]))
-        if (currentReactionByMe) {
+        if (isRemovingReaction && myReaction) {
           const next = reactions.get(emoji)
           if (next) {
             next.count -= 1
@@ -1069,7 +1076,11 @@ export function MessagesView() {
                   const sender = isMine ? 'You' : selectedPerson.name
                   const showActions = !message.is_deleted && activeMessageActionsFor === message.id
                   const messageDate = new Date(message.created_at)
-                  const previousMessageDate = index > 0 ? new Date(displayedThreadMessages[index - 1].created_at) : null
+                  const previousMessage = index > 0 ? displayedThreadMessages[index - 1] : null
+                  const previousMessageDate = previousMessage ? new Date(previousMessage.created_at) : null
+                  const startsSenderGroup = !previousMessage
+                    || previousMessage.sender_id !== message.sender_id
+                    || !sameMessageDay(messageDate, new Date(previousMessage.created_at))
                   return (
                     <Fragment key={message.id}>
                     {(!previousMessageDate || !sameMessageDay(messageDate, previousMessageDate)) && (
@@ -1083,13 +1094,15 @@ export function MessagesView() {
                     )}
                     <div className={`group flex items-end gap-2 ${isMine ? 'justify-end' : 'justify-start'}`}>
                       <div className={`flex max-w-[min(82%,38rem)] flex-col ${isMine ? 'items-end' : 'items-start'}`}>
-                        <div className={`mb-1 flex items-center gap-2 px-1 text-[11px] text-[#83765d] ${isMine ? 'justify-end' : ''}`}>
-                          {!isMine && <ProfileAvatar src={selectedPerson.avatarUrl} name={selectedPerson.name} className="size-7" imageSizes="28px" />}
-                          <time dateTime={message.created_at}>{new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>
-                          <span>{sender}</span>
-                          {isMine && <ProfileAvatar src={people.get(currentUserId ?? '')?.avatarUrl} name="You" className="size-7" imageSizes="28px" />}
-                        </div>
-                        <div ref={showActions ? activeMessageRef : null} className={`flex items-center gap-1 ${isMine ? 'flex-row-reverse' : ''}`}>
+                        {startsSenderGroup && (
+                          <div className={`mb-1 flex items-center gap-2 px-1 text-[11px] text-[#83765d] ${isMine ? 'justify-end' : ''}`}>
+                            {!isMine && <ProfileAvatar src={selectedPerson.avatarUrl} name={selectedPerson.name} className="size-7" imageSizes="28px" />}
+                            <time dateTime={message.created_at}>{new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>
+                            <span>{sender}</span>
+                            {isMine && <ProfileAvatar src={people.get(currentUserId ?? '')?.avatarUrl} name="You" className="size-7" imageSizes="28px" />}
+                          </div>
+                        )}
+                        <div ref={showActions || reactionPickerFor === message.id ? activeMessageRef : null} className={`flex items-center gap-1 ${isMine ? 'flex-row-reverse' : ''}`}>
                           <div className="relative max-w-full">
                             <div
                               role={message.is_deleted ? undefined : 'button'}
@@ -1130,7 +1143,7 @@ export function MessagesView() {
                             {!message.is_deleted && reactionPickerFor === message.id && (
                               <div className={`absolute bottom-full z-10 mb-1 flex gap-1 rounded-full border border-[#d7c9ad] bg-[#f8f3e9] p-2 shadow-lg ${isMine ? 'right-0' : 'left-0'}`}>
                                 {MESSAGE_REACTIONS.map((emoji) => (
-                                  <button key={emoji} type="button" onClick={() => void reactToMessage(message, emoji)} className="flex size-8 items-center justify-center rounded-full text-lg hover:bg-white" aria-label={`React ${emoji}`}>
+                                  <button key={emoji} type="button" onClick={() => void reactToMessage(message, emoji)} className="emoji-glyph flex size-8 items-center justify-center rounded-full text-lg hover:bg-white" aria-label={`React ${emoji}`}>
                                     {emoji}
                                   </button>
                                 ))}
@@ -1164,16 +1177,21 @@ export function MessagesView() {
                           </div>
                         </div>
                         {!message.is_deleted && !!message.reactions?.length && (
-                          <div className={`mt-1 flex flex-wrap gap-1 ${isMine ? 'justify-end' : ''}`}>
+                          <div className={`relative z-[1] -mt-2 flex flex-wrap gap-1 ${isMine ? 'self-end mr-2 justify-end' : 'self-start ml-2 justify-start'}`}>
                             {message.reactions.map((reaction) => (
                               <button
                                 key={reaction.emoji}
                                 type="button"
                                 onClick={() => void reactToMessage(message, reaction.emoji)}
                                 aria-pressed={reaction.reactedByMe}
-                                className={`inline-flex min-h-7 items-center gap-1 rounded-full border bg-[#f8f3e9] px-2 text-xs ${reaction.reactedByMe ? 'border-accent text-accent' : 'border-[#d7c9ad]'}`}
+                                aria-label={`${reaction.emoji}, ${reaction.count} ${reaction.count === 1 ? 'reaction' : 'reactions'}`}
+                                className={`emoji-glyph inline-flex min-h-6 items-center gap-1 rounded-full border px-1.5 text-sm leading-none shadow-sm ${
+                                  isMine
+                                    ? 'border-[#6d4e0f] bg-[#815d12] text-white'
+                                    : 'border-[#d7c9ad] bg-[#f8f3e9] text-foreground'
+                                } ${reaction.reactedByMe ? 'ring-1 ring-accent' : ''}`}
                               >
-                                {reaction.emoji}<span>{reaction.count}</span>
+                                <span>{reaction.emoji}</span>{reaction.count > 1 && <span className="font-sans text-[10px]">{reaction.count}</span>}
                               </button>
                             ))}
                           </div>

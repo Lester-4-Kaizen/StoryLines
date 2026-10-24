@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { MessageSquareReply, ThumbsDown, ThumbsUp, Trash2 } from 'lucide-react'
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { MessageSquareReply, Send, Smile, ThumbsDown, ThumbsUp, Trash2, X } from 'lucide-react'
 import { ProfileAvatar } from '@/components/shared/profile-avatar'
 import type { CommunityComment } from '@/lib/types'
 
@@ -22,6 +23,13 @@ export function CommunityCommentThread({
   onReaction,
   onDelete,
   onLoginRequired,
+  replyTargetId,
+  replyTargetName,
+  replyDraft,
+  onReplyDraftChange,
+  onReplySubmit,
+  onReplyCancel,
+  replySubmitting = false,
 }: {
   comments: CommunityComment[]
   currentUserId: string | null
@@ -30,6 +38,13 @@ export function CommunityCommentThread({
   onReaction: (comment: CommunityComment, reaction: 'like' | 'dislike') => Promise<void>
   onDelete?: (comment: CommunityComment) => Promise<void>
   onLoginRequired: () => void
+  replyTargetId?: string | null
+  replyTargetName?: string
+  replyDraft?: string
+  onReplyDraftChange?: (value: string) => void
+  onReplySubmit?: (event: React.FormEvent<HTMLFormElement>) => void
+  onReplyCancel?: () => void
+  replySubmitting?: boolean
 }) {
   const [expandedReplies, setExpandedReplies] = useState<string[]>([])
   const [pendingReactions, setPendingReactions] = useState<string[]>([])
@@ -43,6 +58,19 @@ export function CommunityCommentThread({
     const replies = repliesByParent.get(comment.parentCommentId) ?? []
     replies.push(comment)
     repliesByParent.set(comment.parentCommentId, replies)
+  }
+
+  const handleReplyKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (
+      event.key !== 'Enter'
+      || event.shiftKey
+      || event.nativeEvent.isComposing
+      || event.nativeEvent.keyCode === 229
+      || replySubmitting
+      || !(replyDraft ?? '').trim()
+    ) return
+    event.preventDefault()
+    event.currentTarget.form?.requestSubmit()
   }
 
   const toggleReaction = async (comment: CommunityComment, reaction: 'like' | 'dislike') => {
@@ -105,7 +133,14 @@ export function CommunityCommentThread({
               <ThumbsDown className="size-3.5" /> {displayComment.dislikes ? displayComment.dislikes : 'Dislike'}
             </button>
             {!nested && (
-              <button type="button" onClick={() => currentUserId ? onReply(comment) : onLoginRequired()} className="inline-flex min-h-8 items-center gap-1 font-semibold hover:text-accent focus-visible:outline-2 focus-visible:outline-ring">
+              <button type="button" onClick={() => {
+                if (!currentUserId) {
+                  onLoginRequired()
+                  return
+                }
+                setExpandedReplies((current) => current.includes(comment.id) ? current : [...current, comment.id])
+                onReply(comment)
+              }} className="inline-flex min-h-8 items-center gap-1 font-semibold hover:text-accent focus-visible:outline-2 focus-visible:outline-ring">
                 <MessageSquareReply className="size-3.5" /> Reply
               </button>
             )}
@@ -132,6 +167,43 @@ export function CommunityCommentThread({
             )}
           </div>
           {repliesExpanded && replies.length > 0 && <div className="mt-1 flex flex-col gap-2.5">{replies.map((reply) => renderComment(reply, true))}</div>}
+          {replyTargetId === comment.id && onReplySubmit && onReplyDraftChange && onReplyCancel && (
+            <form onSubmit={onReplySubmit} className="ml-2 mt-2 rounded-2xl border border-border bg-secondary/55 p-2.5 shadow-sm sm:p-3">
+              <div className="flex items-start gap-2.5">
+                <ProfileAvatar name={replyTargetName ?? 'You'} className="mt-1 size-8" imageSizes="32px" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2">
+                    <span className="shrink-0 rounded-md bg-accent/15 px-2 py-1 text-xs font-bold text-accent">
+                      @{replyTargetName}
+                    </span>
+                    <label className="sr-only" htmlFor={`reply-comment-${comment.id}`}>Write a reply to {replyTargetName}</label>
+                    <textarea
+                      id={`reply-comment-${comment.id}`}
+                      value={replyDraft ?? ''}
+                      onChange={(event) => onReplyDraftChange(event.target.value)}
+                      onKeyDown={handleReplyKeyDown}
+                      placeholder="Write a reply…"
+                      maxLength={500}
+                      rows={1}
+                      disabled={replySubmitting}
+                      className="min-h-9 min-w-0 flex-1 resize-y bg-transparent py-1 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
+                    />
+                    <button type="button" onClick={onReplyCancel} disabled={replySubmitting} className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50" aria-label="Cancel reply">
+                      <X className="size-4" />
+                    </button>
+                  </div>
+                  <div className="mt-1.5 flex items-center justify-between">
+                    <button type="button" onClick={() => onReplyDraftChange(`${replyDraft ?? ''}😊`)} disabled={replySubmitting} className="flex size-8 items-center justify-center rounded-full text-muted-foreground hover:bg-background hover:text-accent disabled:opacity-50" aria-label="Add a smile emoji">
+                      <Smile className="size-4" />
+                    </button>
+                    <button type="submit" disabled={replySubmitting || !(replyDraft ?? '').trim()} className="inline-flex min-h-9 items-center gap-1.5 rounded-full bg-accent px-3.5 text-xs font-bold text-accent-foreground hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50">
+                      <Send className="size-3.5" /> {replySubmitting ? 'Sending…' : 'Reply'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </form>
+          )}
         </div>
       </article>
     )

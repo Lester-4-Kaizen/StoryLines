@@ -244,6 +244,19 @@ function FeedPost({
     }
   }
 
+  const handleCommentKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (
+      event.key !== 'Enter'
+      || event.shiftKey
+      || event.nativeEvent.isComposing
+      || event.nativeEvent.keyCode === 229
+      || commentSubmitting
+      || !commentDraft.trim()
+    ) return
+    event.preventDefault()
+    event.currentTarget.form?.requestSubmit()
+  }
+
   const likePost = async () => {
     if (!isLoggedIn) {
       onUnlock()
@@ -460,7 +473,7 @@ function FeedPost({
         <div className={`community-image-grid community-image-grid-${Math.min(images.length, 4)} mt-4`} aria-label={`${images.length} attached ${images.length === 1 ? 'image' : 'images'}`}>
           {images.map((src, index) => (
             <button key={`${post.id}-${index}`} type="button" className="relative cursor-zoom-in" onClick={() => setDetailOpen(true)} aria-label={`Open image ${index + 1} in post`}>
-              <Image src={src} alt={`Post attachment ${index + 1}`} fill sizes="(max-width: 640px) 50vw, 320px" className="object-contain" unoptimized />
+              <Image src={src} alt={`Post attachment ${index + 1}`} fill loading={index === 0 ? 'eager' : 'lazy'} sizes="(max-width: 640px) 50vw, 320px" className="object-contain" unoptimized />
             </button>
           ))}
         </div>
@@ -473,9 +486,12 @@ function FeedPost({
       )}
 
       <div className="mt-4 flex items-center justify-between border-b border-border pb-3 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-1.5">
-          <Heart className={`size-3.5 ${post.likedByMe ? 'fill-accent text-accent' : ''}`} />
-          {post.likes} {post.likes === 1 ? 'reaction' : 'reactions'}
+        <span
+          aria-label={`${post.likes} ${post.likes === 1 ? 'reaction' : 'reactions'}`}
+          className={`inline-flex min-h-7 items-center gap-1.5 rounded-full border border-border bg-background px-2.5 ${post.likedByMe ? 'text-accent' : ''}`}
+        >
+          <Heart className={`size-3.5 ${post.likedByMe ? 'fill-current' : ''}`} />
+          <span>{post.likes}</span>
         </span>
         <span>{post.commentsCount === undefined ? 'Comments' : `${post.commentsCount} comments`}</span>
       </div>
@@ -526,26 +542,37 @@ function FeedPost({
                 onProfile={onProfileClick}
                 onReply={(comment) => {
                   setReplyTarget(comment)
-                  requestAnimationFrame(() => document.getElementById(`comment-${post.id}`)?.focus())
+                  setCommentDraft('')
+                  requestAnimationFrame(() => document.getElementById(`reply-comment-${comment.id}`)?.focus())
                 }}
                 onReaction={async (comment, reaction) => onCommentReaction(comment.id, reaction)}
                 onLoginRequired={onUnlock}
+                replyTargetId={replyTarget?.id}
+                replyTargetName={replyTarget?.authorName}
+                replyDraft={commentDraft}
+                onReplyDraftChange={setCommentDraft}
+                onReplySubmit={(event) => void submitComment(event)}
+                onReplyCancel={() => {
+                  setReplyTarget(null)
+                  setCommentDraft('')
+                }}
+                replySubmitting={commentSubmitting}
               />
             </div>
           ) : (
             <p className="py-2 text-sm text-muted-foreground">Wala pang comments. Ikaw ang mauna!</p>
           )}
-          {isLoggedIn ? (
+          {isLoggedIn && !replyTarget ? (
             <form className="mt-3 flex flex-col gap-2" onSubmit={(event) => void submitComment(event)}>
-              {replyTarget && <div className="flex items-center justify-between rounded-lg bg-secondary/60 px-3 py-2 text-xs"><span>Replying to <strong>{replyTarget.authorName}</strong></span><button type="button" onClick={() => setReplyTarget(null)} className="min-h-8 px-2 font-bold">Cancel</button></div>}
               <label className="sr-only" htmlFor={`comment-${post.id}`}>Write a comment</label>
               <textarea
                 id={`comment-${post.id}`}
                 value={commentDraft}
                 onChange={(event) => setCommentDraft(event.target.value)}
+                onKeyDown={handleCommentKeyDown}
                 maxLength={500}
                 rows={2}
-                placeholder={replyTarget ? `Reply to ${replyTarget.authorName}…` : 'Write a comment…'}
+                placeholder="Write a comment…"
                 className="w-full resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 disabled={commentSubmitting}
               />
@@ -560,11 +587,11 @@ function FeedPost({
                 </button>
               </div>
             </form>
-          ) : (
+          ) : !isLoggedIn ? (
             <button type="button" className="mt-3 text-sm font-bold text-accent hover:underline" onClick={onUnlock}>
               Log in to comment
             </button>
-          )}
+          ) : null}
           {commentError && <p role="alert" className="mt-2 text-xs text-destructive">{commentError}</p>}
         </section>
       )}
