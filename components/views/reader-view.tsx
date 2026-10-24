@@ -29,6 +29,8 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
   const [comicIndex, setComicIndex] = useState(0)
   const completionInFlight = useRef(new Set<string>())
   const scrollSaveTimer = useRef<number | null>(null)
+  const discussionPressTimer = useRef<number | null>(null)
+  const discussionPointerType = useRef<string | null>(null)
 
   useEffect(() => {
     setIsSaved(data.isSaved)
@@ -50,6 +52,12 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
   useEffect(() => {
     window.scrollTo({ top: 0 })
   }, [data.currentChapter?.id])
+
+  useEffect(() => () => {
+    if (discussionPressTimer.current !== null) {
+      window.clearTimeout(discussionPressTimer.current)
+    }
+  }, [])
 
   useEffect(() => {
     if (!data.currentUserId || !data.work) return
@@ -244,6 +252,24 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
     .split(/\r?\n+/)
     .map((paragraph) => paragraph.trim())
     .filter(Boolean) ?? []
+  const openDiscussion = (index: number, text: string) => {
+    setSelectedDiscussion((current) => current?.index === index ? null : { index, text })
+  }
+  const clearDiscussionPress = () => {
+    if (discussionPressTimer.current !== null) {
+      window.clearTimeout(discussionPressTimer.current)
+      discussionPressTimer.current = null
+    }
+  }
+  const beginParagraphPress = (event: React.PointerEvent<HTMLElement>, index: number, text: string) => {
+    discussionPointerType.current = event.pointerType
+    if (event.pointerType !== 'touch' || (event.target instanceof Element && event.target.closest('button'))) return
+    clearDiscussionPress()
+    discussionPressTimer.current = window.setTimeout(() => {
+      setSelectedDiscussion({ index, text })
+      discussionPressTimer.current = null
+    }, 550)
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
@@ -432,15 +458,29 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
             {chapterParagraphs.length ? (
               <div className="mt-8 space-y-6 font-serif text-lg leading-8">
                 {chapterParagraphs.map((paragraph, index) => (
-                  <section key={`${data.currentChapter!.id}-${index}`} className="relative">
+                  <section
+                    key={`${data.currentChapter!.id}-${index}`}
+                    className="group relative"
+                    onPointerDown={(event) => beginParagraphPress(event, index, paragraph)}
+                    onPointerUp={clearDiscussionPress}
+                    onPointerCancel={clearDiscussionPress}
+                    onPointerLeave={clearDiscussionPress}
+                    onContextMenu={(event) => {
+                      if (discussionPointerType.current !== 'touch') return
+                      event.preventDefault()
+                      clearDiscussionPress()
+                      setSelectedDiscussion({ index, text: paragraph })
+                    }}
+                  >
                     <button
                       type="button"
-                      onClick={() => setSelectedDiscussion((current) => current?.index === index ? null : { index, text: paragraph })}
+                      onClick={() => openDiscussion(index, paragraph)}
                       aria-expanded={selectedDiscussion?.index === index}
-                      className="mb-2 inline-flex min-h-9 items-center gap-1.5 rounded-full border border-border px-3 font-sans text-xs font-semibold text-muted-foreground hover:border-accent hover:text-accent"
+                      aria-label={`${selectedDiscussion?.index === index ? 'Close' : 'Open'} discussion for paragraph ${index + 1}`}
+                      title="Discuss this paragraph"
+                      className="absolute right-0 top-0 z-10 inline-flex size-8 -translate-y-2 items-center justify-center rounded-full border border-border bg-card/95 font-sans text-muted-foreground opacity-0 shadow-sm transition-opacity hover:border-accent hover:text-accent focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent group-hover:opacity-100 group-focus-within:opacity-100 max-lg:opacity-60"
                     >
                       <MessageCircle className="size-3.5" aria-hidden="true" />
-                      Discuss paragraph
                     </button>
                     <p className="whitespace-pre-wrap">{paragraph}</p>
                     {selectedDiscussion?.index === index && (
