@@ -23,6 +23,33 @@ type WorksState = {
 
 const WorksContext = createContext<WorksState | null>(null)
 
+function creatorWorksError(error: unknown) {
+  if (typeof error !== 'object' || error === null) {
+    return { message: String(error), code: '', details: '', hint: '' }
+  }
+  const read = (key: string) => key in error ? String(Reflect.get(error, key) ?? '') : ''
+  return {
+    message: read('message') || 'Unknown Supabase error',
+    code: read('code'),
+    details: read('details'),
+    hint: read('hint'),
+  }
+}
+
+function creatorWorksErrorMessage(error: unknown, stage: string) {
+  const { message, code, details, hint } = creatorWorksError(error)
+  if (code === '42501' || code === 'PGRST301') {
+    return 'Supabase denied access while loading your works. Apply the Creator Studio migrations 20261023000500, 20261023000700, 20261023000800, 20261023000900, and 20261023001100 in order, then refresh. Check that your account has the Writer role.'
+  }
+  if (code === 'PGRST204' || code === '42703' || code === '42P01' || code === 'PGRST205') {
+    return 'The Creator Studio database schema is out of date. Apply migrations 20261023000500, 20261023000700, 20261023000800, 20261023000900, and 20261023001100 in order, then refresh.'
+  }
+  const description = [message, details, hint].filter(Boolean).join(' — ')
+  return description === 'Unknown Supabase error' || !description
+    ? `Could not load your works while ${stage}. Refresh the page and try again.`
+    : description
+}
+
 async function saveChapters(
   supabase: ReturnType<typeof getSupabaseClient>,
   workId: string,
@@ -110,6 +137,7 @@ export function WorksProvider({ children }: { children: ReactNode }) {
     }
     setHydrated(false)
     setLoadError(null)
+    let stage = 'checking your sign-in'
     try {
       const supabase = getSupabaseClient()
       const { data: { session }, error: sessionError } = await supabase.auth.getSession()
@@ -120,6 +148,7 @@ export function WorksProvider({ children }: { children: ReactNode }) {
         setHydrated(true)
         return
       }
+      stage = 'loading your projects'
       const { data: workRows, error: workError } = await supabase
         .from('creator_works')
         .select('id, author_id, title, type, synopsis, genre, moods, language, rating, content_warnings, status, cover_image_url, comic_reading_direction, comic_reader_background, comic_page_spacing, author_note, created_at')
@@ -129,6 +158,7 @@ export function WorksProvider({ children }: { children: ReactNode }) {
       if (workError) throw workError
 
       const storyIds = workRows.filter((work) => work.type === 'story').map((work) => work.id)
+      stage = 'loading story chapters'
       const { data: chapterRows, error: chapterError } = storyIds.length
         ? await supabase
           .from('creator_work_chapters')
@@ -139,6 +169,7 @@ export function WorksProvider({ children }: { children: ReactNode }) {
       if (chapterError) throw chapterError
 
       const comicIds = workRows.filter((work) => work.type === 'comic').map((work) => work.id)
+      stage = 'loading comic pages'
       const { data: comicPageRows, error: comicPageError } = comicIds.length
         ? await supabase
           .from('creator_comic_pages')
@@ -199,8 +230,9 @@ export function WorksProvider({ children }: { children: ReactNode }) {
         }
       }))
     } catch (error) {
-      console.error('Failed to load creator works', error)
-      setLoadError(error instanceof Error ? error.message : 'Hindi ma-load ang mga gawa mo.')
+      const details = creatorWorksError(error)
+      console.warn('Could not load creator works', { stage, ...details })
+      setLoadError(creatorWorksErrorMessage(error, stage))
     } finally {
       setHydrated(true)
     }
@@ -212,7 +244,8 @@ export function WorksProvider({ children }: { children: ReactNode }) {
       return
     }
     const supabase = getSupabaseClient()
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') return
       window.setTimeout(() => void refreshWorks(), 0)
     })
     void refreshWorks()
@@ -317,25 +350,38 @@ export function WorksProvider({ children }: { children: ReactNode }) {
       status: updated.status,
       updated_at: new Date().toISOString(),
     }
+    const publishAfterChapters = current.type === 'story'
+      && current.status === 'Draft'
+      && updated.status !== 'Draft'
     if (existing) {
       const { data, error } = await supabase
         .from('creator_works')
-        .update(fields)
+        .update(publishAfterChapters ? { ...fields, status: current.status } : fields)
         .eq('id', id)
         .eq('author_id', user.id)
         .select('id')
         .maybeSingle()
       if (error) throw error
       if (!data) throw new Error('Hindi ma-update ang work na ito. I-refresh ang pahina at subukan ulit.')
-      if (current.type === 'story' && current.status !== updated.status) {
+      if (current.type === 'story' && updated.chapters) {
+        await saveChapters(supabase, id, updated.chapters, updated.status !== 'Draft')
+      } else if (current.type === 'story' && current.status !== updated.status) {
         const { error: chapterError } = await supabase
           .from('creator_work_chapters')
           .update({ is_published: updated.status !== 'Draft', updated_at: new Date().toISOString() })
           .eq('work_id', id)
         if (chapterError) throw chapterError
       }
-      if (current.type === 'story' && updated.chapters) {
-        await saveChapters(supabase, id, updated.chapters, updated.status !== 'Draft')
+      if (publishAfterChapters) {
+        const { data: publishedWork, error: publishError } = await supabase
+          .from('creator_works')
+          .update({ status: updated.status, updated_at: new Date().toISOString() })
+          .eq('id', id)
+          .eq('author_id', user.id)
+          .select('id')
+          .maybeSingle()
+        if (publishError) throw publishError
+        if (!publishedWork) throw new Error('Na-save ang chapters pero hindi na-publish ang story. I-refresh ang page at subukan ulit.')
       }
       if (current.type === 'comic' && updated.comicPages) {
         await saveComicPages(supabase, id, updated.comicPages, updated.status !== 'Draft')
