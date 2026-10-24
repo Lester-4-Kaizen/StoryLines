@@ -85,11 +85,19 @@ export async function loadWorkRankings(category: RankingCategory, period: Rankin
         : null,
     ]),
   )
-  return rows.map((row) => ({
-    ...row,
-    follower_count: followersByCreator.get(row.creator_id) ?? 0,
-    creator_avatar_url: avatarsByCreator.get(row.creator_id) ?? null,
-  }))
+  return rows
+    .map((row) => ({
+      ...row,
+      follower_count: followersByCreator.get(row.creator_id) ?? 0,
+      creator_avatar_url: avatarsByCreator.get(row.creator_id) ?? null,
+    }))
+    .sort((first, second) =>
+      second.follower_count - first.follower_count
+      || second.score - first.score
+      || second.view_count - first.view_count
+      || second.like_count - first.like_count
+      || first.creator_name.localeCompare(second.creator_name),
+    )
 }
 
 export async function loadMyWorkAnalytics(period: RankingPeriod) {
