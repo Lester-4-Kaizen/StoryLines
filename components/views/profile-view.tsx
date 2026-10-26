@@ -983,7 +983,7 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
           )}
         </div>
         <div className="flex flex-col gap-4 px-4 pb-4 sm:flex-row sm:items-end sm:px-6">
-          <div className="-mt-8 flex shrink-0 items-center sm:-mt-10">
+          <div className="-mt-8 flex shrink-0 items-center self-start sm:-mt-10">
             <span className="relative flex size-16 items-center justify-center overflow-hidden rounded-full border-4 border-card bg-secondary text-accent sm:size-20">
               {profile.avatarUrl
                 ? <Image src={profile.avatarUrl} alt={`${profile.displayName}'s profile picture`} fill sizes="80px" className="object-cover" />
@@ -991,8 +991,8 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
             </span>
           </div>
           <div className="min-w-0 flex-1">
-            <h1 className="break-words font-serif text-2xl font-bold sm:text-3xl">{profile.displayName}</h1>
-            <p className="mt-1 break-all text-xs text-muted-foreground">@{profile.username}{profile.bio ? ` · ${profile.bio}` : ''}</p>
+            <h1 className="break-words font-serif text-2xl font-bold leading-tight sm:text-3xl">{profile.displayName}</h1>
+            <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">@{profile.username}{profile.bio ? ` · ${profile.bio}` : ''}</p>
             <div className="mt-3 flex flex-wrap gap-2">
               {profile.roles.map((role) => (
                 <span key={role} className="rounded-full border border-border px-2.5 py-1 text-[11px] font-semibold">
@@ -1001,7 +1001,7 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
               ))}
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 sm:justify-end">
             {ownProfile ? (
               <Button
                 ref={editProfileButtonRef}

@@ -747,6 +747,8 @@ export function AdminConsole({
   const [notifyReported, setNotifyReported] = useState(true)
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
 
+  const getBanConfirmText = (targetLabel: string) => `Permanently ban ${targetLabel}? This immediately disables account access and cannot be undone.`
+
   const submitAction = async (payload: Record<string, unknown>, successMessage: string, confirmMessage?: string) => {
     if (confirmMessage && !window.confirm(confirmMessage)) return
     setBusy(true)
@@ -774,14 +776,14 @@ export function AdminConsole({
     void submitAction(
       { action: 'report', reportId, moderationAction: action, note, suspendDays, notifyReporters, notifyReported },
       `${formatAction(action)}. The decision was written to the audit log.`,
-      action === 'ban' ? 'Permanently ban this account and resolve all open reports about this content?' : undefined,
+      action === 'ban' ? getBanConfirmText('this account and resolve all open reports about this content') : undefined,
     )
   }
   const userAction = (action: string, userId: string) => {
     void submitAction(
       { action: 'user', userId, moderationAction: action, note, suspendDays },
       `${formatAction(action)}. The decision was written to the audit log.`,
-      action === 'ban' ? 'Permanently ban this account?' : undefined,
+      action === 'ban' ? getBanConfirmText('this account') : undefined,
     )
   }
   const users = rows<AdminUser>(data)
