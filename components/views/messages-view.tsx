@@ -60,7 +60,7 @@ type MessageReaction = { message_id: string; user_id: string; reaction: string }
 type MessageReactionView = { emoji: string; count: number; reactedByMe: boolean }
 type Person = { id: string; name: string; username: string; avatarUrl: string | null }
 type FollowedPerson = Person & { role: string }
-type MessageFilter = 'all' | 'unread' | 'archived' | 'requests' | 'restricted' | 'blocked'
+type MessageFilter = 'all' | 'unread' | 'archived' | 'requests' | 'restricted'
 type ConversationStatus = 'active' | 'archived' | 'deleted'
 type ConversationState = { status: ConversationStatus; updated_at: string }
 type ConversationStateResult = { partner_id: string; status: ConversationStatus; updated_at: string }
@@ -87,6 +87,21 @@ type GlobalChatPreferences = {
   high_contrast: boolean
 }
 type ConversationMute = { partner_id: string; expires_at: string | null }
+type SharedConversationPreferenceRow = {
+  user_low_id: string
+  user_high_id: string
+  bubble_color: BubbleColor
+  chat_background: ChatBackground
+  nickname_low: string
+  nickname_high: string
+  quick_reaction: ConversationPreferences['quick_reaction']
+}
+type ConversationUpdate = {
+  actor_id: string | null
+  preference_key: 'bubble_color' | 'chat_background' | 'nickname' | 'quick_reaction'
+  preference_value: string
+  created_at: string
+}
 const MESSAGE_PAGE_SIZE = 100
 const MESSAGE_REACTIONS = ['❤️', '😂', '😮', '😢', '👍', '🔥'] as const
 const EmojiPicker = dynamic(() => import('emoji-picker-react'), { ssr: false })
@@ -146,6 +161,30 @@ function playMessageNotificationSound() {
   }).catch((soundError: unknown) => {
     console.error('Could not play the message notification sound', soundError)
   })
+}
+
+function conversationParticipants(firstId: string, secondId: string) {
+  return firstId < secondId
+    ? { lowId: firstId, highId: secondId }
+    : { lowId: secondId, highId: firstId }
+}
+
+function applySharedConversationPreference(
+  current: ConversationPreferences,
+  row: SharedConversationPreferenceRow,
+  currentUserId: string,
+  partnerId: string,
+): ConversationPreferences {
+  const userIsLow = currentUserId === row.user_low_id
+  const partnerIsLow = partnerId === row.user_low_id
+  return {
+    ...current,
+    bubble_color: row.bubble_color,
+    chat_background: row.chat_background,
+    nickname_self: userIsLow ? row.nickname_low : row.nickname_high,
+    nickname_partner: partnerIsLow ? row.nickname_low : row.nickname_high,
+    quick_reaction: row.quick_reaction,
+  }
 }
 
 function unlockMessageNotificationSound() {
@@ -233,7 +272,7 @@ function describeMessageError(error: unknown, fallback: string) {
       return 'Messaging features are not installed. Apply the latest migration 20261026000200_message_work_sharing_mutes_and_reports.sql in Supabase.'
     }
     if (error.code === 'PGRST202') {
-      return 'A messaging database function is missing. Apply migrations 20261025000400 through 20261025000800 and 20261025001200_chapter_discussions_chat_unsend_and_reader_position.sql in Supabase.'
+      return 'A messaging database function is missing. Apply migrations 20261025000400 through 20261025000900, 20261025001200_chapter_discussions_chat_unsend_and_reader_position.sql, and 20261027000600_blocked_account_visibility_and_shared_chat_customization.sql in Supabase.'
     }
     if (error.code === '42501') {
       return 'Supabase denied this message action. Apply migrations 20261025000400 through 20261025000800, then sign in again.'
@@ -245,7 +284,7 @@ function describeMessageError(error: unknown, fallback: string) {
       return 'The chat database is missing the latest message fields or customization settings. Apply migrations 20261026000200 and 20261026000400 in Supabase.'
     }
     if (error.code === 'PGRST205') {
-      return 'Chat customization is not installed. Apply migration 20261026000400_chat_customization_preferences.sql in Supabase.'
+      return 'Chat customization or account blocking is not installed. Apply migrations 20261026000400_chat_customization_preferences.sql and 20261027000600_blocked_account_visibility_and_shared_chat_customization.sql in Supabase.'
     }
   }
   if (typeof error === 'object' && error !== null) {
@@ -283,6 +322,7 @@ export function MessagesView() {
   const [conversationPreferences, setConversationPreferences] = useState<Map<string, ConversationPreferences>>(new Map())
   const conversationPreferencesRef = useRef(conversationPreferences)
   conversationPreferencesRef.current = conversationPreferences
+  const [latestConversationUpdate, setLatestConversationUpdate] = useState<ConversationUpdate | null>(null)
   const mutedConversationsRef = useRef(mutedConversations)
   mutedConversationsRef.current = mutedConversations
   const [globalChatPreferences, setGlobalChatPreferences] = useState<GlobalChatPreferences>(DEFAULT_GLOBAL_CHAT_PREFERENCES)
@@ -523,6 +563,10 @@ export function MessagesView() {
         .from('community_conversation_preferences')
         .select('partner_id, bubble_color, chat_background, nickname_self, nickname_partner, quick_reaction, pinned')
         .eq('user_id', currentUserId)
+      const sharedConversationPreferencesPromise = supabase
+        .from('community_shared_conversation_preferences')
+        .select('user_low_id, user_high_id, bubble_color, chat_background, nickname_low, nickname_high, quick_reaction')
+        .or(`user_low_id.eq.${currentUserId},user_high_id.eq.${currentUserId}`)
       const globalChatPreferencesPromise = supabase
         .from('community_chat_preferences')
         .select('text_size, message_sound, reduce_motion, high_contrast')
@@ -537,7 +581,7 @@ export function MessagesView() {
           .order('id', { ascending: false })
           .limit(MESSAGE_PAGE_SIZE)
         : Promise.resolve({ data: [], error: null })
-      const [inboxResult, selectedThreadResult, conversationStatesResult, messageRequestsResult, accountControlsResult, mutedConversationsResult, conversationPreferencesResult, globalChatPreferencesResult] = await Promise.all([
+      const [inboxResult, selectedThreadResult, conversationStatesResult, messageRequestsResult, accountControlsResult, mutedConversationsResult, conversationPreferencesResult, sharedConversationPreferencesResult, globalChatPreferencesResult] = await Promise.all([
         inboxPromise,
         selectedThreadPromise,
         conversationStatesPromise,
@@ -545,6 +589,7 @@ export function MessagesView() {
         accountControlsPromise,
         mutedConversationsPromise,
         conversationPreferencesPromise,
+        sharedConversationPreferencesPromise,
         globalChatPreferencesPromise,
       ])
       const loadedMessages = new Map(
@@ -596,6 +641,7 @@ export function MessagesView() {
       if (accountControlsResult.error) throw accountControlsResult.error
       if (mutedConversationsResult.error) throw mutedConversationsResult.error
       if (conversationPreferencesResult.error) throw conversationPreferencesResult.error
+      if (sharedConversationPreferencesResult.error) throw sharedConversationPreferencesResult.error
       if (globalChatPreferencesResult.error) throw globalChatPreferencesResult.error
       const hydratedMessages = await hydrateMessages(visibleData)
       if (!active) return
@@ -617,17 +663,24 @@ export function MessagesView() {
       setMutedConversations(new Map((mutedConversationsResult.data ?? [])
         .filter((mute) => !mute.expires_at || new Date(mute.expires_at).getTime() > Date.now())
         .map((mute) => [mute.partner_id, mute.expires_at])))
-      setConversationPreferences(new Map((conversationPreferencesResult.data ?? []).map((preferences) => [
-        preferences.partner_id,
-        {
-          bubble_color: preferences.bubble_color as BubbleColor,
-          chat_background: preferences.chat_background as ChatBackground,
-          nickname_self: preferences.nickname_self,
-          nickname_partner: preferences.nickname_partner,
-          quick_reaction: preferences.quick_reaction as ConversationPreferences['quick_reaction'],
+      const loadedConversationPreferences = new Map<string, ConversationPreferences>()
+      for (const preferences of conversationPreferencesResult.data ?? []) {
+        loadedConversationPreferences.set(preferences.partner_id, {
+          ...DEFAULT_CONVERSATION_PREFERENCES,
           pinned: preferences.pinned,
-        },
-      ])))
+        })
+      }
+      for (const row of sharedConversationPreferencesResult.data ?? []) {
+        const partnerId = row.user_low_id === currentUserId ? row.user_high_id : row.user_low_id
+        const previous = loadedConversationPreferences.get(partnerId) ?? DEFAULT_CONVERSATION_PREFERENCES
+        loadedConversationPreferences.set(partnerId, applySharedConversationPreference(
+          previous,
+          row as SharedConversationPreferenceRow,
+          currentUserId,
+          partnerId,
+        ))
+      }
+      setConversationPreferences(loadedConversationPreferences)
       const loadedGlobalPreferences = globalChatPreferencesResult.data
         ? {
           text_size: globalChatPreferencesResult.data.text_size as ChatTextSize,
@@ -647,6 +700,80 @@ export function MessagesView() {
       active = false
     }
   }, [currentUserId, router, targetUserId, reloadVersion])
+
+  useEffect(() => {
+    if (!currentUserId || !selectedUserId) {
+      setLatestConversationUpdate(null)
+      return
+    }
+    let active = true
+    const supabase = getSupabaseClient()
+    const { lowId, highId } = conversationParticipants(currentUserId, selectedUserId)
+    const refreshSharedConversation = async () => {
+      const [preferencesResult, updateResult] = await Promise.all([
+        supabase
+          .from('community_shared_conversation_preferences')
+          .select('user_low_id, user_high_id, bubble_color, chat_background, nickname_low, nickname_high, quick_reaction')
+          .eq('user_low_id', lowId)
+          .eq('user_high_id', highId)
+          .maybeSingle(),
+        supabase
+          .from('community_conversation_updates')
+          .select('actor_id, preference_key, preference_value, created_at')
+          .eq('user_low_id', lowId)
+          .eq('user_high_id', highId)
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ])
+      if (preferencesResult.error) throw preferencesResult.error
+      if (updateResult.error) throw updateResult.error
+      if (!active) return
+
+      setConversationPreferences((current) => {
+        const existing = current.get(selectedUserId) ?? DEFAULT_CONVERSATION_PREFERENCES
+        const next = new Map(current)
+        next.set(selectedUserId, preferencesResult.data
+          ? applySharedConversationPreference(
+            existing,
+            preferencesResult.data as SharedConversationPreferenceRow,
+            currentUserId,
+            selectedUserId,
+          )
+          : {
+            ...existing,
+            bubble_color: DEFAULT_CONVERSATION_PREFERENCES.bubble_color,
+            chat_background: DEFAULT_CONVERSATION_PREFERENCES.chat_background,
+            nickname_self: '',
+            nickname_partner: '',
+            quick_reaction: DEFAULT_CONVERSATION_PREFERENCES.quick_reaction,
+          })
+        return next
+      })
+      setLatestConversationUpdate(updateResult.data as ConversationUpdate | null)
+    }
+
+    void refreshSharedConversation().catch((refreshError: unknown) => {
+      if (active) setError(describeMessageError(refreshError, 'Could not refresh shared chat settings.'))
+    })
+    const intervalId = window.setInterval(() => {
+      void refreshSharedConversation().catch((refreshError: unknown) => {
+        if (active) setError(describeMessageError(refreshError, 'Could not refresh shared chat settings.'))
+      })
+    }, 5000)
+    const refreshOnFocus = () => {
+      void refreshSharedConversation().catch((refreshError: unknown) => {
+        if (active) setError(describeMessageError(refreshError, 'Could not refresh shared chat settings.'))
+      })
+    }
+    window.addEventListener('focus', refreshOnFocus)
+    return () => {
+      active = false
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', refreshOnFocus)
+    }
+  }, [currentUserId, reloadVersion, selectedUserId])
 
   useEffect(() => {
     if (!currentUserId) return
@@ -864,6 +991,20 @@ export function MessagesView() {
     ?? BUBBLE_COLORS[0]
   const selectedPartnerName = selectedChatPreferences.nickname_partner.trim() || selectedPerson?.name || 'StoryLines member'
   const selectedSelfName = selectedChatPreferences.nickname_self.trim() || 'You'
+  const latestUpdateActor = latestConversationUpdate?.actor_id === currentUserId
+    ? 'You'
+    : latestConversationUpdate?.actor_id
+      ? people.get(latestConversationUpdate.actor_id)?.name ?? 'A participant'
+      : 'A participant'
+  const latestUpdateDescription = latestConversationUpdate?.preference_key === 'chat_background'
+    ? `changed the theme to ${CHAT_BACKGROUNDS.find((item) => item.value === latestConversationUpdate.preference_value)?.label ?? latestConversationUpdate.preference_value}`
+    : latestConversationUpdate?.preference_key === 'bubble_color'
+      ? `changed the bubble color to ${BUBBLE_COLORS.find((item) => item.value === latestConversationUpdate.preference_value)?.label ?? latestConversationUpdate.preference_value}`
+      : latestConversationUpdate?.preference_key === 'nickname'
+        ? `updated a shared nickname${latestConversationUpdate.preference_value ? ` to ${latestConversationUpdate.preference_value}` : ''}`
+        : latestConversationUpdate?.preference_key === 'quick_reaction'
+          ? `changed the quick reaction to ${latestConversationUpdate.preference_value}`
+          : ''
   const textSizeClass = CHAT_TEXT_SIZES.find((size) => size.value === globalChatPreferences.text_size)?.className
     ?? CHAT_TEXT_SIZES[1].className
   const selectedPendingRequest = selectedUserId
@@ -1043,14 +1184,30 @@ export function MessagesView() {
     setSavingChatPreferences(true)
     setError(null)
     try {
-      const { error: saveError } = await getSupabaseClient()
-        .from('community_conversation_preferences')
-        .upsert({
-          user_id: currentUserId,
-          partner_id: partnerId,
-          ...next,
-        }, { onConflict: 'user_id,partner_id' })
+      const supabase = getSupabaseClient()
+      const saveResult = key === 'pinned'
+        ? await supabase
+          .from('community_conversation_preferences')
+          .upsert({
+            user_id: currentUserId,
+            partner_id: partnerId,
+            pinned: value,
+          }, { onConflict: 'user_id,partner_id' })
+        : await supabase.rpc('set_community_shared_conversation_preference', {
+          p_partner_id: partnerId,
+          p_key: key,
+          p_value: String(value),
+        })
+      const saveError = saveResult.error
       if (saveError) throw saveError
+      if (key !== 'pinned' && previous[key] !== value && selectedUserId === partnerId) {
+        setLatestConversationUpdate({
+          actor_id: currentUserId,
+          preference_key: key === 'nickname_self' || key === 'nickname_partner' ? 'nickname' : key,
+          preference_value: String(value),
+          created_at: new Date().toISOString(),
+        })
+      }
       setStatusMessage('Chat settings saved.')
     } catch (saveError) {
       if (conversationPreferencesRef.current.get(partnerId) === next) {
@@ -1310,6 +1467,7 @@ export function MessagesView() {
       }
       setInfoSection('privacy')
       setReloadVersion((version) => version + 1)
+      if (status === 'blocked') router.replace('/settings#blocked-accounts')
     } catch (controlError) {
       setError(describeMessageError(controlError, 'Could not update this account control.'))
     } finally {
@@ -1520,7 +1678,7 @@ export function MessagesView() {
               <PenLine className="size-4" /> New
             </button>
           </div>
-          {(filter === 'all' || filter === 'unread' || filter === 'requests' || filter === 'archived' || filter === 'restricted' || filter === 'blocked') && (
+          {(filter === 'all' || filter === 'unread' || filter === 'requests' || filter === 'archived' || filter === 'restricted') && (
             <div className="flex h-13 shrink-0 items-center gap-2 border-b border-border bg-card px-3">
               <label htmlFor="inbox-search" className="sr-only">Search chats</label>
               <div className="flex min-w-0 flex-1 items-center gap-2 rounded-full border border-input bg-background px-3">
@@ -1545,7 +1703,7 @@ export function MessagesView() {
                 onChange={(event) => {
                   const nextFilter = event.target.value
                   if (nextFilter === 'all' || nextFilter === 'unread' || nextFilter === 'requests'
-                    || nextFilter === 'archived' || nextFilter === 'restricted' || nextFilter === 'blocked') setFilter(nextFilter)
+                    || nextFilter === 'archived' || nextFilter === 'restricted') setFilter(nextFilter)
                 }}
                 className="min-h-10 shrink-0 rounded-full border border-border bg-card px-3 text-xs font-bold text-foreground"
               >
@@ -1554,7 +1712,6 @@ export function MessagesView() {
                 <option value="requests">Requests ({visibleMessageRequests.length})</option>
                 <option value="archived">Archived</option>
                 <option value="restricted">Restricted</option>
-                <option value="blocked">Blocked</option>
               </select>
             </div>
           )}
@@ -1591,9 +1748,9 @@ export function MessagesView() {
             ) : (
               <div className="px-5 py-12 text-center"><h2 className="font-serif text-lg font-bold">No message requests</h2><p className="mt-2 text-sm text-muted-foreground">Requests from people you don’t follow will appear here.</p></div>
             )
-          ) : filter === 'restricted' || filter === 'blocked' ? (
+          ) : filter === 'restricted' ? (
             (() => {
-              const controls = accountControls.filter((control) => control.status === (filter === 'restricted' ? 'restricted' : 'blocked'))
+              const controls = accountControls.filter((control) => control.status === 'restricted')
               const restrictedAccounts = new Set(controls.map((control) => control.account_id))
               const incomingRestricted = filter === 'restricted'
                 ? restrictedIncomingRequests.filter((request) => !restrictedAccounts.has(request.sender_id))
@@ -1611,7 +1768,7 @@ export function MessagesView() {
                           <p className="truncate text-xs text-muted-foreground">@{person.username}</p>
                         </div>
                         <button type="button" onClick={() => void setAccountControl(control.account_id, 'none')} disabled={updatingConversation === control.account_id} className="min-h-10 shrink-0 rounded-full border border-border px-3 text-xs font-bold hover:border-accent hover:text-accent disabled:opacity-50">
-                          {filter === 'restricted' ? 'Unrestrict' : 'Unblock'}
+                          Unrestrict
                         </button>
                       </li>
                     )
@@ -1634,7 +1791,7 @@ export function MessagesView() {
                   })}
                 </ul>
               ) : (
-                <div className="px-5 py-12 text-center"><h2 className="font-serif text-lg font-bold">No {filter} accounts</h2><p className="mt-2 text-sm text-muted-foreground">Accounts you {filter === 'restricted' ? 'restrict' : 'block'} will appear here.</p></div>
+                <div className="px-5 py-12 text-center"><h2 className="font-serif text-lg font-bold">No restricted accounts</h2><p className="mt-2 text-sm text-muted-foreground">Accounts you restrict will appear here.</p></div>
               )
             })()
           ) : filteredConversations.length ? (
@@ -1796,6 +1953,27 @@ export function MessagesView() {
                 style={{ backgroundColor: selectedChatBackground.background, color: selectedChatBackground.foreground }}
                 aria-live="polite"
               >
+                {latestConversationUpdate && latestUpdateDescription && (
+                  <div className="my-5 flex items-center gap-3" role="status" aria-live="polite">
+                    <span className="h-px flex-1 bg-border" />
+                    <div className="flex max-w-full items-center gap-3 rounded-2xl border border-border bg-card/80 px-4 py-2.5 shadow-sm">
+                      <span className="min-w-0 text-center text-xs leading-5">
+                        <span className="font-bold">{latestUpdateActor}</span> {latestUpdateDescription}.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInfoSection('customize')
+                          setInfoPanelOpen(true)
+                        }}
+                        className="min-h-9 shrink-0 rounded-full border border-border bg-background px-3 text-xs font-bold hover:border-accent hover:text-accent"
+                      >
+                        Change
+                      </button>
+                    </div>
+                    <span className="h-px flex-1 bg-border" />
+                  </div>
+                )}
                 {displayedThreadMessages.length ? displayedThreadMessages.map((message, index) => {
                   const isMine = message.sender_id === currentUserId
                   const reply = threadMessages.find((item) => item.id === message.reply_to_message_id) ?? message.replyPreview
@@ -2203,7 +2381,7 @@ export function MessagesView() {
               {infoSection === 'customize' && (
                 <div className="space-y-4 pb-4">
                   <section aria-labelledby="bubble-color-label">
-                    <h3 id="bubble-color-label" className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Your bubble color</h3>
+                    <h3 id="bubble-color-label" className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Bubble color · shared</h3>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {BUBBLE_COLORS.map((color) => (
                         <button
@@ -2221,7 +2399,7 @@ export function MessagesView() {
                   </section>
 
                   <section aria-labelledby="chat-background-label">
-                    <h3 id="chat-background-label" className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Chat background</h3>
+                    <h3 id="chat-background-label" className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Chat background · shared</h3>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {CHAT_BACKGROUNDS.map((background) => (
                         <button
@@ -2257,7 +2435,7 @@ export function MessagesView() {
                   </section>
 
                   <section aria-labelledby="chat-nicknames-label">
-                    <h3 id="chat-nicknames-label" className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Nicknames · this chat</h3>
+                    <h3 id="chat-nicknames-label" className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Nicknames · shared with this chat</h3>
                     <label className="mt-2 block text-xs font-semibold">
                       You
                       <input
@@ -2288,11 +2466,11 @@ export function MessagesView() {
                         className="mt-1 min-h-11 w-full rounded-lg border border-input bg-background px-2.5 text-xs font-normal text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       />
                     </label>
-                    <p className="mt-1 text-[10px] leading-4 text-muted-foreground">Only you see these names.</p>
+                    <p className="mt-1 text-[10px] leading-4 text-muted-foreground">Both people in this chat see these names.</p>
                   </section>
 
                   <section aria-labelledby="quick-reaction-label">
-                    <h3 id="quick-reaction-label" className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Quick reaction</h3>
+                    <h3 id="quick-reaction-label" className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Quick reaction · shared</h3>
                     <div className="mt-1 flex flex-wrap gap-1">
                       {MESSAGE_REACTIONS.map((emoji) => (
                         <button
@@ -2531,7 +2709,7 @@ export function MessagesView() {
             </h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
               {confirmation.kind === 'account'
-                ? `${people.get(confirmation.accountId)?.name ?? 'This account'} won’t be able to message you or send message requests. You can unblock them later.`
+                ? `${people.get(confirmation.accountId)?.name ?? 'This account'} won’t be able to message you or send message requests. Blocking also hides each other’s profiles and content and removes follows in both directions. Manage this block in Settings → Blocked Accounts.`
                 : confirmation.status === 'archived'
                   ? 'This conversation will leave your main inbox. You can find it later under Archived Messages.'
                   : 'This removes the conversation from your inbox only. The other person keeps their copy, and you won’t see this history again unless a new message arrives.'}

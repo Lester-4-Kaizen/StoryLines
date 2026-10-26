@@ -13,12 +13,14 @@ export function LegalDocument({
   title,
   description,
   updatedOn,
+  updatedAt,
   sections,
 }: {
   eyebrow: string
   title: string
   description: string
   updatedOn: string
+  updatedAt: string
   sections: LegalSection[]
 }) {
   return (
@@ -34,7 +36,7 @@ export function LegalDocument({
             <p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground">{description}</p>
           </div>
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-            Last updated <time className="mt-1 block text-sm normal-case tracking-normal text-foreground" dateTime="2026-10-23">{updatedOn}</time>
+            Last updated <time className="mt-1 block text-sm normal-case tracking-normal text-foreground" dateTime={updatedAt}>{updatedOn}</time>
           </p>
         </div>
         <div className="h-1 bg-gradient-to-r from-accent via-primary/70 to-transparent" aria-hidden="true" />

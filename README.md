@@ -45,6 +45,12 @@ Use branded confirmation and password-reset templates under **Authentication →
 
 After the admin moderation migration, apply `20261027000300_enforce_moderation_account_restrictions.sql` in Supabase SQL Editor (or apply pending migrations with the Supabase CLI). It installs the account-status RPC used by the app, restrictive RLS policies, and write guards for RLS-enabled public tables.
 
+If authenticated readers receive `permission denied` errors for chapter or reading-progress queries, also apply `20261027000400_repair_library_reader_grants.sql`. It restores the intended column-level grants; row-level security remains enabled and unchanged.
+
+If `record_my_chapter_reading_progress` returns a `42702` ambiguous `chapter_id` error, apply `20261027000500_fix_chapter_progress_rpc_ambiguity.sql`.
+
+For account blocking and shared conversation customization, apply `20261027000600_blocked_account_visibility_and_shared_chat_customization.sql`. It hides blocked accounts and their content, removes follows in both directions, provides the Settings → Blocked Accounts list, and stores shared chat appearance, nicknames, and quick reactions. Pinning and accessibility preferences remain private to each user. The migration must be applied before using these features.
+
 Active accounts retain their existing access. Suspended accounts can read public community posts and profiles only; they cannot read stories or other app data, or write to app tables/storage. Banned accounts cannot access app tables or storage. The app checks status while open, shows warning and restriction notices, and provides suspended users a read-only community feed. These database protections take effect only after the migration has been applied to the Supabase project.
 
 Run this SQL in **Supabase → SQL Editor** before accepting signups. The auth trigger creates one `profiles` row per new auth user, including Google/Facebook users. OAuth accounts without a username receive a generated username; users can later update it through their profile settings. The final `INSERT` backfills users created before installing the trigger.
@@ -301,6 +307,8 @@ Apply [`supabase/migrations/20261025001300_library_liked_works.sql`](./supabase/
 Apply [`supabase/migrations/20261027000000_admin_moderation.sql`](./supabase/migrations/20261027000000_admin_moderation.sql) after the reports, profiles, community content, works, chapter discussion, and notifications migrations. It adds staff-only moderation RPCs, account status and warning history, hidden-content flags, outcome notifications, and a protected audit log. Apply it before deploying the admin console.
 
 Also apply [`supabase/migrations/20261027000100_hidden_content_policy_permissions.sql`](./supabase/migrations/20261027000100_hidden_content_policy_permissions.sql) after the moderation migration. It grants the hidden-flag column permissions required by public content policies.
+
+Apply [`supabase/migrations/20261027000700_warning_appeals.sql`](./supabase/migrations/20261027000700_warning_appeals.sql) after the other `20261027` migrations to enable per-warning appeals. Users can submit and track an appeal in Settings or on the account-restricted screen; staff review pending appeals at `/admin/appeals`. Uphold/rescind decisions update the warning count when appropriate, notify the user, and remain in the audit log.
 
 Staff privileges are stored in `profiles.staff_role`, a column that is not selectable or writable by regular app clients. To grant the first administrator, use the Supabase SQL Editor with the account's existing username:
 

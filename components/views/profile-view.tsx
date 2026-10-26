@@ -381,7 +381,11 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
       })
       if (error) throw error
       setProfileBlocked(nextBlocked)
-      setNotice(nextBlocked ? `Blocked @${profile.username}.` : `Unblocked @${profile.username}.`)
+      if (nextBlocked) {
+        router.replace('/settings#blocked-accounts')
+      } else {
+        setNotice(`Unblocked @${profile.username}.`)
+      }
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Could not update this account’s block status.')
     } finally {

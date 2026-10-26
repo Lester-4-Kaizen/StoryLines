@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import { WarningAppealsPanel } from '@/components/moderation/warning-appeals-panel'
 import { parseModerationStatus, type ModerationStatus } from '@/lib/moderation/status'
 import { getSupabaseClient } from '@/lib/supabase'
 
@@ -80,6 +81,7 @@ export function AccountRestrictedView({
           </section>
         )}
         {error && <p role="alert" className="mt-3 text-sm text-destructive">{error}</p>}
+        {status && <WarningAppealsPanel />}
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           {status?.status === 'suspended' && (
             <Link href="/community" className="inline-flex min-h-11 items-center rounded-full border border-border px-5 text-sm font-bold hover:bg-muted">

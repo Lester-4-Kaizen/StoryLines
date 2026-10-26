@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Ban, Check, Moon, Sun } from 'lucide-react'
 import { Panel } from '@/components/shared/panel'
 import { PwaInstallPanel } from '@/components/shared/pwa-install-panel'
+import { WarningAppealsPanel } from '@/components/moderation/warning-appeals-panel'
 import { getSupabaseClient } from '@/lib/supabase'
 import type { Badge } from '@/lib/types'
 
@@ -116,30 +117,18 @@ export function SettingsView({
         if (active) setBlockedAccounts([])
         return
       }
-      const { data: controlRows, error: controlsError } = await supabase
-        .from('community_message_account_controls')
-        .select('account_id')
-        .eq('owner_id', user.id)
-        .eq('status', 'blocked')
-        .order('created_at', { ascending: false })
-        .limit(500)
-      if (controlsError) throw controlsError
-      const accountIds = (controlRows ?? []).map((row) => row.account_id)
-      if (!accountIds.length) {
-        if (active) setBlockedAccounts([])
-        return
-      }
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('id, display_name, username')
-        .in('id', accountIds)
-      if (profilesError) throw profilesError
-      const profileById = new Map((profiles ?? []).map((profile) => [profile.id, profile]))
+      const { data: blockedRows, error: blockedError } = await supabase.rpc('get_my_blocked_accounts')
+      if (blockedError) throw blockedError
       if (active) {
-        setBlockedAccounts(accountIds.flatMap((id) => {
-          const profile = profileById.get(id)
-          return profile ? [{ id, displayName: profile.display_name, username: profile.username }] : []
-        }))
+        setBlockedAccounts((blockedRows ?? []).map((account: {
+          account_id: string
+          display_name: string
+          username: string
+        }) => ({
+          id: account.account_id,
+          displayName: account.display_name,
+          username: account.username,
+        })))
       }
     })().catch((error: unknown) => {
       if (active) setBlockedError(error instanceof Error ? error.message : 'Could not load blocked accounts.')
@@ -393,7 +382,7 @@ export function SettingsView({
               <Panel className="p-5 sm:p-7 lg:p-8">
                 <span className="eyebrow">Privacy and safety</span>
                 <h2 className="mt-2 font-serif text-2xl font-bold">Blocked accounts</h2>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">Blocked accounts can’t message you. Unblock someone here to restore messaging.</p>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">Blocked accounts are hidden from your profiles, feeds, works, and messages, and you are automatically unfollowed. Unblock here to see them again; following will not be restored automatically.</p>
                 {blockedLoading ? (
                   <p className="mt-4 text-sm text-muted-foreground" role="status">Loading blocked accounts…</p>
                 ) : blockedError ? (
@@ -421,6 +410,8 @@ export function SettingsView({
               </Panel>
             </div>
           )}
+
+          {isLoggedIn && <WarningAppealsPanel />}
 
           <Panel className="p-5 sm:p-7 lg:p-8">
             <span className="eyebrow">Personalize your reading space</span>

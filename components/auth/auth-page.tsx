@@ -87,10 +87,22 @@ function FieldError({ id, children }: { id: string; children?: string }) {
   return children ? <p id={id} className="text-sm font-medium text-destructive">{children}</p> : null
 }
 
-function SocialButtons({ onError }: { onError: (message: string) => void }) {
+function SocialButtons({
+  onError,
+  requiresTerms = false,
+  termsAccepted = true,
+}: {
+  onError: (message: string) => void
+  requiresTerms?: boolean
+  termsAccepted?: boolean
+}) {
   const [provider, setProvider] = useState<'google' | 'facebook' | null>(null)
 
   const signIn = async (name: 'google' | 'facebook') => {
+    if (requiresTerms && !termsAccepted) {
+      onError('Tanggapin ang Terms at Privacy Policy bago gumawa ng account.')
+      return
+    }
     setProvider(name)
     try {
       const callback = new URL('/auth/callback', window.location.origin)
@@ -124,6 +136,37 @@ function SocialButtons({ onError }: { onError: (message: string) => void }) {
           Continue with {name === 'google' ? 'Google' : 'Facebook'}
         </button>
       ))}
+    </div>
+  )
+}
+
+function TermsConsent({
+  accepted,
+  error,
+  onChange,
+}: {
+  accepted: boolean
+  error?: string
+  onChange: (accepted: boolean) => void
+}) {
+  return (
+    <div>
+      <label htmlFor="terms" className="flex min-h-11 items-start gap-2.5 text-sm leading-5">
+        <input
+          id="terms"
+          type="checkbox"
+          checked={accepted}
+          onChange={(event) => onChange(event.target.checked)}
+          className="toggle mt-0.5 shrink-0"
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? 'terms-error' : undefined}
+        />
+        <span>I have read and agree to the <Link href="/terms" className="auth-link">Terms</Link> and <Link href="/privacy" className="auth-link">Privacy Policy</Link>.</span>
+      </label>
+      <FieldError id="terms-error">{error}</FieldError>
+      {!accepted && !error && (
+        <p className="ml-7 mt-1 text-xs text-muted-foreground">Accept both policies before creating your account.</p>
+      )}
     </div>
   )
 }
@@ -473,7 +516,18 @@ export function AuthPage({
           <>
             {(mode === 'login' || mode === 'signup') && (
               <>
-                <div className="mt-6"><SocialButtons onError={setTopError} /></div>
+                <div className={isSignup ? 'mt-4' : 'mt-6'}>
+                  <SocialButtons
+                    onError={setTopError}
+                    requiresTerms={isSignup}
+                    termsAccepted={terms}
+                  />
+                </div>
+                {isSignup && !terms && (
+                  <p className="mt-2 text-center text-xs text-muted-foreground">
+                    Check the Terms and Privacy Policy below to enable account creation.
+                  </p>
+                )}
                 <div className="my-5 flex items-center gap-3 text-xs font-medium text-muted-foreground">
                   <span className="h-px flex-1 bg-border" />
                   o gamit ang email mo
@@ -573,17 +627,20 @@ export function AuthPage({
                     </div>
                     <FieldError id="roles-error">{fieldErrors.roles}</FieldError>
                   </fieldset>
-                  <div>
-                    <label className="flex min-h-11 items-start gap-2.5 text-sm leading-5">
-                      <input type="checkbox" checked={terms} onChange={(event) => setTerms(event.target.checked)} className="toggle mt-0.5 shrink-0" aria-invalid={Boolean(fieldErrors.terms)} aria-describedby={fieldErrors.terms ? 'terms-error' : undefined} />
-                      <span>I agree to the <Link href="/terms" className="auth-link">Terms</Link> and <Link href="/privacy" className="auth-link">Privacy Policy</Link>.</span>
-                    </label>
-                    <FieldError id="terms-error">{fieldErrors.terms}</FieldError>
-                  </div>
+                  <TermsConsent
+                    accepted={terms}
+                    error={fieldErrors.terms}
+                    onChange={(accepted) => {
+                      setTerms(accepted)
+                      setFieldErrors((current) => ({ ...current, terms: undefined }))
+                      setErrorSummary(null)
+                      setSuccessMessage(null)
+                    }}
+                  />
                 </>
               )}
 
-              <button type="submit" disabled={submitting || (isSignup && usernameState === 'checking')} className="auth-primary mt-1 w-full">
+              <button type="submit" disabled={submitting || (isSignup && (usernameState === 'checking' || !terms))} className="auth-primary mt-1 w-full">
                 {submitting ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}
                 {submitting ? 'Please wait…' : mode === 'login' ? 'Log in' : mode === 'signup' ? 'Create account' : mode === 'forgot-password' ? 'Send reset link' : 'Update password'}
               </button>

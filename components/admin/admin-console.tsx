@@ -19,7 +19,7 @@ import {
   Users,
 } from 'lucide-react'
 
-export type AdminSection = 'overview' | 'reports' | 'users' | 'content' | 'audit' | 'staff'
+export type AdminSection = 'overview' | 'reports' | 'appeals' | 'users' | 'content' | 'audit' | 'staff'
 
 type AccountHistoryItem = { action: string; note: string; createdAt: string }
 type Reporter = {
@@ -88,6 +88,17 @@ type StaffMember = {
   staffRole: 'moderator' | 'admin'
   joinedAt: string
 }
+type WarningAppeal = {
+  appeal_id: string
+  warning_audit_id: string
+  user_id: string
+  display_name: string
+  username: string
+  warning_note: string
+  warning_created_at: string
+  appeal_text: string
+  appeal_created_at: string
+}
 type OverviewData = {
   stats: {
     openReports: number
@@ -119,6 +130,8 @@ const actionLabels: Record<string, string> = {
   restore: 'Restored account',
   content_hidden: 'Hid content',
   content_restored: 'Restored content',
+  warning_rescinded: 'Rescinded warning',
+  warning_appeal_upheld: 'Upheld warning appeal',
   staff_role_changed: 'Changed staff role',
 }
 
@@ -213,7 +226,14 @@ function ReportSummary({ report }: { report: AdminReport }) {
 
 function Overview({ data }: { data: OverviewData }) {
   const router = useRouter()
-  const maximum = Math.max(1, ...data.activity.map((day) => day.signups + day.posts + day.reports))
+  const [activityMetric, setActivityMetric] = useState<'signups' | 'posts' | 'reports'>('signups')
+  const maximum = Math.max(1, ...data.activity.map((day) => day[activityMetric]))
+  const activityMetrics = [
+    { key: 'signups', label: 'Sign-ups', color: '#b36b50' },
+    { key: 'posts', label: 'Posts', color: '#a8442a' },
+    { key: 'reports', label: 'Reports', color: '#c18a2c' },
+  ] as const
+  const selectedActivityMetric = activityMetrics.find((metric) => metric.key === activityMetric) ?? activityMetrics[0]
   const stats = [
     ['Open reports', data.stats.openReports, 'Waiting for review', false],
     ['Urgent', data.stats.urgentReports, 'Handle first', true],
@@ -261,27 +281,42 @@ function Overview({ data }: { data: OverviewData }) {
             <h2 className="font-serif text-xl font-bold">Activity · last 14 days</h2>
             <p className="mt-1 text-xs text-[#806b56]">Daily sign-ups, posts, and reports</p>
           </div>
-          <div className="flex gap-3 text-xs text-[#806b56]">
-            <span>● Sign-ups</span><span className="text-[#a8442a]">● Posts</span><span className="text-[#c18a2c]">● Reports</span>
+          <div className="flex flex-wrap gap-2" aria-label="Activity chart metric">
+            {activityMetrics.map((metric) => (
+              <button
+                key={metric.key}
+                type="button"
+                onClick={() => setActivityMetric(metric.key)}
+                aria-pressed={activityMetric === metric.key}
+                className={`min-h-9 rounded-full border px-3 text-xs font-semibold transition-colors ${activityMetric === metric.key ? 'border-[#442517] bg-[#442517] text-white' : 'border-[#dfc9ac] text-[#72553f] hover:bg-[#f4e7d5]'}`}
+              >
+                {metric.label}
+              </button>
+            ))}
           </div>
         </div>
         <div className="mt-5 flex h-36 items-end gap-1 border-b border-[#dfc9ac] sm:gap-2">
           {data.activity.map((day) => {
-            const total = day.signups + day.posts + day.reports
+            const value = day[activityMetric]
+            const height = value === 0 ? 0 : Math.max(4, value / maximum * 100)
             return (
               <button
                 key={day.date}
                 type="button"
-                title={`${day.date}: ${day.signups} sign-ups, ${day.posts} posts, ${day.reports} reports`}
+                title={`${day.date}: ${value} ${selectedActivityMetric.label.toLowerCase()}`}
+                aria-label={`${day.date}: ${value} ${selectedActivityMetric.label.toLowerCase()}`}
                 onClick={() => router.push(`/admin/reports`)}
-                className="group flex min-w-0 flex-1 flex-col justify-end"
+                className="group flex h-full min-w-0 flex-1 flex-col justify-end"
               >
-                <span className="mx-auto w-full max-w-8 rounded-t bg-[#b36b50] transition group-hover:bg-[#a8442a]" style={{ height: `${Math.max(4, total / maximum * 100)}%` }} />
+                <span
+                  className="mx-auto w-full max-w-8 rounded-t transition-opacity group-hover:opacity-75"
+                  style={{ height: `${height}%`, backgroundColor: selectedActivityMetric.color }}
+                />
               </button>
             )
           })}
         </div>
-        <p className="mt-2 text-xs text-[#806b56]">Sign-ups, posts, reports combined</p>
+        <p className="mt-2 text-xs text-[#806b56]">Daily {selectedActivityMetric.label.toLowerCase()} over the last 14 days</p>
       </section>
     </div>
   )
@@ -728,6 +763,76 @@ function StaffPage({
   )
 }
 
+function WarningAppealsPage({
+  initialAppeals,
+  onResolve,
+  busy,
+}: {
+  initialAppeals: WarningAppeal[]
+  onResolve: (appealId: string, decision: 'upheld' | 'rescinded', note: string) => Promise<boolean>
+  busy: boolean
+}) {
+  const [appeals, setAppeals] = useState(initialAppeals)
+  const [notes, setNotes] = useState<Record<string, string>>({})
+  const [search, setSearch] = useState('')
+  const filteredAppeals = appeals.filter((appeal) => (
+    `${appeal.display_name} ${appeal.username} ${appeal.warning_note} ${appeal.appeal_text}`.toLowerCase().includes(search.toLowerCase())
+  ))
+
+  const resolve = async (appeal: WarningAppeal, decision: 'upheld' | 'rescinded') => {
+    const label = decision === 'rescinded' ? 'Rescind this warning?' : 'Uphold this warning?'
+    if (!window.confirm(`${label} The decision will be added to the audit log and sent to the user.`)) return
+    if (await onResolve(appeal.appeal_id, decision, notes[appeal.appeal_id] ?? '')) {
+      setAppeals((current) => current.filter((item) => item.appeal_id !== appeal.appeal_id))
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <section className="rounded-2xl border border-[#e6d5bd] bg-[#fffaf1] p-4">
+        <SearchField value={search} onChange={setSearch} placeholder="Search user, warning, or appeal…" />
+      </section>
+      {filteredAppeals.length ? filteredAppeals.map((appeal) => (
+        <article key={appeal.appeal_id} className="rounded-2xl border border-[#e6d5bd] bg-[#fffaf1] p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="font-serif text-xl font-bold">{appeal.display_name}</h2>
+              <p className="text-sm text-[#806b56]">@{appeal.username} · appeal received {formatDate(appeal.appeal_created_at)}</p>
+            </div>
+            <StatusBadge status="pending" />
+          </div>
+          <section className="mt-4 rounded-xl bg-[#f4e7d5] p-4">
+            <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#72553f]">Original warning · {formatDate(appeal.warning_created_at)}</h3>
+            <p className="mt-2 whitespace-pre-wrap text-sm">{appeal.warning_note || 'No additional reason was provided.'}</p>
+          </section>
+          <section className="mt-3 rounded-xl border border-[#eadbc5] p-4">
+            <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#72553f]">User appeal</h3>
+            <p className="mt-2 whitespace-pre-wrap text-sm">{appeal.appeal_text}</p>
+          </section>
+          <label className="mt-4 block text-sm font-semibold">
+            Decision note <span className="font-normal text-[#806b56]">(optional; visible to the user)</span>
+            <textarea
+              value={notes[appeal.appeal_id] ?? ''}
+              maxLength={1000}
+              onChange={(event) => setNotes((current) => ({ ...current, [appeal.appeal_id]: event.target.value }))}
+              rows={3}
+              className="mt-2 w-full rounded-xl border border-[#dfc9ac] bg-[#fffaf1] p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#ab4b30]"
+            />
+          </label>
+          <div className="mt-4 flex flex-wrap justify-end gap-2">
+            <button type="button" disabled={busy} onClick={() => void resolve(appeal, 'upheld')} className={buttonClass}>
+              Uphold warning
+            </button>
+            <button type="button" disabled={busy} onClick={() => void resolve(appeal, 'rescinded')} className={primaryButtonClass}>
+              Rescind warning
+            </button>
+          </div>
+        </article>
+      )) : <EmptyState>{appeals.length ? 'No appeals match this search.' : 'No warning appeals are waiting for review.'}</EmptyState>}
+    </div>
+  )
+}
+
 export function AdminConsole({
   section,
   data,
@@ -749,8 +854,8 @@ export function AdminConsole({
 
   const getBanConfirmText = (targetLabel: string) => `Permanently ban ${targetLabel}? This immediately disables account access and cannot be undone.`
 
-  const submitAction = async (payload: Record<string, unknown>, successMessage: string, confirmMessage?: string) => {
-    if (confirmMessage && !window.confirm(confirmMessage)) return
+  const submitAction = async (payload: Record<string, unknown>, successMessage: string, confirmMessage?: string): Promise<boolean> => {
+    if (confirmMessage && !window.confirm(confirmMessage)) return false
     setBusy(true)
     setError(null)
     setNotice(null)
@@ -765,8 +870,10 @@ export function AdminConsole({
       setNotice(successMessage)
       setNote('')
       router.refresh()
+      return true
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Moderation action failed.')
+      return false
     } finally {
       setBusy(false)
     }
@@ -820,6 +927,16 @@ export function AdminConsole({
           setSuspendDays={setSuspendDays}
           onAction={userAction}
           busy={busy}
+        />
+      )}
+      {section === 'appeals' && (
+        <WarningAppealsPage
+          initialAppeals={rows<WarningAppeal>(data)}
+          busy={busy}
+          onResolve={(appealId, decision, appealNote) => submitAction(
+            { action: 'warning-appeal', appealId, decision, note: appealNote },
+            `Warning appeal ${decision}. The decision was written to the audit log and the user was notified.`,
+          )}
         />
       )}
       {section === 'content' && (

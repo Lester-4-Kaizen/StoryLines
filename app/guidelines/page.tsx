@@ -6,7 +6,8 @@ export default function GuidelinesPage() {
       eyebrow="Community standards"
       title="Community Guidelines"
       description="StoryLines is a place for Filipino readers and creators to share stories, comics, and ideas. These standards help keep participation respectful, safe, and welcoming."
-      updatedOn="October 23, 2026"
+      updatedOn="October 26, 2026"
+      updatedAt="2026-10-26"
       sections={[
         {
           id: 'respect',
@@ -53,8 +54,19 @@ export default function GuidelinesPage() {
           title: 'Moderation and reporting',
           content: (
             <>
-              <p>StoryLines may review or limit content and account activity that appears to violate these Guidelines, our Terms of Use, or applicable law. Actions may include removing content, restricting features, or suspending or closing an account, depending on the circumstances.</p>
-              <p>If you encounter a concern, avoid amplifying it and contact the StoryLines team through the support channel provided by the service operator. Include relevant links and context, but do not repost harmful material to report it.</p>
+              <p>Use the in-app report option on a profile, work, post, comment, or message to flag a concern. Reports are reviewed by authorized StoryLines moderators. Include relevant context, but do not repost harmful material to report it. Reporter identities are not disclosed to the reported person.</p>
+              <p>Depending on the circumstances, moderators may dismiss a report, hide reported content, issue a warning, temporarily suspend an account, or permanently ban it. A warning is recorded on the account; there is no automatic fixed warning count that triggers a suspension or ban. Decisions may consider the seriousness and context of the conduct and an account’s history. Where available, the moderation team may send an outcome update to the reporter and/or the reported person.</p>
+              <p>A suspended account may view public community posts and profiles only; it cannot post, comment, report, message, or read stories until the suspension ends. A banned account cannot access StoryLines. These measures do not replace any action required by law.</p>
+            </>
+          ),
+        },
+        {
+          id: 'blocking',
+          title: 'Blocking and personal boundaries',
+          content: (
+            <>
+              <p>You can block an account from its profile, from a report flow, or in Messages. Blocking hides that account’s profile, content, and messages from you, and hides your profile and content from that account. It also removes follows between you in both directions.</p>
+              <p>Manage blocked accounts in Settings. Unblocking makes the account visible again, but does not restore either follow automatically. Blocking is a personal safety control and does not replace reporting a Guidelines violation.</p>
             </>
           ),
         },

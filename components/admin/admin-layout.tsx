@@ -12,6 +12,7 @@ import {
   Search,
   Settings,
   Shield,
+  ShieldAlert,
   Users,
 } from 'lucide-react'
 import { getSupabaseClient } from '@/lib/supabase'
@@ -19,6 +20,7 @@ import { getSupabaseClient } from '@/lib/supabase'
 const navigation = [
   { label: 'Overview', href: '/admin', icon: LayoutDashboard },
   { label: 'Reports', href: '/admin/reports', icon: Flag },
+  { label: 'Warning appeals', href: '/admin/appeals', icon: ShieldAlert },
   { label: 'Users', href: '/admin/users', icon: Users },
   { label: 'Content', href: '/admin/content', icon: BookOpenText },
   { label: 'Audit log', href: '/admin/audit', icon: ListChecks },

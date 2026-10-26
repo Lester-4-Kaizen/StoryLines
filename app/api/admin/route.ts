@@ -15,6 +15,15 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const section = searchParams.get('section')
   const status = searchParams.get('status') ?? 'open'
+  if (section === 'appeals') {
+    const { supabase } = await getModerationAccess()
+    const { data, error } = await supabase.rpc('get_moderation_warning_appeals')
+    if (error) {
+      const statusCode = error.message.includes('Staff access') ? 403 : 400
+      return NextResponse.json({ error: error.message }, { status: statusCode })
+    }
+    return NextResponse.json({ data })
+  }
   if (section !== 'reports' || !['open', 'dismissed', 'actioned'].includes(status)) {
     return NextResponse.json({ error: 'Unknown moderation filter.' }, { status: 400 })
   }
@@ -90,6 +99,16 @@ export async function POST(request: NextRequest) {
     const result = await supabase.rpc('set_moderation_staff_role', {
       p_user_id: body.userId,
       p_staff_role: body.staffRole,
+    })
+    error = result.error
+  } else if (body.action === 'warning-appeal') {
+    if (!isString(body.appealId) || !['upheld', 'rescinded'].includes(String(body.decision))) {
+      return NextResponse.json({ error: 'An appeal and decision are required.' }, { status: 400 })
+    }
+    const result = await supabase.rpc('resolve_moderation_warning_appeal', {
+      p_appeal_id: body.appealId,
+      p_decision: body.decision,
+      p_note: typeof body.note === 'string' ? body.note : '',
     })
     error = result.error
   } else {
