@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { ArrowRight, BookOpen, Compass, Eye, Heart, LoaderCircle, PenLine, Search, Smartphone, Sparkles, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/shared/empty-state'
@@ -55,14 +56,32 @@ function TrendingSection({ go }: { go: (route: Route) => void }) {
         <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {entries.map((entry, index) => (
             <li key={entry.entity_id}>
-              <Link href={`/works/${encodeURIComponent(entry.entity_id)}`} className="block h-full rounded-2xl border border-border bg-card p-4 transition hover:-translate-y-0.5 hover:border-accent/50">
-                <span className="text-xs font-bold uppercase tracking-wider text-accent">#{index + 1} · {entry.work_type === 'comic' ? 'Comic' : 'Story'}</span>
-                <span className="mt-2 block line-clamp-2 font-serif text-lg font-bold">{entry.title}</span>
-                <span className="mt-1 block truncate text-xs text-muted-foreground">by {entry.creator_name}</span>
-                <span className="mt-4 flex items-center gap-3 text-xs text-muted-foreground">
-                  <span className="inline-flex items-center gap-1"><Eye className="size-3.5" aria-hidden="true" />{entry.view_count.toLocaleString()}</span>
-                  <span className="inline-flex items-center gap-1"><Heart className="size-3.5" aria-hidden="true" />{entry.like_count.toLocaleString()}</span>
-                  <span className="ml-auto font-bold text-foreground">{entry.view_count.toLocaleString()} views</span>
+              <Link href={`/works/${encodeURIComponent(entry.entity_id)}`} className="group flex h-full min-h-36 gap-3 rounded-2xl border border-border bg-card p-3 transition hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:p-4">
+                <span className="relative h-32 w-[5.25rem] shrink-0 overflow-hidden rounded-xl bg-secondary text-accent">
+                  {entry.cover_image_url ? (
+                    <Image
+                      src={entry.cover_image_url}
+                      alt=""
+                      fill
+                      sizes="84px"
+                      className="object-cover transition-transform duration-300 group-hover:scale-105 motion-reduce:transition-none"
+                      unoptimized
+                    />
+                  ) : (
+                    <span className="flex size-full items-center justify-center" aria-hidden="true">
+                      <BookOpen className="size-7" />
+                    </span>
+                  )}
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="text-xs font-bold uppercase tracking-wider text-accent">#{index + 1} · {entry.work_type === 'comic' ? 'Comic' : 'Story'}</span>
+                  <span className="mt-2 line-clamp-2 font-serif text-lg font-bold leading-tight">{entry.title}</span>
+                  <span className="mt-1 truncate text-xs text-muted-foreground">by {entry.creator_name}</span>
+                  <span className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 pt-3 text-xs text-muted-foreground">
+                    <span className="inline-flex items-center gap-1"><Eye className="size-3.5" aria-hidden="true" />{entry.view_count.toLocaleString()}</span>
+                    <span className="inline-flex items-center gap-1"><Heart className="size-3.5" aria-hidden="true" />{entry.like_count.toLocaleString()}</span>
+                    <span className="ml-auto font-bold text-foreground">{entry.view_count.toLocaleString()} views</span>
+                  </span>
                 </span>
               </Link>
             </li>
