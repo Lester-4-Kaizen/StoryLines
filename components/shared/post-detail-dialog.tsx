@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import { X } from 'lucide-react'
 import { ProfileAvatar } from '@/components/shared/profile-avatar'
+import { PostContent } from '@/components/shared/post-content'
 
 export function PostDetailDialog({
   author,
@@ -60,13 +61,13 @@ export function PostDetailDialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[55] flex items-center justify-center bg-black/65 p-3 sm:p-6"
+      className="fixed inset-0 z-55 flex items-center justify-center bg-black/65 p-3 sm:p-6"
       onPointerDown={(event) => {
         event.stopPropagation()
-        if (!dialogRef.current?.contains(event.target as Node)) onClose()
       }}
       onClick={(event) => {
         event.stopPropagation()
+        if (event.target === event.currentTarget) onClose()
       }}
     >
       <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="post-detail-title" onKeyDown={handleKeyDown} className="flex max-h-[min(92dvh,54rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl md:flex-row">
@@ -99,7 +100,7 @@ export function PostDetailDialog({
             </button>
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            <p className="whitespace-pre-wrap break-words text-sm leading-6">{content}</p>
+            <PostContent content={content} className="whitespace-pre-wrap wrap-break-word text-sm leading-6" />
             {tags.length > 0 && (
               <ul className="mt-4 flex flex-wrap gap-2" aria-label="Post tags">
                 {tags.map((tag) => <li key={tag} className="rounded-full bg-secondary px-3 py-1.5 text-xs text-secondary-foreground">#{tag}</li>)}

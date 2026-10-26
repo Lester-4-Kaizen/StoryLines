@@ -85,6 +85,12 @@ export type Post = {
   imageUrls?: string[]
   tags?: string[]
   lookingFor?: string[]
+  attachedWork?: {
+    id: string
+    title: string
+    type: 'story' | 'comic'
+    coverImageUrl: string | null
+  }
   createdAt: number
   likes: number
   likedByMe: boolean

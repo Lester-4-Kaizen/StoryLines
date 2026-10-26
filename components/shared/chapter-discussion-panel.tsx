@@ -257,6 +257,7 @@ export function ChapterDiscussionPanel({
             onReaction={toggleReaction}
             onDelete={deleteComment}
             onLoginRequired={login}
+            reportTargetType="chapter_comment"
           />
         )}
       </div>

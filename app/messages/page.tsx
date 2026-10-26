@@ -3,7 +3,7 @@ import { MessagesView } from '@/components/views/messages-view'
 
 export default function Page() {
   return (
-    <Suspense fallback={<div className="mx-auto h-[60vh] w-full max-w-6xl animate-pulse rounded-2xl bg-secondary/50" aria-label="Loading messages" />}>
+    <Suspense fallback={<div className="h-full min-h-0 w-full animate-pulse bg-card" aria-label="Loading messages" />}>
       <MessagesView />
     </Suspense>
   )

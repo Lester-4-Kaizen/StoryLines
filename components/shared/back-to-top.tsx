@@ -1,8 +1,12 @@
 'use client'
 
 import { ArrowUp } from 'lucide-react'
+import { usePathname } from 'next/navigation'
 
 export function BackToTop() {
+  const pathname = usePathname()
+  if (pathname === '/messages') return null
+
   return (
     <button
       type="button"

@@ -5,6 +5,8 @@ import { useState, type FormEvent } from 'react'
 import { Bookmark, Check, Heart, MessageCircle, MoreHorizontal, PenLine, Share2, Trash2, X } from 'lucide-react'
 import { isSupabaseStorageImage } from '@/lib/is-supabase-storage-image'
 import { getSupabaseClient } from '@/lib/supabase'
+import { getErrorMessage } from '@/lib/error-message'
+import { ContentReportMenuItem } from '@/components/shared/content-report-menu-item'
 import { CommunityCommentThread } from '@/components/shared/community-comment-thread'
 import { PostDetailDialog } from '@/components/shared/post-detail-dialog'
 import { ProfileAvatar } from '@/components/shared/profile-avatar'
@@ -76,6 +78,7 @@ export function ProfilePostCard({
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [hidden, setHidden] = useState(false)
 
   const loadComments = async () => {
     setCommentsLoading(true)
@@ -135,7 +138,7 @@ export function ProfilePostCard({
         }
       }))
     } catch (error) {
-      setCommentError(error instanceof Error ? error.message : 'Hindi ma-load ang comments. Subukan ulit.')
+      setCommentError(getErrorMessage(error, 'Hindi ma-load ang comments. Subukan ulit.'))
     } finally {
       setCommentsLoading(false)
     }
@@ -197,7 +200,7 @@ export function ProfilePostCard({
       setCommentDraft('')
       setReplyTarget(null)
     } catch (error) {
-      setCommentError(error instanceof Error ? error.message : 'Hindi naipadala ang comment. Subukan ulit.')
+      setCommentError(getErrorMessage(error, 'Hindi naipadala ang comment. Subukan ulit.'))
     } finally {
       setCommentSending(false)
     }
@@ -222,6 +225,24 @@ export function ProfilePostCard({
       if (error) throw error
     }
     await loadComments()
+  }
+
+  const editComment = async (comment: CommunityComment, content: string) => {
+    if (!currentUserId) throw new Error('Mag-log in para mag-edit ng comment.')
+    const trimmedContent = content.trim()
+    if (!trimmedContent || trimmedContent.length > 500) {
+      throw new Error('A comment must be between 1 and 500 characters.')
+    }
+    const { data, error } = await getSupabaseClient()
+      .from('community_post_comments')
+      .update({ content: trimmedContent })
+      .eq('id', comment.id)
+      .eq('author_id', currentUserId)
+      .select('id')
+      .maybeSingle()
+    if (error) throw error
+    if (!data) throw new Error('Hindi ma-edit ang comment na ito. Ikaw lang ang makakapag-edit ng sarili mong comment.')
+    setComments((items) => items.map((item) => item.id === comment.id ? { ...item, content: trimmedContent } : item))
   }
 
   const runAction = async (action: () => Promise<void>) => {
@@ -279,6 +300,8 @@ export function ProfilePostCard({
     }
   }
 
+  if (hidden) return null
+
   return (
     <article
       id={`post-${post.id}`}
@@ -303,7 +326,7 @@ export function ProfilePostCard({
           <h3 className="truncate text-sm font-bold">{displayName}</h3>
           <p className="truncate text-xs text-muted-foreground">@{username} · {timeAgo(post.createdAt)}</p>
         </div>
-        {isOwnPost ? (
+        {!editing && (isOwnPost || (post.authorId && post.authorId !== currentUserId)) ? (
           <details className="group relative shrink-0">
             <summary
               className="community-icon-button list-none"
@@ -312,8 +335,8 @@ export function ProfilePostCard({
             >
               <MoreHorizontal className="size-4" />
             </summary>
-            <div role="menu" aria-label="Post actions" className="absolute right-0 z-20 mt-1 w-48 rounded-xl border border-border bg-card p-1 shadow-lg">
-              <button
+            <div role="menu" aria-label="Post actions" className="absolute right-0 z-20 mt-1 min-w-48 rounded-xl border border-border bg-card p-1 shadow-lg">
+              {isOwnPost && <button
                 type="button"
                 role="menuitem"
                 className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold hover:bg-secondary"
@@ -325,8 +348,8 @@ export function ProfilePostCard({
                 }}
               >
                 <PenLine className="size-4" /> Edit post
-              </button>
-              <button
+              </button>}
+              {isOwnPost && <button
                 type="button"
                 role="menuitem"
                 className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-destructive hover:bg-destructive/10"
@@ -336,7 +359,19 @@ export function ProfilePostCard({
                 }}
               >
                 <Trash2 className="size-4" /> Delete post
-              </button>
+              </button>}
+              {post.authorId && (
+                <ContentReportMenuItem
+                  targetType="post"
+                  targetId={post.id}
+                  reportedUserId={post.authorId}
+                  reportedName={displayName}
+                  reportedUsername={username}
+                  currentUserId={currentUserId}
+                  contentLabel="post"
+                  onHide={() => setHidden(true)}
+                />
+              )}
             </div>
           </details>
         ) : (
@@ -457,7 +492,7 @@ export function ProfilePostCard({
             {deleteError && <p role="alert" className="mt-3 text-sm text-destructive">{deleteError}</p>}
             <div className="mt-5 flex justify-end gap-2">
               <button type="button" className="min-h-11 rounded-xl border border-border px-4 text-sm font-semibold hover:bg-secondary" onClick={() => setConfirmDelete(false)} disabled={deleting}>Cancel</button>
-              <button type="button" className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-destructive px-4 text-sm font-bold text-white disabled:opacity-50" onClick={() => void deletePost()} disabled={deleting}>
+              <button type="button" className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-destructive px-4 text-sm font-bold text-destructive-foreground disabled:opacity-50" onClick={() => void deletePost()} disabled={deleting}>
                 <Trash2 className="size-4" /> {deleting ? 'Deleting…' : 'Delete post'}
               </button>
             </div>
@@ -483,6 +518,7 @@ export function ProfilePostCard({
                 requestAnimationFrame(() => document.getElementById(`comment-${post.id}`)?.focus())
               }}
               onReaction={toggleCommentReaction}
+              onEdit={editComment}
               onLoginRequired={() => onLoginRequired('mag-react sa comment')}
             />
           )}

@@ -16,10 +16,8 @@ type AppState = {
   creator: boolean
   isLoggedIn: boolean
   hydrated: boolean
-  mobileNav: boolean
   upgradeOpen: boolean
   notice: string | null
-  setMobileNav: (value: boolean) => void
   setUpgradeOpen: (value: boolean) => void
   setThemeMode: (mode: 'light' | 'dark') => void
   changeRole: (role: Badge) => Promise<void>
@@ -57,7 +55,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<Badge>('reader')
   const [themeMode, setThemeModeState] = useState<'light' | 'dark'>('light')
   const [hydrated, setHydrated] = useState(false)
-  const [mobileNav, setMobileNav] = useState(false)
   const [upgradeOpen, setUpgradeOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const creator = badges.includes('writer') || badges.includes('artist')
@@ -137,13 +134,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const go = (route: Route) => {
     router.push(route)
-    setMobileNav(false)
   }
 
   const requireAuth = (next: Route) => {
     const destination = `${next}${typeof window !== 'undefined' ? window.location.search : ''}`
     router.push(`/login?next=${encodeURIComponent(destination)}`)
-    setMobileNav(false)
   }
 
   const toggleBadge = async (badge: Badge) => {
@@ -244,10 +239,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         creator,
         isLoggedIn: user !== null,
         hydrated,
-        mobileNav,
         upgradeOpen,
         notice,
-        setMobileNav,
         setUpgradeOpen,
         setThemeMode,
         changeRole,

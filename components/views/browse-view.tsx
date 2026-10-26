@@ -4,8 +4,9 @@ import Image from 'next/image'
 import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Bookmark, BookOpen, Brush, Eye, Heart, LoaderCircle, MessageCircle, Search, UsersRound } from 'lucide-react'
+import { Bookmark, BookOpen, Brush, Eye, Heart, LoaderCircle, MessageCircle, MoreHorizontal, Search, UsersRound } from 'lucide-react'
 import { EmptyState } from '@/components/shared/empty-state'
+import { ContentReportMenuItem } from '@/components/shared/content-report-menu-item'
 import { Button } from '@/components/ui/button'
 import { getSupabaseClient } from '@/lib/supabase'
 import { useAppState } from '@/lib/app-state'
@@ -51,12 +52,14 @@ function AuthorCard({
   following,
   pending,
   ownProfile,
+  currentUserId,
   onFollow,
 }: {
   creator: BrowseCreator
   following: boolean
   pending: boolean
   ownProfile: boolean
+  currentUserId: string | null
   onFollow: (creator: BrowseCreator) => void
 }) {
   const roles = roleLabels(creator.roles)
@@ -71,6 +74,24 @@ function AuthorCard({
           <h2 className="truncate font-serif text-lg font-bold">{creator.displayName}</h2>
           <p className="truncate text-xs text-muted-foreground">@{creator.username}</p>
         </div>
+        {!ownProfile && (
+          <details className="group relative ml-auto shrink-0">
+            <summary className="inline-flex size-11 cursor-pointer list-none items-center justify-center rounded-full border border-border hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring" aria-label="Profile actions">
+              <MoreHorizontal className="size-5" />
+            </summary>
+            <div role="menu" aria-label="Profile actions" className="absolute right-0 z-20 mt-1 min-w-48 rounded-xl border border-border bg-card p-1 shadow-lg">
+              <ContentReportMenuItem
+                targetType="profile"
+                targetId={creator.id}
+                reportedUserId={creator.id}
+                reportedName={creator.displayName}
+                reportedUsername={creator.username}
+                currentUserId={currentUserId}
+                contentLabel="profile"
+              />
+            </div>
+          </details>
+        )}
       </div>
       <div className="mt-3 flex flex-wrap gap-1.5">
         {roles.map((role) => <span key={role} className="rounded-full bg-secondary px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide">{role}</span>)}
@@ -118,16 +139,35 @@ function WorkCard({
   index,
   saved,
   pending,
+  currentUserId,
   onSave,
 }: {
   work: Work
   index: number
   saved: boolean
   pending: boolean
+  currentUserId: string | null
   onSave: (workId: string) => void
 }) {
   return (
-    <article className="group flex h-full min-w-0 flex-col">
+    <article className="group relative flex h-full min-w-0 flex-col">
+      {currentUserId !== work.authorId && (
+        <details className="group/actions absolute right-2 top-2 z-10">
+          <summary className="inline-flex size-11 cursor-pointer list-none items-center justify-center rounded-full border border-border bg-card/95 shadow-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring" aria-label={`${work.type === 'comic' ? 'Comic' : 'Story'} actions`}>
+            <MoreHorizontal className="size-5" />
+          </summary>
+          <div role="menu" aria-label={`${work.type === 'comic' ? 'Comic' : 'Story'} actions`} className="absolute right-0 z-20 mt-1 min-w-48 rounded-xl border border-border bg-card p-1 shadow-lg">
+            <ContentReportMenuItem
+              targetType="work"
+              targetId={work.id}
+              reportedUserId={work.authorId}
+              reportedName={work.authorName ?? 'StoryLines creator'}
+              currentUserId={currentUserId}
+              contentLabel={work.type === 'comic' ? 'comic' : 'story'}
+            />
+          </div>
+        </details>
+      )}
       <Link href={`/works/${work.id}`} className="flex flex-1 flex-col rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent">
         <div className={`relative aspect-[.72] overflow-hidden rounded-2xl ${WORK_COLORS[index % WORK_COLORS.length]}`}>
           {work.coverImageUrl ? (
@@ -215,11 +255,16 @@ export function BrowseView({ initialData }: { initialData: BrowsePageData }) {
   const searchParams = useSearchParams()
   const { isLoggedIn, hydrated: authHydrated, requireAuth } = useAppState()
   const urlQuery = searchParams.get('search') ?? ''
+  const urlTab = searchParams.get('tab')
   const normalizedQuery = urlQuery.trim().toLocaleLowerCase()
 
   useEffect(() => {
     setQuery(urlQuery)
   }, [urlQuery])
+
+  useEffect(() => {
+    if (urlTab === 'Authors') setTab('Authors')
+  }, [urlTab])
 
   useEffect(() => {
     setWorks(initialData.works)
@@ -626,6 +671,7 @@ export function BrowseView({ initialData }: { initialData: BrowsePageData }) {
                   following={followingCreatorIds.includes(creator.id)}
                   pending={followingCreatorId === creator.id}
                   ownProfile={currentUserId === creator.id}
+                  currentUserId={currentUserId}
                   onFollow={(selected) => void toggleFollow(selected)}
                 />
               ))}
@@ -705,6 +751,7 @@ export function BrowseView({ initialData }: { initialData: BrowsePageData }) {
                   index={index}
                   saved={savedWorkIds.includes(work.id)}
                   pending={savingWorkId === work.id}
+                  currentUserId={currentUserId}
                   onSave={(workId) => void toggleSavedWork(workId)}
                 />
               ))}

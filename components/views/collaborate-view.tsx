@@ -486,12 +486,12 @@ export function CollaborateView({
           </section>
 
           <aside className="space-y-4">
-            <div className="rounded-[1.35rem] border border-border bg-[#f3eae2] p-5 shadow-[0_3px_0_rgba(89,59,40,0.08)]">
-              <h2 className="font-serif text-[2rem] leading-none text-[#3c261a]">May proyektong kailangan ng ka-partner?</h2>
-              <p className="mt-3 text-sm leading-6 text-[#4a3328]">
+            <div className="rounded-[1.35rem] border border-border bg-card p-5 shadow-[0_3px_0_rgba(89,59,40,0.08)]">
+              <h2 className="font-serif text-[2rem] leading-none text-foreground">May proyektong kailangan ng ka-partner?</h2>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">
                 Mag-post ng request para makita ng ibang creator at makatanggap ng proposals.
               </p>
-              <Button onClick={() => openDialog({ kind: 'listing' })} className="mt-5 w-full rounded-full bg-[#4b2d1d] text-sm font-bold text-[#f5eee7] hover:bg-[#3d2419]">
+              <Button onClick={() => openDialog({ kind: 'listing' })} className="mt-5 w-full rounded-full bg-primary text-sm font-bold text-primary-foreground hover:brightness-95">
                 Mag-post ng request
               </Button>
             </div>

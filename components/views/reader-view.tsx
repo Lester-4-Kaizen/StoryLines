@@ -4,9 +4,10 @@ import Image from 'next/image'
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Bookmark, ChevronLeft, ChevronRight, Eye, Heart, LoaderCircle, MessageCircle } from 'lucide-react'
+import { Bookmark, ChevronLeft, ChevronRight, Eye, Heart, LoaderCircle, MessageCircle, MoreHorizontal } from 'lucide-react'
 import { Panel } from '@/components/shared/panel'
 import { ChapterDiscussionPanel } from '@/components/shared/chapter-discussion-panel'
+import { ContentReportMenuItem } from '@/components/shared/content-report-menu-item'
 import { getSupabaseClient } from '@/lib/supabase'
 import type { ReaderPageData } from '@/lib/reader-data'
 
@@ -50,8 +51,18 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
   }, [data.work?.id, data.currentChapter?.id, initialChapterSelected])
 
   useEffect(() => {
-    window.scrollTo({ top: 0 })
-  }, [data.currentChapter?.id])
+    if (!data.currentChapter || storyTab !== 'read') {
+      window.scrollTo({ top: 0 })
+      return
+    }
+    let frame = window.requestAnimationFrame(() => {
+      frame = window.requestAnimationFrame(() => {
+        const scrollableHeight = document.documentElement.scrollHeight - window.innerHeight
+        window.scrollTo({ top: scrollableHeight * savedScrollProgress, behavior: 'instant' })
+      })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [data.currentChapter?.id, savedScrollProgress, storyTab])
 
   useEffect(() => () => {
     if (discussionPressTimer.current !== null) {
@@ -86,7 +97,7 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
     const userId = data.currentUserId
     const work = data.work
     const chapter = data.currentChapter
-    if (!userId || !work || !chapter || work.type !== 'story' || storyTab !== 'read') return
+    if (!userId || !work || !chapter || work.type !== 'story') return
     let active = true
     const supabase = getSupabaseClient()
     void (async () => {
@@ -121,7 +132,7 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
     return () => {
       active = false
     }
-  }, [data.currentChapter, data.currentUserId, data.work, storyTab])
+  }, [data.currentChapter, data.currentUserId, data.work])
 
   useEffect(() => {
     const userId = data.currentUserId
@@ -280,14 +291,34 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
 
       <Panel className="p-5 sm:p-8">
         <div className="flex flex-col gap-5 border-b border-border pb-5 sm:flex-row">
-          <div className="relative aspect-[3/4] w-full shrink-0 overflow-hidden rounded-xl bg-secondary sm:w-48">
+          <div className="relative aspect-3/4 w-full shrink-0 overflow-hidden rounded-xl bg-secondary sm:w-48">
             {data.work.coverImageUrl
               ? <Image src={data.work.coverImageUrl} alt={`Cover for ${data.work.title}`} fill sizes="(max-width: 640px) 100vw, 192px" className="object-cover" unoptimized />
               : <div className="flex size-full items-center justify-center p-5 text-center text-sm text-muted-foreground">{data.work.type === 'story' ? 'Story cover' : 'Comic cover'}</div>}
           </div>
           <div className="flex min-w-0 flex-1 flex-col items-start">
-            <span className="eyebrow">{data.work.type === 'story' ? 'Story' : 'Comic'} · {data.work.status}</span>
-            <h1 className="mt-2 break-words font-serif text-3xl font-bold sm:text-4xl">{data.work.title}</h1>
+            <div className="flex w-full items-start justify-between gap-3">
+              <span className="eyebrow">{data.work.type === 'story' ? 'Story' : 'Comic'} · {data.work.status}</span>
+              {data.currentUserId !== data.work.authorId && (
+                <details className="group relative shrink-0">
+                  <summary className="inline-flex size-11 cursor-pointer list-none items-center justify-center rounded-full border border-border bg-background hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring" aria-label="Work actions">
+                    <MoreHorizontal className="size-5" />
+                  </summary>
+                  <div role="menu" aria-label="Work actions" className="absolute right-0 z-20 mt-1 min-w-48 rounded-xl border border-border bg-card p-1 shadow-lg">
+                    <ContentReportMenuItem
+                      targetType="work"
+                      targetId={data.work.id}
+                      reportedUserId={data.work.authorId}
+                      reportedName={data.work.authorName}
+                      reportedUsername={data.work.authorUsername}
+                      currentUserId={data.currentUserId}
+                      contentLabel={data.work.type === 'comic' ? 'comic' : 'story'}
+                    />
+                  </div>
+                </details>
+              )}
+            </div>
+            <h1 className="mt-2 wrap-break-word font-serif text-3xl font-bold sm:text-4xl">{data.work.title}</h1>
             <Link href={`/profile/${encodeURIComponent(data.work.authorId)}`} className="mt-2 min-h-11 text-sm font-semibold text-accent hover:underline">
               by {data.work.authorName}{data.work.authorUsername ? ` · @${data.work.authorUsername}` : ''}
             </Link>

@@ -6,10 +6,12 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from 'react'
 import {
   BookOpen,
+  Ban,
   Brush,
   Camera,
   ExternalLink,
   MessageCircle,
+  MoreHorizontal,
   Pencil,
   PenLine,
   Share2,
@@ -22,6 +24,7 @@ import { Panel } from '@/components/shared/panel'
 import { ProfileAvatar } from '@/components/shared/profile-avatar'
 import { ProfilePostCard } from '@/components/profile/profile-post-card'
 import { ProfileConnectionsDialog } from '@/components/profile/profile-connections-dialog'
+import { ContentReportMenuItem } from '@/components/shared/content-report-menu-item'
 import { ShareLinkDialog } from '@/components/shared/share-link-dialog'
 import { isSupabaseStorageImage } from '@/lib/is-supabase-storage-image'
 import { getSupabaseClient } from '@/lib/supabase'
@@ -111,6 +114,8 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
   const [profileError, setProfileError] = useState<string | null>(null)
   const [profileFieldErrors, setProfileFieldErrors] = useState<ProfileFieldErrors>({})
   const [followPending, setFollowPending] = useState(false)
+  const [profileBlocked, setProfileBlocked] = useState(false)
+  const [profileBlockPending, setProfileBlockPending] = useState(false)
   const [collaborationPending, setCollaborationPending] = useState(false)
   const [guestPrompt, setGuestPrompt] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -160,6 +165,31 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
       collaborationRoles: initialData.profile?.collaborationRoles.join(', ') ?? '',
     })
   }, [initialData])
+
+  useEffect(() => {
+    const currentUserId = initialData.currentUserId
+    const profileId = initialData.profile?.id
+    if (!currentUserId || !profileId || currentUserId === profileId) {
+      setProfileBlocked(false)
+      return
+    }
+    let active = true
+    void (async () => {
+      const { data: control, error } = await getSupabaseClient()
+        .from('community_message_account_controls')
+        .select('status')
+        .eq('owner_id', currentUserId)
+        .eq('account_id', profileId)
+        .maybeSingle()
+      if (error) throw error
+      if (active) setProfileBlocked(control?.status === 'blocked')
+    })().catch((error: unknown) => {
+      if (active) setActionError(error instanceof Error ? error.message : 'Could not load account controls.')
+    })
+    return () => {
+      active = false
+    }
+  }, [initialData.currentUserId, initialData.profile?.id])
 
   useEffect(() => {
     if (!pendingAvatar) {
@@ -332,6 +362,30 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
       setActionError(error instanceof Error ? error.message : 'Hindi ma-update ang follow status. Subukan ulit.')
     } finally {
       setFollowPending(false)
+    }
+  }
+
+  const toggleProfileBlock = async () => {
+    if (profileBlockPending) return
+    if (!data.currentUserId) {
+      askForLogin('Block this account')
+      return
+    }
+    setProfileBlockPending(true)
+    setActionError(null)
+    try {
+      const nextBlocked = !profileBlocked
+      const { error } = await getSupabaseClient().rpc('set_community_message_account_control', {
+        p_account_id: profile.id,
+        p_status: nextBlocked ? 'blocked' : 'none',
+      })
+      if (error) throw error
+      setProfileBlocked(nextBlocked)
+      setNotice(nextBlocked ? `Blocked @${profile.username}.` : `Unblocked @${profile.username}.`)
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Could not update this account’s block status.')
+    } finally {
+      setProfileBlockPending(false)
     }
   }
 
@@ -978,6 +1032,37 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
             <Button type="button" variant="outline" className="min-h-11 rounded-full" onClick={() => setShareOpen(true)}>
               <Share2 className="size-4" /> Share profile
             </Button>
+            {!ownProfile && (
+              <details className="group relative">
+                <summary className="inline-flex size-11 cursor-pointer list-none items-center justify-center rounded-full border border-border bg-background hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring" aria-label="Profile actions">
+                  <MoreHorizontal className="size-5" />
+                </summary>
+                <div role="menu" aria-label="Profile actions" className="absolute right-0 z-20 mt-1 min-w-48 rounded-xl border border-border bg-card p-1 shadow-lg">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={profileBlockPending}
+                    onClick={(event) => {
+                      event.currentTarget.closest('details')?.removeAttribute('open')
+                      void toggleProfileBlock()
+                    }}
+                    className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-destructive hover:bg-destructive/10 disabled:opacity-60"
+                  >
+                    <Ban className="size-4" aria-hidden="true" />
+                    {profileBlockPending ? 'Saving…' : profileBlocked ? `Unblock @${profile.username}` : `Block @${profile.username}`}
+                  </button>
+                  <ContentReportMenuItem
+                    targetType="profile"
+                    targetId={profile.id}
+                    reportedUserId={profile.id}
+                    reportedName={profile.displayName}
+                    reportedUsername={profile.username}
+                    currentUserId={data.currentUserId}
+                    contentLabel="profile"
+                  />
+                </div>
+              </details>
+            )}
           </div>
         </div>
         <div className="grid grid-cols-4 border-t border-border px-1 py-1 sm:px-3">
@@ -1393,7 +1478,25 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2">
                   {visibleWorks.map((work) => (
-                    <article key={work.id} className="overflow-hidden rounded-2xl border border-border bg-card">
+                    <article key={work.id} className="relative overflow-hidden rounded-2xl border border-border bg-card">
+                      {!ownProfile && (
+                        <details className="group absolute right-3 top-3 z-10">
+                          <summary className="inline-flex size-11 cursor-pointer list-none items-center justify-center rounded-full border border-border bg-card/95 shadow-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring" aria-label="Work actions">
+                            <MoreHorizontal className="size-5" />
+                          </summary>
+                          <div role="menu" aria-label="Work actions" className="absolute right-0 z-20 mt-1 min-w-48 rounded-xl border border-border bg-card p-1 shadow-lg">
+                            <ContentReportMenuItem
+                              targetType="work"
+                              targetId={work.id}
+                              reportedUserId={profile.id}
+                              reportedName={profile.displayName}
+                              reportedUsername={profile.username}
+                              currentUserId={data.currentUserId}
+                              contentLabel={work.type === 'comic' ? 'comic' : work.type === 'art' ? 'work' : 'story'}
+                            />
+                          </div>
+                        </details>
+                      )}
                       <div className="relative aspect-[16/9] bg-secondary">
                         {work.coverImageUrl ? (
                           <Image src={work.coverImageUrl} alt={`Cover for ${work.title}`} fill loading="lazy" sizes="(max-width: 640px) 100vw, 50vw" className="object-cover" unoptimized={!isSupabaseStorageImage(work.coverImageUrl)} />

@@ -3,8 +3,9 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Check, Moon, Sun } from 'lucide-react'
+import { Ban, Check, Moon, Sun } from 'lucide-react'
 import { Panel } from '@/components/shared/panel'
+import { PwaInstallPanel } from '@/components/shared/pwa-install-panel'
 import { getSupabaseClient } from '@/lib/supabase'
 import type { Badge } from '@/lib/types'
 
@@ -74,6 +75,10 @@ export function SettingsView({
   refreshSession: () => Promise<void>
 }) {
   const router = useRouter()
+  const [blockedAccounts, setBlockedAccounts] = useState<Array<{ id: string; displayName: string; username: string }>>([])
+  const [blockedLoading, setBlockedLoading] = useState(false)
+  const [blockedError, setBlockedError] = useState<string | null>(null)
+  const [unblockingAccountId, setUnblockingAccountId] = useState<string | null>(null)
   const [draftBadges, setDraftBadges] = useState(badges)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -93,6 +98,75 @@ export function SettingsView({
   useEffect(() => {
     setDraftBadges(badges)
   }, [badges])
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setBlockedAccounts([])
+      setBlockedError(null)
+      return
+    }
+    let active = true
+    setBlockedLoading(true)
+    setBlockedError(null)
+    void (async () => {
+      const supabase = getSupabaseClient()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError) throw userError
+      if (!user) {
+        if (active) setBlockedAccounts([])
+        return
+      }
+      const { data: controlRows, error: controlsError } = await supabase
+        .from('community_message_account_controls')
+        .select('account_id')
+        .eq('owner_id', user.id)
+        .eq('status', 'blocked')
+        .order('created_at', { ascending: false })
+        .limit(500)
+      if (controlsError) throw controlsError
+      const accountIds = (controlRows ?? []).map((row) => row.account_id)
+      if (!accountIds.length) {
+        if (active) setBlockedAccounts([])
+        return
+      }
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, display_name, username')
+        .in('id', accountIds)
+      if (profilesError) throw profilesError
+      const profileById = new Map((profiles ?? []).map((profile) => [profile.id, profile]))
+      if (active) {
+        setBlockedAccounts(accountIds.flatMap((id) => {
+          const profile = profileById.get(id)
+          return profile ? [{ id, displayName: profile.display_name, username: profile.username }] : []
+        }))
+      }
+    })().catch((error: unknown) => {
+      if (active) setBlockedError(error instanceof Error ? error.message : 'Could not load blocked accounts.')
+    }).finally(() => {
+      if (active) setBlockedLoading(false)
+    })
+    return () => {
+      active = false
+    }
+  }, [isLoggedIn])
+
+  const unblockAccount = async (accountId: string) => {
+    setUnblockingAccountId(accountId)
+    setBlockedError(null)
+    try {
+      const { error } = await getSupabaseClient().rpc('set_community_message_account_control', {
+        p_account_id: accountId,
+        p_status: 'none',
+      })
+      if (error) throw error
+      setBlockedAccounts((current) => current.filter((account) => account.id !== accountId))
+    } catch (error) {
+      setBlockedError(error instanceof Error ? error.message : 'Could not unblock this account.')
+    } finally {
+      setUnblockingAccountId(null)
+    }
+  }
 
   const toggleDraftBadge = (badge: Badge) => {
     setDraftBadges((current) => {
@@ -235,6 +309,11 @@ export function SettingsView({
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
               Puwede kang pumili ng higit sa isang role. Ikaw ang bahala kung paano sasali. Switch any badge on or off at any time.
             </p>
+            {isLoggedIn && (
+              <a href="#blocked-accounts" className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-accent hover:underline">
+                <Ban className="size-4" aria-hidden="true" /> Manage blocked accounts
+              </a>
+            )}
             <div className="mt-5 border-t border-border">
               <div className="flex items-center gap-4 border-b border-border py-4">
                 <div className="min-w-0 flex-1">
@@ -309,6 +388,40 @@ export function SettingsView({
             </div>
           </Panel>
 
+          {isLoggedIn && (
+            <div id="blocked-accounts" className="scroll-mt-24">
+              <Panel className="p-5 sm:p-7 lg:p-8">
+                <span className="eyebrow">Privacy and safety</span>
+                <h2 className="mt-2 font-serif text-2xl font-bold">Blocked accounts</h2>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">Blocked accounts can’t message you. Unblock someone here to restore messaging.</p>
+                {blockedLoading ? (
+                  <p className="mt-4 text-sm text-muted-foreground" role="status">Loading blocked accounts…</p>
+                ) : blockedError ? (
+                  <p className="mt-4 text-sm text-destructive" role="alert">{blockedError}</p>
+                ) : blockedAccounts.length ? (
+                  <ul className="mt-4 divide-y divide-border rounded-xl border border-border">
+                    {blockedAccounts.map((account) => (
+                      <li key={account.id} className="flex min-h-16 items-center gap-3 px-3 py-2 sm:px-4">
+                        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground">
+                          <Ban className="size-4" aria-hidden="true" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-semibold">{account.displayName}</span>
+                          <span className="block truncate text-xs text-muted-foreground">@{account.username}</span>
+                        </span>
+                        <button type="button" onClick={() => void unblockAccount(account.id)} disabled={unblockingAccountId !== null} className="min-h-11 shrink-0 rounded-full border border-border px-4 text-sm font-semibold hover:border-accent hover:text-accent disabled:opacity-60">
+                          {unblockingAccountId === account.id ? 'Unblocking…' : 'Unblock'}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-4 rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">You haven’t blocked any accounts.</p>
+                )}
+              </Panel>
+            </div>
+          )}
+
           <Panel className="p-5 sm:p-7 lg:p-8">
             <span className="eyebrow">Personalize your reading space</span>
             <h2 className="mt-2 font-serif text-2xl font-bold">Theme mode</h2>
@@ -337,6 +450,11 @@ export function SettingsView({
                 {themeMode === 'dark' && <Check className="size-4 text-accent" aria-hidden="true" />}
               </button>
             </div>
+          </Panel>
+
+          <Panel className="p-5 sm:p-7 lg:p-8">
+            <span className="eyebrow">StoryLines on your device</span>
+            <PwaInstallPanel />
           </Panel>
 
           <Panel className="border-border p-5 sm:p-7 lg:p-8">
@@ -470,7 +588,7 @@ export function SettingsView({
                   <button
                     type="submit"
                     disabled={deletePending || deleteConfirmation !== 'DELETE'}
-                    className="min-h-11 rounded-full bg-destructive px-5 text-sm font-bold text-white hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="min-h-11 rounded-full bg-destructive px-5 text-sm font-bold text-destructive-foreground hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {deletePending ? 'Deleting account…' : 'Delete everything'}
                   </button>

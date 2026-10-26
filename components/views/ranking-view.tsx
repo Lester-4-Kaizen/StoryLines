@@ -115,6 +115,9 @@ function RankingCard({
           <span className={`mt-0.5 block truncate text-xs ${rank === 1 ? 'text-primary-foreground/75' : 'text-muted-foreground'}`}>
             {subtitle}
           </span>
+          <span className={`mt-1.5 block truncate text-[10px] ${rank === 1 ? 'text-primary-foreground/75' : 'text-muted-foreground'}`}>
+            {entry.view_count.toLocaleString()} views · {entry.like_count.toLocaleString()} likes
+          </span>
         </span>
       </div>
       <span
@@ -255,6 +258,9 @@ export function RankingView() {
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-bold">{title}</span>
                           <span className="block truncate text-xs text-muted-foreground">{subtitle}</span>
+                          <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
+                            {entry.view_count.toLocaleString()} views · {entry.like_count.toLocaleString()} likes
+                          </span>
                         </span>
                         <span className="shrink-0 text-right">
                           <span className="flex items-center justify-end gap-1 text-base font-bold sm:text-lg">
@@ -272,7 +278,7 @@ export function RankingView() {
             </section>
           )}
           <p className="text-center text-xs text-muted-foreground">
-            Rankings reflect reader engagement. Stories and comics show views; creator rankings show followers.
+            Stories and comics rank by reads. Creators rank by followers; likes break ties.
           </p>
         </>
       ) : (
@@ -281,7 +287,7 @@ export function RankingView() {
             <CategoryIcon className="size-5" aria-hidden="true" />
           </span>
           <p className="flex-1 text-sm leading-6 text-muted-foreground">
-            No published {category.toLowerCase()} are ranked for this period yet. Works will appear here as they get views and likes.
+            No published {category.toLowerCase()} are ranked for this period yet. Creators, stories, and comics appear here as they get views and likes.
           </p>
         </div>
       )}

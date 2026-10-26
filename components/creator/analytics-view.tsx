@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { BookOpen, Eye, FileText, Heart, LoaderCircle, Sparkles, Trophy } from 'lucide-react'
+import { BookOpen, Eye, FileText, Heart, LoaderCircle, Sparkles } from 'lucide-react'
 import { CreatorFrame } from '@/components/shared/creator-frame'
 import { EmptyState } from '@/components/shared/empty-state'
 import { Panel } from '@/components/shared/panel'
@@ -24,7 +24,6 @@ export function AnalyticsView({ go }: { go: (route: Route) => void }) {
   const drafts = works.filter((work) => work.status === 'Draft')
   const totalViews = analytics.reduce((total, work) => total + work.view_count, 0)
   const totalLikes = analytics.reduce((total, work) => total + work.like_count, 0)
-  const totalPoints = analytics.reduce((total, work) => total + work.score, 0)
   const maxViews = useMemo(
     () => analytics.reduce((maximum, work) => Math.max(maximum, work.view_count), 0),
     [analytics],
@@ -57,7 +56,6 @@ export function AnalyticsView({ go }: { go: (route: Route) => void }) {
     { label: 'Published works', value: published.length, icon: <BookOpen aria-hidden="true" />, ready: hydrated },
     { label: 'Drafts', value: drafts.length, icon: <FileText aria-hidden="true" />, ready: hydrated },
     { label: `Reads · ${period}`, value: totalViews, icon: <Eye aria-hidden="true" />, ready: !analyticsLoading && !analyticsError },
-    { label: `Ranking points · ${period}`, value: totalPoints, icon: <Trophy aria-hidden="true" />, ready: !analyticsLoading && !analyticsError },
   ]
 
   return (
@@ -114,7 +112,6 @@ export function AnalyticsView({ go }: { go: (route: Route) => void }) {
               Reads per published story or comic · {period.toLowerCase()}
             </p>
           </div>
-          <p className="text-xs text-muted-foreground">Ranking points count 1 per read and 5 per like.</p>
         </div>
 
         {analyticsLoading ? (
@@ -131,7 +128,7 @@ export function AnalyticsView({ go }: { go: (route: Route) => void }) {
             <EmptyState
               icon={<Sparkles />}
               title="No published stories or comics yet"
-              message="Publish a story or comic to see its reads, likes, and ranking points here."
+              message="Publish a story or comic to see its reads and likes here."
               action="Create a work"
               onAction={() => go('/create/works/new')}
             />
@@ -241,7 +238,6 @@ export function AnalyticsView({ go }: { go: (route: Route) => void }) {
                     </div>
                     <div className="flex items-center gap-4 text-xs text-muted-foreground sm:justify-end">
                       <span className="inline-flex items-center gap-1"><Heart className="size-3.5" aria-hidden="true" />{work.like_count.toLocaleString()}</span>
-                      <span className="whitespace-nowrap font-bold text-foreground">{work.score.toLocaleString()} pts</span>
                     </div>
                   </article>
                 )
@@ -250,7 +246,6 @@ export function AnalyticsView({ go }: { go: (route: Route) => void }) {
             <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 border-t border-border pt-4 text-xs text-muted-foreground">
               <span>Total reads: <strong className="text-foreground">{totalViews.toLocaleString()}</strong></span>
               <span>Total likes: <strong className="text-foreground">{totalLikes.toLocaleString()}</strong></span>
-              <span>Ranking points: <strong className="text-foreground">{totalPoints.toLocaleString()}</strong></span>
             </div>
           </>
         )}

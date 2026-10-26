@@ -1,9 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { MessageSquareReply, Send, Smile, ThumbsDown, ThumbsUp, Trash2, X } from 'lucide-react'
+import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { Check, MessageSquareReply, MoreHorizontal, PenLine, Send, Smile, ThumbsDown, ThumbsUp, Trash2, X } from 'lucide-react'
+import { ContentReportMenuItem, type ReportTargetType } from '@/components/shared/content-report-menu-item'
 import { ProfileAvatar } from '@/components/shared/profile-avatar'
+import { getErrorMessage } from '@/lib/error-message'
 import type { CommunityComment } from '@/lib/types'
 
 function timeAgo(timestamp: number) {
@@ -22,6 +24,7 @@ export function CommunityCommentThread({
   onReply,
   onReaction,
   onDelete,
+  onEdit,
   onLoginRequired,
   replyTargetId,
   replyTargetName,
@@ -30,6 +33,7 @@ export function CommunityCommentThread({
   onReplySubmit,
   onReplyCancel,
   replySubmitting = false,
+  reportTargetType = 'comment',
 }: {
   comments: CommunityComment[]
   currentUserId: string | null
@@ -37,6 +41,7 @@ export function CommunityCommentThread({
   onReply: (comment: CommunityComment) => void
   onReaction: (comment: CommunityComment, reaction: 'like' | 'dislike') => Promise<void>
   onDelete?: (comment: CommunityComment) => Promise<void>
+  onEdit?: (comment: CommunityComment, content: string) => Promise<void>
   onLoginRequired: () => void
   replyTargetId?: string | null
   replyTargetName?: string
@@ -45,12 +50,18 @@ export function CommunityCommentThread({
   onReplySubmit?: (event: React.FormEvent<HTMLFormElement>) => void
   onReplyCancel?: () => void
   replySubmitting?: boolean
+  reportTargetType?: Extract<ReportTargetType, 'comment' | 'chapter_comment'>
 }) {
   const [expandedReplies, setExpandedReplies] = useState<string[]>([])
   const [pendingReactions, setPendingReactions] = useState<string[]>([])
   const [reactionOverrides, setReactionOverrides] = useState<Record<string, Pick<CommunityComment, 'likes' | 'dislikes' | 'myReaction'>>>({})
   const [reactionError, setReactionError] = useState<string | null>(null)
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null)
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState('')
+  const [editError, setEditError] = useState<string | null>(null)
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [hiddenComments, setHiddenComments] = useState<Set<string>>(new Set())
   const roots = comments.filter((comment) => !comment.parentCommentId)
   const repliesByParent = new Map<string, CommunityComment[]>()
   for (const comment of comments) {
@@ -71,6 +82,28 @@ export function CommunityCommentThread({
     ) return
     event.preventDefault()
     event.currentTarget.form?.requestSubmit()
+  }
+
+  const saveCommentEdit = async (event: FormEvent<HTMLFormElement>, comment: CommunityComment) => {
+    event.preventDefault()
+    const content = editDraft.trim()
+    if (!content || content.length > 500) {
+      setEditError('A comment must be between 1 and 500 characters.')
+      return
+    }
+    if (!onEdit) return
+
+    setSavingEdit(true)
+    setEditError(null)
+    try {
+      await onEdit(comment, content)
+      setEditingCommentId(null)
+      setEditDraft('')
+    } catch (error) {
+      setEditError(getErrorMessage(error, 'Could not edit this comment.'))
+    } finally {
+      setSavingEdit(false)
+    }
   }
 
   const toggleReaction = async (comment: CommunityComment, reaction: 'like' | 'dislike') => {
@@ -106,6 +139,7 @@ export function CommunityCommentThread({
   }
 
   const renderComment = (comment: CommunityComment, nested = false) => {
+    if (hiddenComments.has(comment.id)) return null
     const displayComment = { ...comment, ...reactionOverrides[comment.id] }
     const replies = repliesByParent.get(comment.id) ?? []
     const repliesExpanded = expandedReplies.includes(comment.id)
@@ -123,7 +157,32 @@ export function CommunityCommentThread({
               {comment.authorUsername && <span className="text-[11px] text-muted-foreground">@{comment.authorUsername}</span>}
               <time className="text-[11px] text-muted-foreground" dateTime={new Date(comment.createdAt).toISOString()}>{timeAgo(comment.createdAt)}</time>
             </div>
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-5">{comment.content}</p>
+            {editingCommentId === comment.id ? (
+              <form onSubmit={(event) => void saveCommentEdit(event, comment)} className="mt-2 min-w-56 space-y-2">
+                <label className="sr-only" htmlFor={`edit-comment-${comment.id}`}>Edit your comment</label>
+                <textarea
+                  id={`edit-comment-${comment.id}`}
+                  autoFocus
+                  value={editDraft}
+                  onChange={(event) => setEditDraft(event.target.value)}
+                  maxLength={500}
+                  rows={3}
+                  disabled={savingEdit}
+                  className="w-full resize-y rounded-lg border border-input bg-background px-2.5 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                />
+                {editError && <p role="alert" className="text-xs text-destructive">{editError}</p>}
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => { setEditingCommentId(null); setEditError(null) }} disabled={savingEdit} className="inline-flex min-h-8 items-center gap-1 rounded-full px-2.5 text-xs font-semibold text-muted-foreground hover:bg-secondary disabled:opacity-50">
+                    <X className="size-3.5" /> Cancel
+                  </button>
+                  <button type="submit" disabled={savingEdit || !editDraft.trim()} className="inline-flex min-h-8 items-center gap-1 rounded-full bg-accent px-3 text-xs font-bold text-accent-foreground disabled:opacity-50">
+                    <Check className="size-3.5" /> {savingEdit ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-5">{comment.content}</p>
+            )}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 px-2 text-[11px] text-muted-foreground">
             <button type="button" aria-pressed={displayComment.myReaction === 'like'} disabled={pendingReactions.includes(comment.id)} onClick={() => void toggleReaction(displayComment, 'like')} className={`inline-flex min-h-8 items-center gap-1 font-semibold hover:text-accent focus-visible:outline-2 focus-visible:outline-ring ${displayComment.myReaction === 'like' ? 'text-accent' : ''}`}>
@@ -144,6 +203,20 @@ export function CommunityCommentThread({
                 <MessageSquareReply className="size-3.5" /> Reply
               </button>
             )}
+            {currentUserId === comment.authorId && onEdit && editingCommentId !== comment.id && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingCommentId(comment.id)
+                  setEditDraft(comment.content)
+                  setEditError(null)
+                }}
+                className="inline-flex min-h-8 items-center gap-1 font-semibold hover:text-accent focus-visible:outline-2 focus-visible:outline-ring"
+                aria-label="Edit your comment"
+              >
+                <PenLine className="size-3.5" /> Edit
+              </button>
+            )}
             {currentUserId === comment.authorId && onDelete && (
               <button
                 type="button"
@@ -159,6 +232,25 @@ export function CommunityCommentThread({
               >
                 <Trash2 className="size-3.5" /> Delete
               </button>
+            )}
+            {currentUserId !== comment.authorId && (
+              <details className="group relative">
+                <summary className="inline-flex size-8 cursor-pointer list-none items-center justify-center rounded-full hover:bg-secondary focus-visible:outline-2 focus-visible:outline-ring" aria-label="Comment actions">
+                  <MoreHorizontal className="size-4" />
+                </summary>
+                <div role="menu" aria-label="Comment actions" className="absolute left-0 z-20 mt-1 min-w-44 rounded-xl border border-border bg-card p-1 shadow-lg">
+                  <ContentReportMenuItem
+                    targetType={reportTargetType}
+                    targetId={comment.id}
+                    reportedUserId={comment.authorId}
+                    reportedName={comment.authorName}
+                    reportedUsername={comment.authorUsername}
+                    currentUserId={currentUserId}
+                    contentLabel="comment"
+                    onHide={() => setHiddenComments((current) => new Set(current).add(comment.id))}
+                  />
+                </div>
+              </details>
             )}
             {!nested && replies.length > 0 && (
               <button type="button" aria-expanded={repliesExpanded} onClick={() => setExpandedReplies((current) => current.includes(comment.id) ? current.filter((id) => id !== comment.id) : [...current, comment.id])} className="inline-flex min-h-8 items-center gap-1 font-semibold hover:text-accent focus-visible:outline-2 focus-visible:outline-ring">

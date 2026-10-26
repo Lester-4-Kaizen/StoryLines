@@ -1,13 +1,19 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import {
+  Ban,
   Bookmark,
   Brush,
   Check,
   Compass,
+  ChevronRight,
+  EyeOff,
+  BellOff,
+  RotateCcw,
   Trash2,
   MoreHorizontal,
   Handshake,
@@ -27,13 +33,17 @@ import { Button } from '@/components/ui/button'
 import { Panel } from '@/components/shared/panel'
 import { CommunityCommentThread } from '@/components/shared/community-comment-thread'
 import { PostDetailDialog } from '@/components/shared/post-detail-dialog'
+import { PostContent } from '@/components/shared/post-content'
 import { ProfileAvatar } from '@/components/shared/profile-avatar'
+import { ContentReportMenuItem } from '@/components/shared/content-report-menu-item'
 import { ShareLinkDialog } from '@/components/shared/share-link-dialog'
 import { useCommunity } from '@/lib/community-store'
+import { getErrorMessage } from '@/lib/error-message'
 import { getSupabaseClient } from '@/lib/supabase'
+import { useWorks } from '@/lib/works-store'
 import type { Badge, CommunityComment, CommunityPostType, Post } from '@/lib/types'
 
-const MAX_POST_LENGTH = 500
+const MAX_POST_LENGTH = 5000
 const MAX_IMAGES = 4
 const MAX_FILE_SIZE = 8 * 1024 * 1024
 const IMAGE_MAX_EDGE = 1280
@@ -149,12 +159,17 @@ function FeedPost({
   onLoadComments,
   onAddComment,
   onCommentReaction,
+  onUpdateComment,
   onProfileClick,
   currentUserId,
   canDelete,
   canEdit,
   onDelete,
   onEdit,
+  mutedAuthor,
+  onHidePost,
+  onToggleMuteAuthor,
+  onBlockAuthor,
 }: {
   post: Post
   onLike: (id: string) => Promise<void>
@@ -165,12 +180,17 @@ function FeedPost({
   onLoadComments: (id: string) => Promise<CommunityComment[]>
   onAddComment: (id: string, content: string, parentCommentId?: string) => Promise<CommunityComment>
   onCommentReaction: (id: string, reaction: 'like' | 'dislike') => Promise<void>
+  onUpdateComment: (id: string, content: string) => Promise<void>
   onProfileClick: (id: string) => void
   currentUserId: string | null
   canDelete: boolean
   canEdit: boolean
   onDelete: (id: string) => Promise<void>
   onEdit: (id: string, content: string) => Promise<void>
+  mutedAuthor: boolean
+  onHidePost: (post: Post) => Promise<void>
+  onToggleMuteAuthor: (authorId: string, muted: boolean) => Promise<void>
+  onBlockAuthor: (authorId: string) => Promise<void>
 }) {
   const router = useRouter()
   const [expanded, setExpanded] = useState(false)
@@ -194,9 +214,14 @@ function FeedPost({
   const [editDraft, setEditDraft] = useState(post.content)
   const [editError, setEditError] = useState<string | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
+  const [hidden, setHidden] = useState(false)
+  const [menuPending, setMenuPending] = useState(false)
+  const [menuError, setMenuError] = useState<string | null>(null)
   const postAuthorId = post.authorId
   const images = post.imageUrls?.length ? post.imageUrls : post.imageUrl ? [post.imageUrl] : []
   const tags = post.tags ?? []
+
+  if (hidden) return null
 
   const shareUrl = typeof window === 'undefined' ? '' : `${window.location.origin}/community#post-${post.id}`
 
@@ -238,7 +263,7 @@ function FeedPost({
       setCommentDraft('')
       setReplyTarget(null)
     } catch (submitError) {
-      setCommentError(submitError instanceof Error ? submitError.message : 'Hindi naipadala ang comment. Subukan ulit.')
+      setCommentError(getErrorMessage(submitError, 'Hindi naipadala ang comment. Subukan ulit.'))
     } finally {
       setCommentSubmitting(false)
     }
@@ -255,6 +280,11 @@ function FeedPost({
     ) return
     event.preventDefault()
     event.currentTarget.form?.requestSubmit()
+  }
+
+  const editComment = async (comment: CommunityComment, content: string) => {
+    await onUpdateComment(comment.id, content)
+    setComments((current) => current.map((item) => item.id === comment.id ? { ...item, content } : item))
   }
 
   const likePost = async () => {
@@ -288,6 +318,23 @@ function FeedPost({
       setSaveError(error instanceof Error ? error.message : 'Hindi ma-save ang post. Subukan ulit.')
     } finally {
       setSavePending(false)
+    }
+  }
+
+  const runMenuAction = async (action: () => Promise<void>, hidePost = false) => {
+    if (!isLoggedIn) {
+      onUnlock()
+      return
+    }
+    setMenuPending(true)
+    setMenuError(null)
+    try {
+      await action()
+      if (hidePost) setHidden(true)
+    } catch (error) {
+      setMenuError(error instanceof Error ? error.message : 'Could not update this post action.')
+    } finally {
+      setMenuPending(false)
     }
   }
 
@@ -362,7 +409,7 @@ function FeedPost({
             )}
           </div>
         </div>
-        {(canEdit || canDelete) && !editing && (
+        {!editing && (
           <details className="group relative">
             <summary
               className="community-icon-button list-none"
@@ -371,7 +418,46 @@ function FeedPost({
             >
               <MoreHorizontal className="size-4" />
             </summary>
-            <div role="menu" aria-label="Post actions" className="absolute right-0 z-20 mt-1 w-48 rounded-xl border border-border bg-card p-1 shadow-lg">
+            <div role="menu" aria-label="Post actions" className="absolute right-0 z-20 mt-1 w-56 rounded-xl border border-border bg-card p-1 shadow-lg">
+              <button
+                type="button"
+                role="menuitem"
+                disabled={menuPending || savePending || !post.authorId}
+                className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold hover:bg-secondary disabled:opacity-50"
+                onClick={(event) => {
+                  event.currentTarget.closest('details')?.removeAttribute('open')
+                  void runMenuAction(() => onSave(post.id))
+                }}
+              >
+                <Bookmark className={`size-4 ${isSaved ? 'fill-current' : ''}`} />
+                {isSaved ? 'Remove from saved' : 'Save'}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={menuPending}
+                className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold hover:bg-secondary disabled:opacity-50"
+                onClick={(event) => {
+                  event.currentTarget.closest('details')?.removeAttribute('open')
+                  void runMenuAction(() => onHidePost(post), true)
+                }}
+              >
+                <EyeOff className="size-4" /> Hide this post
+              </button>
+              {postAuthorId && postAuthorId !== currentUserId && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={menuPending}
+                  className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold hover:bg-secondary disabled:opacity-50"
+                  onClick={(event) => {
+                    event.currentTarget.closest('details')?.removeAttribute('open')
+                    void runMenuAction(() => onToggleMuteAuthor(postAuthorId, !mutedAuthor))
+                  }}
+                >
+                  <BellOff className="size-4" /> {mutedAuthor ? `Unmute @${post.authorUsername ?? 'author'}` : `Mute @${post.authorUsername ?? 'author'}`}
+                </button>
+              )}
               {canEdit && (
                 <button
                   type="button"
@@ -400,10 +486,37 @@ function FeedPost({
                   <Trash2 className="size-4" /> Delete post
                 </button>
               )}
+              {postAuthorId && postAuthorId !== currentUserId && (
+                <ContentReportMenuItem
+                  targetType="post"
+                  targetId={post.id}
+                  reportedUserId={postAuthorId}
+                  reportedName={post.authorName ?? 'StoryLines creator'}
+                  reportedUsername={post.authorUsername}
+                  currentUserId={currentUserId}
+                  contentLabel="post"
+                  onHide={() => setHidden(true)}
+                />
+              )}
+              {postAuthorId && postAuthorId !== currentUserId && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={menuPending}
+                  className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                  onClick={(event) => {
+                    event.currentTarget.closest('details')?.removeAttribute('open')
+                    void runMenuAction(() => onBlockAuthor(postAuthorId), true)
+                  }}
+                >
+                  <Ban className="size-4" /> Block @{post.authorUsername ?? 'author'}
+                </button>
+              )}
             </div>
           </details>
         )}
       </div>
+      {menuError && <p role="alert" className="mt-2 text-xs text-destructive">{menuError}</p>}
 
       {editing ? (
         <form className="mt-4" onSubmit={(event) => void saveEdit(event)}>
@@ -445,13 +558,35 @@ function FeedPost({
         </form>
       ) : (
         <div className="mt-4" onClick={() => setDetailOpen(true)}>
-          <p className={`whitespace-pre-wrap break-words text-sm leading-6 ${!expanded ? 'community-post-copy' : ''}`}>{post.content}</p>
+          <PostContent content={post.content} className={`whitespace-pre-wrap wrap-break-word text-sm leading-6 ${!expanded ? 'community-post-copy' : ''}`} />
           {post.content.length > 260 && (
             <button type="button" className="mt-1 text-xs font-bold text-accent hover:underline" onClick={() => setExpanded((value) => !value)}>
               {expanded ? 'See less' : 'See more'}
             </button>
           )}
         </div>
+      )}
+
+      {post.attachedWork && (
+        <Link
+          href={`/works/${encodeURIComponent(post.attachedWork.id)}`}
+          className="mt-4 flex min-h-20 items-center gap-3 rounded-xl border border-border bg-secondary/45 p-3 transition hover:border-accent/50 hover:bg-secondary"
+        >
+          {post.attachedWork.coverImageUrl ? (
+            <div className="relative size-14 shrink-0 overflow-hidden rounded-lg">
+              <Image src={post.attachedWork.coverImageUrl} alt="" fill sizes="56px" className="object-cover" unoptimized />
+            </div>
+          ) : (
+            <span className="flex size-14 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent">
+              {post.attachedWork.type === 'comic' ? <Brush className="size-5" /> : <PenLine className="size-5" />}
+            </span>
+          )}
+          <span className="min-w-0 flex-1">
+            <span className="block text-[10px] font-bold uppercase tracking-wide text-accent">Attached {post.attachedWork.type}</span>
+            <span className="mt-1 block truncate text-sm font-bold">{post.attachedWork.title}</span>
+          </span>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        </Link>
       )}
 
       {post.type === 'collaborator' && post.lookingFor?.length ? (
@@ -546,6 +681,7 @@ function FeedPost({
                   requestAnimationFrame(() => document.getElementById(`reply-comment-${comment.id}`)?.focus())
                 }}
                 onReaction={async (comment, reaction) => onCommentReaction(comment.id, reaction)}
+                onEdit={editComment}
                 onLoginRequired={onUnlock}
                 replyTargetId={replyTarget?.id}
                 replyTargetName={replyTarget?.authorName}
@@ -640,7 +776,7 @@ function FeedPost({
               </button>
               <button
                 type="button"
-                className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-destructive px-4 text-sm font-bold text-white hover:brightness-95 disabled:opacity-50"
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-destructive px-4 text-sm font-bold text-destructive-foreground hover:brightness-95 disabled:opacity-50"
                 onClick={() => void deleteOwnPost()}
                 disabled={deleting}
               >
@@ -686,6 +822,7 @@ export function CommunityView({
     toggleSaved,
     loadComments,
     addComment,
+    updateComment,
     toggleCommentReaction,
   } = useCommunity()
   const [composerExpanded, setComposerExpanded] = useState(false)
@@ -695,6 +832,7 @@ export function CommunityView({
   const [tags, setTags] = useState<string[]>([])
   const [lookingFor, setLookingFor] = useState<string[]>([])
   const [images, setImages] = useState<PreviewImage[]>([])
+  const [attachedWorkId, setAttachedWorkId] = useState<string | null>(null)
   const [imageError, setImageError] = useState<string | null>(null)
   const [compressing, setCompressing] = useState(false)
   const [feedTab, setFeedTab] = useState<FeedTab>(initialTab)
@@ -705,9 +843,21 @@ export function CommunityView({
   const [followingLoading, setFollowingLoading] = useState(false)
   const [followingError, setFollowingError] = useState<string | null>(null)
   const [followingReload, setFollowingReload] = useState(0)
+  const [hiddenPostIds, setHiddenPostIds] = useState<string[]>([])
+  const [mutedAuthorIds, setMutedAuthorIds] = useState<string[]>([])
+  const [blockedAuthorIds, setBlockedAuthorIds] = useState<string[]>([])
+  const [feedControlsError, setFeedControlsError] = useState<string | null>(null)
+  const [hiddenFeedbackPost, setHiddenFeedbackPost] = useState<Post | null>(null)
+  const [hideReason, setHideReason] = useState<string | null>(null)
+  const [hideReasonError, setHideReasonError] = useState<string | null>(null)
+  const [hideFeedbackPending, setHideFeedbackPending] = useState(false)
+  const [followActionId, setFollowActionId] = useState<string | null>(null)
+  const [followActionError, setFollowActionError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [showAll, setShowAll] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const { works: ownWorks, hydrated: worksHydrated } = useWorks()
+  const attachableWorks = ownWorks.filter((work) => work.status !== 'Draft' && (work.type === 'story' || work.type === 'comic'))
   const canPost = isLoggedIn && creator && role !== 'reader'
   const openRoleSettings = isLoggedIn && creator && role === 'reader'
   const profileRole = currentProfile?.roles.find((badge) => badge !== 'reader') ?? 'reader'
@@ -739,7 +889,134 @@ export function CommunityView({
     }
   }, [currentUserId, followingReload])
 
+  useEffect(() => {
+    if (!currentUserId) {
+      setHiddenPostIds([])
+      setMutedAuthorIds([])
+      setBlockedAuthorIds([])
+      setFeedControlsError(null)
+      return
+    }
+    let active = true
+    void (async () => {
+      const supabase = getSupabaseClient()
+      const [hiddenResult, mutedResult, blockedResult] = await Promise.all([
+        supabase.from('community_hidden_posts').select('post_id').eq('user_id', currentUserId).limit(500),
+        supabase.from('community_feed_author_mutes').select('author_id').eq('user_id', currentUserId).limit(500),
+        supabase.from('community_message_account_controls').select('account_id').eq('owner_id', currentUserId).eq('status', 'blocked').limit(500),
+      ])
+      if (hiddenResult.error) throw hiddenResult.error
+      if (mutedResult.error) throw mutedResult.error
+      if (blockedResult.error) throw blockedResult.error
+      if (active) {
+        setHiddenPostIds((hiddenResult.data ?? []).map((row) => row.post_id))
+        setMutedAuthorIds((mutedResult.data ?? []).map((row) => row.author_id))
+        setBlockedAuthorIds((blockedResult.data ?? []).map((row) => row.account_id))
+        setFeedControlsError(null)
+      }
+    })().catch((loadError: unknown) => {
+      if (active) setFeedControlsError(loadError instanceof Error ? loadError.message : 'Could not load your post preferences.')
+    })
+    return () => {
+      active = false
+    }
+  }, [currentUserId])
+
+  const hideCommunityPost = async (post: Post) => {
+    if (!currentUserId) throw new Error('Sign in to hide this post.')
+    if (post.authorId) {
+      const { error: hideError } = await getSupabaseClient()
+        .from('community_hidden_posts')
+        .insert({ user_id: currentUserId, post_id: post.id })
+      if (hideError && hideError.code !== '23505') throw hideError
+    }
+    setHiddenPostIds((current) => current.includes(post.id) ? current : [...current, post.id])
+    setHiddenFeedbackPost(post)
+    setHideReason(null)
+    setHideReasonError(null)
+  }
+
+  const updateHiddenPostReason = async (reason: string) => {
+    if (!currentUserId || !hiddenFeedbackPost?.authorId) return
+    setHideReason(reason)
+    setHideReasonError(null)
+    const { error: updateError } = await getSupabaseClient()
+      .from('community_hidden_posts')
+      .update({ hide_reason: reason })
+      .eq('user_id', currentUserId)
+      .eq('post_id', hiddenFeedbackPost.id)
+    if (updateError) {
+      setHideReasonError(updateError.message)
+    }
+  }
+
+  const unhidePost = async () => {
+    if (!currentUserId || !hiddenFeedbackPost) return
+    setHideFeedbackPending(true)
+    setHideReasonError(null)
+    try {
+      if (hiddenFeedbackPost.authorId) {
+        const { error: unhideError } = await getSupabaseClient()
+          .from('community_hidden_posts')
+          .delete()
+          .eq('user_id', currentUserId)
+          .eq('post_id', hiddenFeedbackPost.id)
+        if (unhideError) throw unhideError
+      }
+      setHiddenPostIds((current) => current.filter((id) => id !== hiddenFeedbackPost.id))
+      setHiddenFeedbackPost(null)
+      setHideReason(null)
+    } catch (error) {
+      setHideReasonError(error instanceof Error ? error.message : 'Could not unhide this post.')
+    } finally {
+      setHideFeedbackPending(false)
+    }
+  }
+
+  const unfollowHiddenPostAuthor = async () => {
+    const authorId = hiddenFeedbackPost?.authorId
+    if (!authorId || !currentUserId) return
+    setHideFeedbackPending(true)
+    setHideReasonError(null)
+    try {
+      const { error: unfollowError } = await getSupabaseClient()
+        .from('community_follows')
+        .delete()
+        .eq('follower_id', currentUserId)
+        .eq('creator_id', authorId)
+      if (unfollowError) throw unfollowError
+      setFollowingIds((current) => current.filter((id) => id !== authorId))
+    } catch (error) {
+      setHideReasonError(error instanceof Error ? error.message : 'Could not unfollow this author.')
+    } finally {
+      setHideFeedbackPending(false)
+    }
+  }
+
+  const toggleCommunityAuthorMute = async (authorId: string, muted: boolean) => {
+    if (!currentUserId) throw new Error('Sign in to mute this author.')
+    const supabase = getSupabaseClient()
+    const result = muted
+      ? await supabase.from('community_feed_author_mutes').delete().eq('user_id', currentUserId).eq('author_id', authorId)
+      : await supabase.from('community_feed_author_mutes').insert({ user_id: currentUserId, author_id: authorId })
+    if (result.error) throw result.error
+    setMutedAuthorIds((current) => muted
+      ? current.filter((id) => id !== authorId)
+      : current.includes(authorId) ? current : [...current, authorId])
+  }
+
+  const blockCommunityAuthor = async (authorId: string) => {
+    const { error: blockError } = await getSupabaseClient().rpc('set_community_message_account_control', {
+      p_account_id: authorId,
+      p_status: 'blocked',
+    })
+    if (blockError) throw blockError
+    setBlockedAuthorIds((current) => current.includes(authorId) ? current : [...current, authorId])
+  }
+
   const visiblePosts = posts
+    .filter((post) => !hiddenPostIds.includes(post.id))
+    .filter((post) => !post.authorId || (!mutedAuthorIds.includes(post.authorId) && !blockedAuthorIds.includes(post.authorId)))
     .filter((post) => feedTab !== 'collaborators' || post.type === 'collaborator')
     .filter((post) => feedTab !== 'following' || followingIds.includes(post.authorId ?? ''))
     .filter((post) => feedTab !== 'my-posts' || post.authorId === currentUserId)
@@ -751,6 +1028,14 @@ export function CommunityView({
   const matchingAuthors = authors.filter((author) =>
     `${author.displayName} ${author.username}`.toLowerCase().includes(authorQuery),
   )
+  const authorsToFollow = authors
+    .filter((author) => author.id !== currentUserId && !followingIds.includes(author.id))
+    .sort((first, second) => {
+      const firstRoleRank = first.roles.includes('writer') ? 0 : 1
+      const secondRoleRank = second.roles.includes('writer') ? 0 : 1
+      return firstRoleRank - secondRoleRank
+    })
+    .slice(0, 2)
   const recentCollaborationPosts = posts.filter((post) => post.type === 'collaborator').slice(0, 3)
   const trendingTags = posts
     .flatMap((post) => post.tags ?? [])
@@ -762,6 +1047,82 @@ export function CommunityView({
     }, [])
     .sort((a, b) => b.count - a.count)
     .slice(0, 5)
+
+  const followAuthor = async (authorId: string) => {
+    if (!isLoggedIn || !currentUserId) {
+      onUnlock()
+      return
+    }
+    if (followActionId) return
+    setFollowActionId(authorId)
+    setFollowActionError(null)
+    try {
+      const supabase = getSupabaseClient()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError) throw userError
+      if (!user) throw new Error('Sign in to follow authors.')
+      if (user.id === authorId) throw new Error('You cannot follow your own profile.')
+      const { error: followError } = await supabase
+        .from('community_follows')
+        .insert({ follower_id: user.id, creator_id: authorId })
+      if (followError) throw followError
+      setFollowingIds((current) => current.includes(authorId) ? current : [...current, authorId])
+    } catch (followError) {
+      setFollowActionError(getErrorMessage(followError, 'Could not follow this author. Please try again.'))
+    } finally {
+      setFollowActionId(null)
+    }
+  }
+
+  const renderAuthorsToFollow = () => (
+    <Panel>
+      <h2 className="font-serif text-sm font-bold">Authors to follow</h2>
+      {followingLoading ? (
+        <div className="mt-3 space-y-3" aria-label="Loading authors to follow" aria-busy="true">
+          {[0, 1].map((item) => <div key={item} className="h-9 animate-pulse rounded-lg bg-secondary/60" />)}
+        </div>
+      ) : authorsToFollow.length ? (
+        <ul className="mt-3 space-y-2">
+          {authorsToFollow.map((author) => {
+            const authorRole = author.roles.includes('writer') ? 'Writer' : 'Artist'
+            return (
+              <li key={author.id} className="flex min-w-0 items-center gap-2">
+                <Link href={`/profile/${encodeURIComponent(author.id)}`} className="flex min-w-0 flex-1 items-center gap-2 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+                  <ProfileAvatar src={author.avatarUrl} name={author.displayName} className="size-9" imageSizes="36px" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-bold">{author.displayName}</span>
+                    <span className="block truncate text-[10px] text-muted-foreground">{authorRole}</span>
+                  </span>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => void followAuthor(author.id)}
+                  disabled={followActionId !== null}
+                  className="min-h-8 shrink-0 rounded-full border border-border px-3 text-[10px] font-bold hover:border-accent hover:text-accent disabled:opacity-60"
+                >
+                  {followActionId === author.id ? '…' : 'Follow'}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      ) : (
+        <p className="mt-2 text-xs leading-5 text-muted-foreground">
+          {followingError
+            ? 'Could not load your follows. Retry to refresh author suggestions.'
+            : authors.length
+              ? 'You’re following all the authors we can suggest.'
+              : 'New authors will appear here as they join the community.'}
+        </p>
+      )}
+      {followingError && (
+        <button type="button" onClick={() => setFollowingReload((version) => version + 1)} className="mt-2 min-h-8 text-xs font-bold text-accent hover:underline">
+          Retry suggestions
+        </button>
+      )}
+      {followActionError && <p role="alert" className="mt-2 text-xs leading-5 text-destructive">{followActionError}</p>}
+    </Panel>
+  )
 
   const focusComposer = () => {
     if (!canPost) {
@@ -827,6 +1188,7 @@ export function CommunityView({
         imageUrls: images.map((image) => image.dataUrl),
         tags,
         lookingFor: postType === 'collaborator' ? lookingFor : [],
+        attachedWorkId,
       })
       setDraft('')
       setPostType('update')
@@ -834,6 +1196,7 @@ export function CommunityView({
       setTagInput('')
       setLookingFor([])
       setImages([])
+      setAttachedWorkId(null)
       setComposerError(null)
       setComposerExpanded(false)
       setSelectedAuthorId(null)
@@ -855,6 +1218,64 @@ export function CommunityView({
 
   return (
     <div className="community-layout">
+      {hiddenFeedbackPost && (
+        <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/45 p-3 sm:items-center sm:p-5">
+          <section role="dialog" aria-modal="true" aria-labelledby="hide-feedback-title" className="max-h-[90dvh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-border bg-card p-5 shadow-2xl sm:p-6">
+            <h2 id="hide-feedback-title" className="font-serif text-lg font-bold">Why aren’t you interested?</h2>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {[
+                ['doesnt_match_interests', 'Doesn’t match my interests'],
+                ['scam', 'Scam'],
+                ['sexual', 'Sexual'],
+                ['disturbing', 'Disturbing'],
+                ['dislike_creator', 'I don’t like the creator'],
+                ['other', 'Other'],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={hideReason === value}
+                  disabled={hideFeedbackPending}
+                  onClick={() => void updateHiddenPostReason(value)}
+                  className={`min-h-10 rounded-full px-3.5 text-sm font-semibold transition-colors disabled:opacity-60 ${hideReason === value ? 'bg-primary text-primary-foreground' : 'bg-secondary text-secondary-foreground hover:bg-muted'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <h3 className="mt-7 text-sm font-bold">Other steps you can take</h3>
+            <div className="mt-2 divide-y divide-border">
+              {hiddenFeedbackPost.authorId && followingIds.includes(hiddenFeedbackPost.authorId) && (
+                <button type="button" disabled={hideFeedbackPending} onClick={() => void unfollowHiddenPostAuthor()} className="flex min-h-12 w-full items-center gap-3 text-left text-sm font-semibold hover:text-accent disabled:opacity-60">
+                  <UsersRound className="size-5" aria-hidden="true" />
+                  Unfollow {hiddenFeedbackPost.authorName ?? `@${hiddenFeedbackPost.authorUsername ?? 'creator'}`}
+                </button>
+              )}
+              {hiddenFeedbackPost.authorId && hiddenFeedbackPost.authorId !== currentUserId && (
+                <div className="py-1">
+                  <ContentReportMenuItem
+                    targetType="post"
+                    targetId={hiddenFeedbackPost.id}
+                    reportedUserId={hiddenFeedbackPost.authorId}
+                    reportedName={hiddenFeedbackPost.authorName ?? 'StoryLines creator'}
+                    reportedUsername={hiddenFeedbackPost.authorUsername}
+                    currentUserId={currentUserId}
+                    contentLabel="post"
+                  />
+                </div>
+              )}
+              <button type="button" disabled={hideFeedbackPending} onClick={() => void unhidePost()} className="flex min-h-12 w-full items-center gap-3 text-left text-sm font-semibold hover:text-accent disabled:opacity-60">
+                <RotateCcw className="size-5" aria-hidden="true" />
+                Unhide post
+              </button>
+            </div>
+            {hideReasonError && <p role="alert" className="mt-3 text-sm text-destructive">{hideReasonError}</p>}
+            <div className="mt-3 flex justify-end">
+              <button type="button" disabled={hideFeedbackPending} onClick={() => setHiddenFeedbackPost(null)} className="min-h-11 rounded-full border border-border px-4 text-sm font-semibold hover:bg-muted disabled:opacity-60">Done</button>
+            </div>
+          </section>
+        </div>
+      )}
       <header className="community-heading">
         <span className="eyebrow">{updatesMode ? 'Your StoryLines' : 'Tambayan ng StoryLines'}</span>
         <h1 className="mt-1 font-serif text-2xl font-bold sm:text-3xl">{updatesMode ? 'Updates' : 'Kuwento, likha, at kuwentuhan.'}</h1>
@@ -864,7 +1285,7 @@ export function CommunityView({
       <div className="community-columns">
         <aside className="community-left-sidebar" aria-label="Community shortcuts">
           {isLoggedIn ? (
-            <Panel className="community-profile-card flex min-h-[18.5rem] flex-col items-center px-6 py-6">
+            <Panel className="community-profile-card flex min-h-74 flex-col items-center px-6 py-6">
               <Avatar
                 role={profileRole === 'reader' ? undefined : profileRole}
                 large
@@ -936,6 +1357,7 @@ export function CommunityView({
         </aside>
 
         <section className="community-feed" aria-label="Community feed">
+          {feedControlsError && <p role="alert" className="community-card px-4 py-3 text-sm text-destructive">Could not load saved post actions: {feedControlsError}</p>}
           {!updatesMode && <section className="community-card community-composer" aria-label="Create a post">
             {!canPost ? (
               <>
@@ -1002,6 +1424,27 @@ export function CommunityView({
                   className="community-composer-textarea mt-4"
                 />
                 <div className="flex justify-end text-xs text-muted-foreground"><span>{draft.length}/{MAX_POST_LENGTH}</span></div>
+
+                <div className="mt-3">
+                  <label htmlFor="community-attached-work" className="mb-1.5 block text-xs font-bold">Attach a published work <span className="font-normal text-muted-foreground">(optional)</span></label>
+                  {worksHydrated && attachableWorks.length > 0 ? (
+                    <select
+                      id="community-attached-work"
+                      value={attachedWorkId ?? ''}
+                      onChange={(event) => setAttachedWorkId(event.target.value || null)}
+                      className="community-select"
+                    >
+                      <option value="">No attached work</option>
+                      {attachableWorks.map((work) => (
+                        <option key={work.id} value={work.id}>{work.title} · {work.type === 'comic' ? 'Comic' : 'Story'}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="rounded-xl border border-dashed border-border p-3 text-xs text-muted-foreground">
+                      {worksHydrated ? 'Publish a story or comic before attaching it.' : 'Loading your published works…'}
+                    </p>
+                  )}
+                </div>
 
                 <div className="mt-3">
                   <label htmlFor="community-post-type" className="mb-1.5 block text-xs font-bold">Post type</label>
@@ -1082,6 +1525,8 @@ export function CommunityView({
             ))}
           </nav>}
 
+          {!updatesMode && <div className="md:hidden">{renderAuthorsToFollow()}</div>}
+
           {error && (
             <div role="alert" className="community-card flex flex-wrap items-center justify-between gap-3 text-sm">
               <p className="min-w-0 flex-1 text-destructive">Hindi ma-load ang community: {error}</p>
@@ -1152,10 +1597,15 @@ export function CommunityView({
                       onLoadComments={loadComments}
                       onAddComment={addComment}
                       onCommentReaction={toggleCommentReaction}
+                      onUpdateComment={updateComment}
                       onProfileClick={openProfile}
                       currentUserId={currentUserId}
                       onDelete={deletePost}
                       onEdit={updatePost}
+                      mutedAuthor={mutedAuthorIds.includes(post.authorId ?? '')}
+                      onHidePost={hideCommunityPost}
+                      onToggleMuteAuthor={toggleCommunityAuthorMute}
+                      onBlockAuthor={blockCommunityAuthor}
                     />
                   </div>
                 ))}
@@ -1207,10 +1657,15 @@ export function CommunityView({
                     onLoadComments={loadComments}
                     onAddComment={addComment}
                     onCommentReaction={toggleCommentReaction}
+                    onUpdateComment={updateComment}
                     onProfileClick={openProfile}
                     currentUserId={currentUserId}
                     onDelete={deletePost}
                     onEdit={updatePost}
+                    mutedAuthor={mutedAuthorIds.includes(post.authorId ?? '')}
+                    onHidePost={hideCommunityPost}
+                    onToggleMuteAuthor={toggleCommunityAuthorMute}
+                    onBlockAuthor={blockCommunityAuthor}
                   />
                 </div>
               ))}
@@ -1261,10 +1716,7 @@ export function CommunityView({
             ) : <p className="mt-2 text-xs leading-5 text-muted-foreground">Post tags will trend here as the community grows.</p>}
           </Panel>
 
-          <Panel>
-            <h2 className="font-serif text-lg font-bold">Suggested creators</h2>
-            <p className="mt-2 text-xs leading-5 text-muted-foreground">Creator suggestions will appear here when profiles and follows are available.</p>
-          </Panel>
+          {!updatesMode && renderAuthorsToFollow()}
         </aside>
       </div>
       {canPost && (

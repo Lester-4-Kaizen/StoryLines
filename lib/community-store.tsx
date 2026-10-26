@@ -22,6 +22,7 @@ type CommunityState = {
     imageUrls: string[]
     tags: string[]
     lookingFor: string[]
+    attachedWorkId: string | null
   }) => Promise<void>
   toggleLike: (id: string) => Promise<void>
   updatePost: (id: string, content: string) => Promise<void>
@@ -29,6 +30,7 @@ type CommunityState = {
   toggleSaved: (id: string) => Promise<void>
   loadComments: (postId: string) => Promise<CommunityComment[]>
   addComment: (postId: string, content: string, parentCommentId?: string) => Promise<CommunityComment>
+  updateComment: (commentId: string, content: string) => Promise<void>
   toggleCommentReaction: (commentId: string, reaction: 'like' | 'dislike') => Promise<void>
 }
 
@@ -78,7 +80,7 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
       const [postsResult, authorsResult, sessionResult] = await Promise.all([
         supabase
           .from('community_posts')
-          .select('id, author_id, author_role, type, content, image_urls, tags, looking_for, created_at')
+          .select('id, author_id, author_role, type, content, image_urls, tags, looking_for, work_id, created_at')
           .order('created_at', { ascending: false })
           .limit(100),
         supabase
@@ -141,17 +143,45 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
         savedIds = (savedResult.data ?? []).map((saved) => saved.post_id)
       }
 
-      const feedRows = postsResult.data ?? []
+      const feedRows = (postsResult.data ?? []) as Array<{
+        id: string
+        author_id: string
+        author_role: 'writer' | 'artist'
+        type: CommunityPostType
+        content: string
+        image_urls: string[]
+        tags: string[]
+        looking_for: string[]
+        work_id: string | null
+        created_at: string
+      }>
       const missingSavedIds = savedIds.filter((id) => !feedRows.some((post) => post.id === id))
       const savedPostsResult = missingSavedIds.length
         ? await supabase
           .from('community_posts')
-          .select('id, author_id, author_role, type, content, image_urls, tags, looking_for, created_at')
+          .select('id, author_id, author_role, type, content, image_urls, tags, looking_for, work_id, created_at')
           .in('id', missingSavedIds)
         : null
       if (savedPostsResult?.error) throw savedPostsResult.error
 
-      let nextPosts: Post[] = [...feedRows, ...(savedPostsResult?.data ?? [])].map((post) => {
+      const savedRows = (savedPostsResult?.data ?? []) as typeof feedRows
+      const allFeedRows = [...feedRows, ...savedRows]
+      const workIds = Array.from(new Set(allFeedRows.map((post) => post.work_id).filter((id): id is string => Boolean(id))))
+      const workRowsResult = workIds.length
+        ? await supabase
+          .from('creator_works')
+          .select('id, title, type, cover_image_url')
+          .in('id', workIds)
+          .neq('status', 'Draft')
+        : null
+      if (workRowsResult?.error) throw workRowsResult.error
+      const attachedWorks = new Map((workRowsResult?.data ?? []).map((work) => [work.id, {
+        id: work.id,
+        title: work.title,
+        type: work.type as 'story' | 'comic',
+        coverImageUrl: work.cover_image_url,
+      }]))
+      let nextPosts: Post[] = allFeedRows.map((post) => {
         const author = authorById.get(post.author_id)
         return {
           id: post.id,
@@ -165,6 +195,7 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
           imageUrls: post.image_urls ?? [],
           tags: post.tags ?? [],
           lookingFor: post.looking_for ?? [],
+          attachedWork: attachedWorks.get(post.work_id),
           createdAt: new Date(post.created_at).getTime(),
           likes: 0,
           likedByMe: false,
@@ -275,6 +306,7 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
         image_urls: imageUrls,
         tags: input.tags,
         looking_for: input.lookingFor,
+        work_id: input.attachedWorkId,
       })
       .select('id, created_at')
       .single()
@@ -282,12 +314,36 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
 
     const displayName = user.user_metadata.display_name
     const username = user.user_metadata.username
+    let attachedWork: Post['attachedWork']
+    if (input.attachedWorkId) {
+      const { data: work, error: workError } = await supabase
+        .from('creator_works')
+        .select('id, title, type, cover_image_url')
+        .eq('id', input.attachedWorkId)
+        .neq('status', 'Draft')
+        .maybeSingle()
+      if (workError) throw workError
+      if (work && (work.type === 'story' || work.type === 'comic')) {
+        attachedWork = {
+          id: work.id,
+          title: work.title,
+          type: work.type,
+          coverImageUrl: work.cover_image_url,
+        }
+      }
+    }
+
     const post: Post = {
       id: data.id,
       authorId: user.id,
       authorName: typeof displayName === 'string' ? displayName : 'StoryLines creator',
       authorUsername: typeof username === 'string' ? username : undefined,
-      ...input,
+      content: input.content,
+      authorRole: input.authorRole,
+      type: input.type,
+      tags: input.tags,
+      lookingFor: input.lookingFor,
+      attachedWork,
       imageUrls,
       createdAt: new Date(data.created_at).getTime(),
       likes: 0,
@@ -328,8 +384,8 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
 
   const updatePost: CommunityState['updatePost'] = async (postId, content) => {
     const trimmedContent = content.trim()
-    if (!trimmedContent || trimmedContent.length > 500) {
-      throw new Error('A post must be between 1 and 500 characters.')
+    if (!trimmedContent || trimmedContent.length > 5000) {
+      throw new Error('A post must be between 1 and 5,000 characters.')
     }
 
     const post = sharedPosts.find((item) => item.id === postId)
@@ -555,6 +611,27 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const updateComment: CommunityState['updateComment'] = async (commentId, content) => {
+    const trimmedContent = content.trim()
+    if (!trimmedContent || trimmedContent.length > 500) {
+      throw new Error('A comment must be between 1 and 500 characters.')
+    }
+    const supabase = getSupabaseClient()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError) throw userError
+    if (!user) throw new Error('Mag-log in para mag-edit ng comment.')
+
+    const { data, error } = await supabase
+      .from('community_post_comments')
+      .update({ content: trimmedContent })
+      .eq('id', commentId)
+      .eq('author_id', user.id)
+      .select('id')
+      .maybeSingle()
+    if (error) throw error
+    if (!data) throw new Error('Hindi ma-edit ang comment na ito. Ikaw lang ang makakapag-edit ng sarili mong comment.')
+  }
+
   return (
     <CommunityContext.Provider
       value={{
@@ -573,6 +650,7 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
         toggleSaved,
         loadComments,
         addComment,
+        updateComment,
         toggleCommentReaction,
       }}
     >

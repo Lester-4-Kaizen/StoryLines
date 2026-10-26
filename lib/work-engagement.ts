@@ -15,7 +15,6 @@ export type WorkRankingEntry = {
   view_count: number
   like_count: number
   follower_count: number
-  score: number
   work_count: number
 }
 
@@ -25,20 +24,17 @@ export type WorkAnalyticsEntry = {
   work_type: 'story' | 'comic'
   view_count: number
   like_count: number
-  score: number
 }
 
-type RawWorkRankingEntry = Omit<WorkRankingEntry, 'view_count' | 'like_count' | 'follower_count' | 'creator_avatar_url' | 'score' | 'work_count'> & {
+type RawWorkRankingEntry = Omit<WorkRankingEntry, 'view_count' | 'like_count' | 'follower_count' | 'creator_avatar_url' | 'work_count'> & {
   view_count: number | string
   like_count: number | string
-  score: number | string
   work_count: number | string
 }
 
-type RawWorkAnalyticsEntry = Omit<WorkAnalyticsEntry, 'view_count' | 'like_count' | 'score'> & {
+type RawWorkAnalyticsEntry = Omit<WorkAnalyticsEntry, 'view_count' | 'like_count'> & {
   view_count: number | string
   like_count: number | string
-  score: number | string
 }
 
 function periodValue(period: RankingPeriod) {
@@ -60,7 +56,6 @@ export async function loadWorkRankings(category: RankingCategory, period: Rankin
     like_count: Number(row.like_count),
     follower_count: 0,
     creator_avatar_url: null,
-    score: Number(row.score),
     work_count: Number(row.work_count),
   }))
   if (category !== 'creators' || rows.length === 0) return rows
@@ -85,19 +80,11 @@ export async function loadWorkRankings(category: RankingCategory, period: Rankin
         : null,
     ]),
   )
-  return rows
-    .map((row) => ({
-      ...row,
-      follower_count: followersByCreator.get(row.creator_id) ?? 0,
-      creator_avatar_url: avatarsByCreator.get(row.creator_id) ?? null,
-    }))
-    .sort((first, second) =>
-      second.follower_count - first.follower_count
-      || second.score - first.score
-      || second.view_count - first.view_count
-      || second.like_count - first.like_count
-      || first.creator_name.localeCompare(second.creator_name),
-    )
+  return rows.map((row) => ({
+    ...row,
+    follower_count: followersByCreator.get(row.creator_id) ?? 0,
+    creator_avatar_url: avatarsByCreator.get(row.creator_id) ?? null,
+  }))
 }
 
 export async function loadMyWorkAnalytics(period: RankingPeriod) {
@@ -109,6 +96,5 @@ export async function loadMyWorkAnalytics(period: RankingPeriod) {
     ...row,
     view_count: Number(row.view_count),
     like_count: Number(row.like_count),
-    score: Number(row.score),
   }))
 }

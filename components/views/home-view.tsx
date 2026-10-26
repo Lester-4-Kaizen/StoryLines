@@ -3,10 +3,11 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowRight, BookOpen, Compass, Eye, Heart, LoaderCircle, PenLine, Search, Sparkles } from 'lucide-react'
+import { ArrowRight, BookOpen, Compass, Eye, Heart, LoaderCircle, PenLine, Search, Smartphone, Sparkles, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/shared/empty-state'
 import { SectionHeading } from '@/components/shared/section-heading'
+import { PwaInstallPanel } from '@/components/shared/pwa-install-panel'
 import { loadWorkRankings, type WorkRankingEntry } from '@/lib/work-engagement'
 import type { Route } from '@/lib/types'
 
@@ -61,7 +62,7 @@ function TrendingSection({ go }: { go: (route: Route) => void }) {
                 <span className="mt-4 flex items-center gap-3 text-xs text-muted-foreground">
                   <span className="inline-flex items-center gap-1"><Eye className="size-3.5" aria-hidden="true" />{entry.view_count.toLocaleString()}</span>
                   <span className="inline-flex items-center gap-1"><Heart className="size-3.5" aria-hidden="true" />{entry.like_count.toLocaleString()}</span>
-                  <span className="ml-auto font-bold text-foreground">{entry.score.toLocaleString()} pts</span>
+                  <span className="ml-auto font-bold text-foreground">{entry.view_count.toLocaleString()} views</span>
                 </span>
               </Link>
             </li>
@@ -90,7 +91,26 @@ export function HomeView({
   go: (route: Route) => void
 }) {
   const [search, setSearch] = useState('')
+  const [installBannerOpen, setInstallBannerOpen] = useState(true)
   const router = useRouter()
+
+  useEffect(() => {
+    try {
+      const dismissedUntil = Number(window.localStorage.getItem('storylines-install-banner-dismissed') || 0)
+      setInstallBannerOpen(Date.now() >= dismissedUntil)
+    } catch {
+      setInstallBannerOpen(true)
+    }
+  }, [])
+
+  const dismissInstallBanner = () => {
+    setInstallBannerOpen(false)
+    try {
+      window.localStorage.setItem('storylines-install-banner-dismissed', String(Date.now() + 7 * 24 * 60 * 60 * 1000))
+    } catch {
+      // The banner can still be dismissed for this page session.
+    }
+  }
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -148,6 +168,25 @@ export function HomeView({
           </div>
         </div>
       </section>
+
+      {installBannerOpen && (
+        <section className="relative rounded-xl border border-border bg-secondary/35 p-4 pr-12 sm:p-5" aria-label="Install StoryLines">
+          <div className="absolute left-5 top-5 hidden size-10 items-center justify-center rounded-full border border-border bg-card text-accent sm:flex" aria-hidden="true">
+            <Smartphone className="size-5" />
+          </div>
+          <div className="sm:pl-14">
+            <PwaInstallPanel compact />
+          </div>
+          <button
+            type="button"
+            onClick={dismissInstallBanner}
+            className="absolute right-2 top-2 rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label="Dismiss install banner"
+          >
+            <X className="size-4" aria-hidden="true" />
+          </button>
+        </section>
+      )}
 
       <section className="grid gap-3 sm:grid-cols-2" aria-label="Mga puwedeng gawin sa StoryLines">
         <button type="button" onClick={() => go('/browse')} className="home-path-card group text-left">
