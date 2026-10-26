@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { WarningAppealsPanel } from '@/components/moderation/warning-appeals-panel'
+import { SuspensionAppealPanel } from '@/components/moderation/suspension-appeal-panel'
 import { parseModerationStatus, type ModerationStatus } from '@/lib/moderation/status'
 import { getSupabaseClient } from '@/lib/supabase'
 
@@ -53,8 +54,8 @@ export function AccountRestrictedView({
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-xl flex-col items-center justify-center px-5 text-center">
-      <div className="paper-panel w-full p-8">
+    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col items-center justify-center px-4 py-6 text-center sm:px-6 sm:py-8 lg:px-8">
+      <div className="paper-panel w-full rounded-2xl p-5 sm:p-8 lg:p-10">
         <p className="text-xs font-bold uppercase tracking-[0.16em] text-accent">Account access</p>
         <h1 className="mt-3 font-serif text-3xl font-bold">
           {!status ? 'Checking account status…' : status.status === 'banned' ? 'Account disabled' : 'Account temporarily suspended'}
@@ -81,7 +82,12 @@ export function AccountRestrictedView({
           </section>
         )}
         {error && <p role="alert" className="mt-3 text-sm text-destructive">{error}</p>}
-        {status && <WarningAppealsPanel />}
+        {status && (
+          <div className="mt-6 grid items-start gap-4 lg:grid-cols-2">
+            <WarningAppealsPanel />
+            {status.status === 'suspended' && <SuspensionAppealPanel />}
+          </div>
+        )}
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           {status?.status === 'suspended' && (
             <Link href="/community" className="inline-flex min-h-11 items-center rounded-full border border-border px-5 text-sm font-bold hover:bg-muted">

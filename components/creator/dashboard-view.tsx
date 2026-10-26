@@ -203,7 +203,7 @@ export function DashboardView({ go }: { go: (route: Route) => void }) {
             <ul className="mt-3 flex flex-col gap-2.5">
               {profileSteps.map((step) => (
                 <li key={step.label}>
-                  <Link href="/settings" className="flex items-center gap-2 text-xs hover:text-accent">
+                  <Link href="/settings/account" className="flex items-center gap-2 text-xs hover:text-accent">
                     {step.done ? <Check className="size-4 shrink-0 text-accent" aria-label="Complete" /> : <Circle className="size-4 shrink-0 text-muted-foreground" aria-label="Incomplete" />}
                     <span>{step.label}</span>
                   </Link>

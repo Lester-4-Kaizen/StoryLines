@@ -79,7 +79,7 @@ export default function TermsPage() {
           title: 'Resetting or closing your account',
           content: (
             <>
-              <p>You may use <Link href="/settings">Settings</Link> to reset account data while retaining your login, or permanently delete your account. Reset and deletion have different effects; review the confirmation shown in Settings before proceeding.</p>
+              <p>You may use <Link href="/settings/account-data">Settings</Link> to reset account data while retaining your login, or permanently delete your account. Reset and deletion have different effects; review the confirmation shown in Settings before proceeding.</p>
               <p>StoryLines may suspend or end access when required to enforce these Terms or protect the service. Provisions that by their nature should continue after account closure, including content rights already granted for service operation, liability limits, and dispute terms, will continue only to the extent applicable law permits.</p>
             </>
           ),

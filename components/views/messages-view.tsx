@@ -1467,7 +1467,7 @@ export function MessagesView() {
       }
       setInfoSection('privacy')
       setReloadVersion((version) => version + 1)
-      if (status === 'blocked') router.replace('/settings#blocked-accounts')
+      if (status === 'blocked') router.replace('/settings/privacy#blocked-accounts')
     } catch (controlError) {
       setError(describeMessageError(controlError, 'Could not update this account control.'))
     } finally {

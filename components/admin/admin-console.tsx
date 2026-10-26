@@ -99,6 +99,19 @@ type WarningAppeal = {
   appeal_text: string
   appeal_created_at: string
 }
+type SuspensionAppeal = {
+  appeal_id: string
+  restriction_audit_id: string
+  user_id: string
+  display_name: string
+  username: string
+  restriction_action: 'suspend'
+  restriction_note: string
+  restriction_created_at: string
+  suspended_until: string | null
+  appeal_text: string
+  appeal_created_at: string
+}
 type OverviewData = {
   stats: {
     openReports: number
@@ -132,12 +145,103 @@ const actionLabels: Record<string, string> = {
   content_restored: 'Restored content',
   warning_rescinded: 'Rescinded warning',
   warning_appeal_upheld: 'Upheld warning appeal',
+  suspension_appeal_rescinded: 'Rescinded suspension',
+  suspension_appeal_upheld: 'Upheld suspension appeal',
   staff_role_changed: 'Changed staff role',
 }
 
 const fieldClass = 'min-h-10 rounded-full border border-[#dfc9ac] bg-[#fffaf1] px-4 text-sm text-[#442a1c] outline-none focus-visible:ring-2 focus-visible:ring-[#ab4b30]'
 const buttonClass = 'inline-flex min-h-10 items-center justify-center gap-2 rounded-full border border-[#dfc9ac] bg-[#fffaf1] px-4 text-sm font-semibold text-[#442a1c] transition hover:bg-[#f4e7d5] disabled:cursor-wait disabled:opacity-60'
 const primaryButtonClass = 'inline-flex min-h-10 items-center justify-center gap-2 rounded-full bg-[#a8442a] px-4 text-sm font-bold text-white transition hover:bg-[#8f3823] disabled:cursor-wait disabled:opacity-60'
+
+type DateRange = {
+  preset: 'all' | 'today' | '7' | '30' | '90' | 'custom'
+  from: string
+  to: string
+}
+
+const ALL_DATES: DateRange = { preset: 'all', from: '', to: '' }
+
+function dateRangeMatches(value: string, range: DateRange) {
+  if (range.preset === 'all') return true
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return false
+
+  let start: Date | null = null
+  let end: Date | null = null
+  if (range.preset === 'today') {
+    start = new Date()
+    start.setHours(0, 0, 0, 0)
+  } else if (range.preset !== 'custom') {
+    start = new Date()
+    start.setHours(0, 0, 0, 0)
+    start.setDate(start.getDate() - Number(range.preset) + 1)
+  } else {
+    if (range.from) {
+      const [year, month, day] = range.from.split('-').map(Number)
+      start = new Date(year, month - 1, day)
+    }
+    if (range.to) {
+      const [year, month, day] = range.to.split('-').map(Number)
+      end = new Date(year, month - 1, day + 1)
+    }
+  }
+
+  return (!start || date >= start) && (!end || date < end)
+}
+
+function DateRangeFilter({
+  value,
+  onChange,
+}: {
+  value: DateRange
+  onChange: (value: DateRange) => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <label className="sr-only" htmlFor="admin-date-range">Filter by date</label>
+      <select
+        id="admin-date-range"
+        aria-label="Filter by date"
+        value={value.preset}
+        onChange={(event) => onChange({ ...value, preset: event.target.value as DateRange['preset'] })}
+        className={fieldClass}
+      >
+        <option value="all">All dates</option>
+        <option value="today">Today</option>
+        <option value="7">Last 7 days</option>
+        <option value="30">Last 30 days</option>
+        <option value="90">Last 90 days</option>
+        <option value="custom">Custom range</option>
+      </select>
+      {value.preset === 'custom' && (
+        <>
+          <label className="sr-only" htmlFor="admin-date-from">Start date</label>
+          <input
+            id="admin-date-from"
+            type="date"
+            aria-label="Start date"
+            value={value.from}
+            max={value.to || undefined}
+            onChange={(event) => onChange({ ...value, from: event.target.value })}
+            className={fieldClass}
+          />
+          <span aria-hidden="true" className="text-xs text-[#806b56]">to</span>
+          <label className="sr-only" htmlFor="admin-date-to">End date</label>
+          <input
+            id="admin-date-to"
+            type="date"
+            aria-label="End date"
+            value={value.to}
+            min={value.from || undefined}
+            onChange={(event) => onChange({ ...value, to: event.target.value })}
+            className={fieldClass}
+          />
+        </>
+      )}
+    </div>
+  )
+}
 
 function rows<T>(data: unknown): T[] {
   return Array.isArray(data) ? data as T[] : []
@@ -225,9 +329,17 @@ function ReportSummary({ report }: { report: AdminReport }) {
 }
 
 function Overview({ data }: { data: OverviewData }) {
-  const router = useRouter()
   const [activityMetric, setActivityMetric] = useState<'signups' | 'posts' | 'reports'>('signups')
+  const [dateRange, setDateRange] = useState<DateRange>(ALL_DATES)
+  const visibleReports = data.reports.filter((report) => dateRangeMatches(report.createdAt, dateRange))
+  const visibleActions = data.actions.filter((action) => dateRangeMatches(action.createdAt, dateRange))
   const maximum = Math.max(1, ...data.activity.map((day) => day[activityMetric]))
+  const gridLevels = [
+    { position: 0, value: maximum },
+    { position: 33, value: Math.ceil(maximum * 2 / 3) },
+    { position: 66, value: Math.ceil(maximum / 3) },
+    { position: 100, value: 0 },
+  ]
   const activityMetrics = [
     { key: 'signups', label: 'Sign-ups', color: '#b36b50' },
     { key: 'posts', label: 'Posts', color: '#a8442a' },
@@ -247,6 +359,7 @@ function Overview({ data }: { data: OverviewData }) {
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {stats.map(([label, value, note, urgent]) => <StatCard key={label} label={label} value={value} note={note} urgent={urgent} />)}
       </section>
+      <DateRangeFilter value={dateRange} onChange={setDateRange} />
       <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
         <article className="rounded-2xl border border-[#e6d5bd] bg-[#fffaf1] p-5">
           <div className="flex items-center justify-between gap-3 border-b border-[#eadbc5] pb-3">
@@ -254,23 +367,23 @@ function Overview({ data }: { data: OverviewData }) {
             <Link href="/admin/reports" className="text-sm font-bold text-[#a8442a] hover:underline">All reports</Link>
           </div>
           <div className="divide-y divide-[#eadbc5]">
-            {data.reports.length ? data.reports.map((report) => (
+            {visibleReports.length ? visibleReports.map((report) => (
               <Link key={report.id} href={`/admin/reports/${report.id}`} className="flex min-h-[4.6rem] items-center justify-between gap-3 py-3 hover:bg-[#fcf4e8]">
                 <ReportSummary report={report} />
                 <span className={primaryButtonClass}>Review</span>
               </Link>
-            )) : <p className="py-6 text-sm text-[#806b56]">No open reports. The queue is clear.</p>}
+            )) : <p className="py-6 text-sm text-[#806b56]">{data.reports.length ? 'No reports in this date range.' : 'No open reports. The queue is clear.'}</p>}
           </div>
         </article>
         <article className="rounded-2xl border border-[#e6d5bd] bg-[#fffaf1] p-5">
           <h2 className="border-b border-[#eadbc5] pb-3 font-serif text-xl font-bold">Recent actions</h2>
           <div className="divide-y divide-[#eadbc5]">
-            {data.actions.length ? data.actions.map((action, index) => (
+            {visibleActions.length ? visibleActions.map((action, index) => (
               <p key={`${action.action}-${action.createdAt}-${index}`} className="py-3 text-sm">
                 <strong>{action.actor}</strong> {formatAction(action.action).toLowerCase()}
                 {action.target ? ` · ${action.target}` : ''} <span className="text-xs text-[#806b56]">· {formatDate(action.createdAt)}</span>
               </p>
-            )) : <p className="py-6 text-sm text-[#806b56]">No moderation actions logged yet.</p>}
+            )) : <p className="py-6 text-sm text-[#806b56]">{data.actions.length ? 'No actions in this date range.' : 'No moderation actions logged yet.'}</p>}
           </div>
           <Link href="/admin/audit" className="mt-3 inline-block text-sm font-bold text-[#a8442a] hover:underline">Open audit log</Link>
         </article>
@@ -295,28 +408,71 @@ function Overview({ data }: { data: OverviewData }) {
             ))}
           </div>
         </div>
-        <div className="mt-5 flex h-36 items-end gap-1 border-b border-[#dfc9ac] sm:gap-2">
-          {data.activity.map((day) => {
-            const value = day[activityMetric]
-            const height = value === 0 ? 0 : Math.max(4, value / maximum * 100)
-            return (
-              <button
-                key={day.date}
-                type="button"
-                title={`${day.date}: ${value} ${selectedActivityMetric.label.toLowerCase()}`}
-                aria-label={`${day.date}: ${value} ${selectedActivityMetric.label.toLowerCase()}`}
-                onClick={() => router.push(`/admin/reports`)}
-                className="group flex h-full min-w-0 flex-1 flex-col justify-end"
+        <div
+          className="relative mt-6 h-52"
+          role="group"
+          aria-label={`${selectedActivityMetric.label} per day for the last 14 days`}
+        >
+          <div className="absolute inset-x-0 top-0 bottom-7">
+            {gridLevels.map((level, index) => (
+              <div
+                key={`${level.position}-${index}`}
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-x-0 flex items-center"
+                style={{ top: `${level.position}%` }}
               >
-                <span
-                  className="mx-auto w-full max-w-8 rounded-t transition-opacity group-hover:opacity-75"
-                  style={{ height: `${height}%`, backgroundColor: selectedActivityMetric.color }}
-                />
-              </button>
-            )
-          })}
+                <span className="w-8 -translate-y-1/2 pr-2 text-right text-[10px] tabular-nums text-[#927b65]">
+                  {level.value}
+                </span>
+                <span className="h-px flex-1 border-t border-dashed border-[#eadbc5]" />
+              </div>
+            ))}
+            <div className="absolute inset-y-0 left-9 right-0 flex items-end gap-1 sm:gap-2">
+              {data.activity.map((day) => {
+                const value = day[activityMetric]
+                const height = value === 0 ? 0 : Math.max(4, value / maximum * 100)
+                const date = new Date(`${day.date}T00:00:00`)
+                const dateLabel = Number.isNaN(date.getTime())
+                  ? day.date
+                  : new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(date)
+                return (
+                  <button
+                    key={day.date}
+                    type="button"
+                    aria-label={`${dateLabel}: ${value} ${selectedActivityMetric.label.toLowerCase()}`}
+                    className="group relative flex h-full min-w-0 flex-1 flex-col justify-end outline-none focus-visible:z-20 focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-[#442517]"
+                  >
+                    <span className="pointer-events-none absolute left-1/2 top-0 z-10 min-w-28 -translate-x-1/2 -translate-y-2 whitespace-nowrap rounded-lg bg-[#2b140b] px-3 py-2 text-center text-[11px] leading-4 text-white opacity-0 shadow-lg transition-[opacity,transform] duration-150 group-hover:-translate-y-1 group-hover:opacity-100 group-focus-visible:-translate-y-1 group-focus-visible:opacity-100 motion-reduce:transition-none">
+                      <span className="block font-semibold">{dateLabel}</span>
+                      <span className="block text-white/75">{value.toLocaleString()} {selectedActivityMetric.label.toLowerCase()}</span>
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className="mx-auto w-full max-w-8 rounded-t transition-[height,filter] duration-500 ease-out group-hover:brightness-110 motion-reduce:transition-none"
+                      style={{ height: `${height}%`, backgroundColor: selectedActivityMetric.color }}
+                    />
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          <div aria-hidden="true" className="absolute bottom-0 left-9 right-0 flex gap-1 sm:gap-2">
+            {data.activity.map((day) => {
+              const date = new Date(`${day.date}T00:00:00`)
+              const label = Number.isNaN(date.getTime())
+                ? day.date.slice(-2)
+                : new Intl.DateTimeFormat(undefined, { day: 'numeric' }).format(date)
+              return (
+                <span key={day.date} className="min-w-0 flex-1 text-center text-[9px] tabular-nums text-[#927b65] sm:text-[10px]">
+                  {label}
+                </span>
+              )
+            })}
+          </div>
         </div>
-        <p className="mt-2 text-xs text-[#806b56]">Daily {selectedActivityMetric.label.toLowerCase()} over the last 14 days</p>
+        <p className="mt-1 text-xs text-[#806b56]">
+          Hover or focus any bar to see its date and exact {selectedActivityMetric.label.toLowerCase()} count. Days are labeled along the bottom.
+        </p>
       </section>
     </div>
   )
@@ -480,6 +636,7 @@ function Reports({
   const [targetType, setTargetType] = useState('all')
   const [status, setStatus] = useState('open')
   const [reports, setReports] = useState(initialReports)
+  const [dateRange, setDateRange] = useState<DateRange>(ALL_DATES)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -487,8 +644,9 @@ function Reports({
     const text = `${report.content} ${report.context ?? ''} ${report.reportedUser.displayName} ${report.reportedUser.username} ${report.reporters.map((item) => `${item.user.displayName} ${item.note}`).join(' ')}`
     return (reason === 'all' || report.reason === reason)
       && (targetType === 'all' || report.targetType === targetType)
+      && dateRangeMatches(report.createdAt, dateRange)
       && (!search || text.toLowerCase().includes(search.toLowerCase()))
-  }), [reason, reports, search, targetType])
+  }), [dateRange, reason, reports, search, targetType])
   const selectedReport = visibleReports.find((report) => report.id === selectedReportId)
 
   const loadStatus = async (nextStatus: string) => {
@@ -523,6 +681,9 @@ function Reports({
           <option value="all">All content</option>
           {['post', 'comment', 'chapter_comment', 'work', 'profile'].map((type) => <option key={type} value={type}>{type.replace('_', ' ')}</option>)}
         </select>
+        <div className="md:col-span-2 xl:col-span-4">
+          <DateRangeFilter value={dateRange} onChange={setDateRange} />
+        </div>
       </section>
       {error && <p role="alert" className="rounded-xl bg-[#f5c9bc] p-3 text-sm text-[#822816]">{error}</p>}
       {loading && <p className="text-sm text-[#806b56]">Loading reports…</p>}
@@ -582,9 +743,11 @@ function UsersPage({
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [role, setRole] = useState('all')
+  const [dateRange, setDateRange] = useState<DateRange>(ALL_DATES)
   const filtered = users.filter((user) => (
     (status === 'all' || user.status === status)
     && (role === 'all' || user.roles.includes(role))
+    && dateRangeMatches(user.joinedAt, dateRange)
     && (!search || `${user.displayName} ${user.username} ${user.id}`.toLowerCase().includes(search.toLowerCase()))
   ))
   const selected = filtered.find((user) => user.id === selectedUserId) ?? filtered[0]
@@ -600,6 +763,9 @@ function UsersPage({
           <select aria-label="Account status" value={status} onChange={(event) => setStatus(event.target.value)} className={fieldClass}>
             <option value="all">All statuses</option><option value="active">Active</option><option value="suspended">Suspended</option><option value="banned">Banned</option>
           </select>
+          <div className="sm:col-span-3">
+            <DateRangeFilter value={dateRange} onChange={setDateRange} />
+          </div>
         </div>
         <div className="divide-y divide-[#eadbc5]">
           {filtered.map((user) => (
@@ -666,8 +832,10 @@ function UsersPage({
 function ContentPage({ items, onVisibility, busy }: { items: ContentItem[]; onVisibility: (item: ContentItem) => void; busy: boolean }) {
   const [search, setSearch] = useState('')
   const [visibility, setVisibility] = useState('all')
+  const [dateRange, setDateRange] = useState<DateRange>(ALL_DATES)
   const visible = items.filter((item) => (
     (visibility === 'all' || (visibility === 'hidden' ? item.hidden : !item.hidden))
+    && dateRangeMatches(item.createdAt, dateRange)
     && (!search || `${item.title} ${item.content} ${item.author}`.toLowerCase().includes(search.toLowerCase()))
   ))
   return (
@@ -677,6 +845,9 @@ function ContentPage({ items, onVisibility, busy }: { items: ContentItem[]; onVi
         <select aria-label="Content visibility" value={visibility} onChange={(event) => setVisibility(event.target.value)} className={fieldClass}>
           <option value="all">All visibility</option><option value="visible">Visible</option><option value="hidden">Hidden</option>
         </select>
+        <div className="sm:col-span-2">
+          <DateRangeFilter value={dateRange} onChange={setDateRange} />
+        </div>
       </div>
       <section className="divide-y divide-[#eadbc5] overflow-hidden rounded-2xl border border-[#e6d5bd] bg-[#fffaf1]">
         {visible.map((item) => (
@@ -700,10 +871,17 @@ function ContentPage({ items, onVisibility, busy }: { items: ContentItem[]; onVi
 
 function AuditPage({ entries }: { entries: AuditEntry[] }) {
   const [search, setSearch] = useState('')
-  const filtered = entries.filter((entry) => `${entry.action} ${entry.actor} ${entry.target ?? ''} ${entry.note}`.toLowerCase().includes(search.toLowerCase()))
+  const [dateRange, setDateRange] = useState<DateRange>(ALL_DATES)
+  const filtered = entries.filter((entry) => (
+    dateRangeMatches(entry.createdAt, dateRange)
+    && `${entry.action} ${entry.actor} ${entry.target ?? ''} ${entry.note}`.toLowerCase().includes(search.toLowerCase())
+  ))
   return (
     <div className="space-y-4">
-      <SearchField value={search} onChange={setSearch} placeholder="Search actions, staff, or users…" />
+      <section className="grid gap-3 rounded-2xl border border-[#e6d5bd] bg-[#fffaf1] p-4 sm:grid-cols-[minmax(12rem,1fr)_auto]">
+        <SearchField value={search} onChange={setSearch} placeholder="Search actions, staff, or users…" />
+        <DateRangeFilter value={dateRange} onChange={setDateRange} />
+      </section>
       <section className="divide-y divide-[#eadbc5] overflow-hidden rounded-2xl border border-[#e6d5bd] bg-[#fffaf1]">
         {filtered.map((entry) => (
           <article key={entry.id} className="grid gap-2 p-4 sm:grid-cols-[minmax(0,1fr)_auto]">
@@ -733,6 +911,8 @@ function StaffPage({
 }) {
   const [userId, setUserId] = useState('')
   const [staffRole, setStaffRole] = useState('moderator')
+  const [dateRange, setDateRange] = useState<DateRange>(ALL_DATES)
+  const visibleStaff = staff.filter((member) => dateRangeMatches(member.joinedAt, dateRange))
   return (
     <div className="space-y-4">
       <section className="rounded-2xl border border-[#e6d5bd] bg-[#fffaf1] p-5">
@@ -746,8 +926,9 @@ function StaffPage({
           <button type="button" className={primaryButtonClass} disabled={busy || !userId.trim()} onClick={() => onRoleChange(userId.trim(), staffRole)}>Grant role</button>
         </div>
       </section>
+      <DateRangeFilter value={dateRange} onChange={setDateRange} />
       <section className="divide-y divide-[#eadbc5] overflow-hidden rounded-2xl border border-[#e6d5bd] bg-[#fffaf1]">
-        {staff.map((member) => (
+        {visibleStaff.map((member) => (
           <div key={member.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
             <div><h3 className="font-bold">{member.displayName} <span className="font-normal text-[#806b56]">@{member.username}</span></h3><p className="text-xs text-[#806b56]">{member.id} · since {formatDate(member.joinedAt)}</p></div>
             <div className="flex gap-2">
@@ -757,8 +938,92 @@ function StaffPage({
             </div>
           </div>
         ))}
-        {!staff.length && <EmptyState>No staff accounts found.</EmptyState>}
+        {!visibleStaff.length && <EmptyState>{staff.length ? 'No staff accounts match this date range.' : 'No staff accounts found.'}</EmptyState>}
       </section>
+    </div>
+  )
+}
+
+function AppealsPage({
+  initialWarningAppeals,
+  initialSuspensionAppeals,
+  busy,
+  onResolveWarning,
+  onResolveSuspension,
+}: {
+  initialWarningAppeals: WarningAppeal[]
+  initialSuspensionAppeals: SuspensionAppeal[]
+  busy: boolean
+  onResolveWarning: (appealId: string, decision: 'upheld' | 'rescinded', note: string) => Promise<boolean>
+  onResolveSuspension: (appealId: string, decision: 'upheld' | 'rescinded', note: string) => Promise<boolean>
+}) {
+  const [category, setCategory] = useState<'warnings' | 'suspensions'>(
+    initialWarningAppeals.length || !initialSuspensionAppeals.length ? 'warnings' : 'suspensions',
+  )
+  const [search, setSearch] = useState('')
+  const [dateRange, setDateRange] = useState<DateRange>(ALL_DATES)
+  const [warningCount, setWarningCount] = useState(initialWarningAppeals.length)
+  const [suspensionCount, setSuspensionCount] = useState(initialSuspensionAppeals.length)
+
+  return (
+    <div className="space-y-4">
+      <section className="rounded-2xl border border-[#e6d5bd] bg-[#fffaf1] p-5 sm:p-6">
+        <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-[#806b56]">Moderation queue</p>
+        <h2 className="mt-1 font-serif text-2xl font-bold">Appeals</h2>
+        <p className="mt-1 text-sm leading-6 text-[#806b56]">Review user requests to reconsider moderation decisions.</p>
+        <div className="mt-5 grid grid-cols-2 gap-2 rounded-xl bg-[#f4e7d5] p-1.5" role="tablist" aria-label="Appeal categories">
+          <button
+            type="button"
+            role="tab"
+            id="warning-appeals-tab"
+            aria-selected={category === 'warnings'}
+            aria-controls="warning-appeals-panel"
+            onClick={() => setCategory('warnings')}
+            className={`flex min-h-12 items-center justify-center gap-2 rounded-lg px-3 text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-[#ab4b30] ${
+              category === 'warnings' ? 'bg-[#fffaf1] text-[#442a1c] shadow-sm' : 'text-[#806b56] hover:text-[#442a1c]'
+            }`}
+          >
+            Warnings <span className="rounded-full bg-[#eadbc5] px-2 py-0.5 text-xs">{warningCount}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="suspension-appeals-tab"
+            aria-selected={category === 'suspensions'}
+            aria-controls="suspension-appeals-panel"
+            onClick={() => setCategory('suspensions')}
+            className={`flex min-h-12 items-center justify-center gap-2 rounded-lg px-3 text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-[#ab4b30] ${
+              category === 'suspensions' ? 'bg-[#fffaf1] text-[#442a1c] shadow-sm' : 'text-[#806b56] hover:text-[#442a1c]'
+            }`}
+          >
+            Suspensions <span className="rounded-full bg-[#eadbc5] px-2 py-0.5 text-xs">{suspensionCount}</span>
+          </button>
+        </div>
+      </section>
+      <section className="grid gap-3 rounded-2xl border border-[#e6d5bd] bg-[#fffaf1] p-4 sm:grid-cols-[minmax(12rem,1fr)_auto]">
+        <SearchField value={search} onChange={setSearch} placeholder={`Search user, ${category === 'warnings' ? 'warning' : 'suspension'}, or appeal…`} />
+        <DateRangeFilter value={dateRange} onChange={setDateRange} />
+      </section>
+      <div id="warning-appeals-panel" role="tabpanel" aria-labelledby="warning-appeals-tab" hidden={category !== 'warnings'}>
+        <WarningAppealsPage
+          initialAppeals={initialWarningAppeals}
+          busy={busy}
+          search={search}
+          dateRange={dateRange}
+          onResolved={() => setWarningCount((count) => Math.max(0, count - 1))}
+          onResolve={onResolveWarning}
+        />
+      </div>
+      <div id="suspension-appeals-panel" role="tabpanel" aria-labelledby="suspension-appeals-tab" hidden={category !== 'suspensions'}>
+        <SuspensionAppealsPage
+          initialAppeals={initialSuspensionAppeals}
+          busy={busy}
+          search={search}
+          dateRange={dateRange}
+          onResolved={() => setSuspensionCount((count) => Math.max(0, count - 1))}
+          onResolve={onResolveSuspension}
+        />
+      </div>
     </div>
   )
 }
@@ -767,68 +1032,287 @@ function WarningAppealsPage({
   initialAppeals,
   onResolve,
   busy,
+  search,
+  dateRange,
+  onResolved,
 }: {
   initialAppeals: WarningAppeal[]
   onResolve: (appealId: string, decision: 'upheld' | 'rescinded', note: string) => Promise<boolean>
   busy: boolean
+  search: string
+  dateRange: DateRange
+  onResolved: () => void
 }) {
   const [appeals, setAppeals] = useState(initialAppeals)
   const [notes, setNotes] = useState<Record<string, string>>({})
-  const [search, setSearch] = useState('')
+  const [confirmation, setConfirmation] = useState<{
+    appeal: WarningAppeal
+    decision: 'upheld' | 'rescinded'
+  } | null>(null)
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null)
   const filteredAppeals = appeals.filter((appeal) => (
-    `${appeal.display_name} ${appeal.username} ${appeal.warning_note} ${appeal.appeal_text}`.toLowerCase().includes(search.toLowerCase())
+    dateRangeMatches(appeal.appeal_created_at, dateRange)
+    && `${appeal.display_name} ${appeal.username} ${appeal.warning_note} ${appeal.appeal_text}`.toLowerCase().includes(search.toLowerCase())
   ))
+  const appealsByUser = new Map<string, WarningAppeal[]>()
+  for (const appeal of filteredAppeals) {
+    const userAppeals = appealsByUser.get(appeal.user_id) ?? []
+    userAppeals.push(appeal)
+    appealsByUser.set(appeal.user_id, userAppeals)
+  }
+  const userGroups = Array.from(appealsByUser.entries())
+    .map(([userId, userAppeals]) => [
+      userId,
+      userAppeals.sort((left, right) => right.appeal_created_at.localeCompare(left.appeal_created_at)),
+    ] as const)
+    .sort(([, left], [, right]) => right.length - left.length)
 
-  const resolve = async (appeal: WarningAppeal, decision: 'upheld' | 'rescinded') => {
-    const label = decision === 'rescinded' ? 'Rescind this warning?' : 'Uphold this warning?'
-    if (!window.confirm(`${label} The decision will be added to the audit log and sent to the user.`)) return
-    if (await onResolve(appeal.appeal_id, decision, notes[appeal.appeal_id] ?? '')) {
-      setAppeals((current) => current.filter((item) => item.appeal_id !== appeal.appeal_id))
+  const resolve = async () => {
+    if (!confirmation) return
+    if (await onResolve(confirmation.appeal.appeal_id, confirmation.decision, notes[confirmation.appeal.appeal_id] ?? '')) {
+      setAppeals((current) => current.filter((item) => item.appeal_id !== confirmation.appeal.appeal_id))
+      onResolved()
+      setConfirmation(null)
     }
   }
 
   return (
     <div className="space-y-4">
-      <section className="rounded-2xl border border-[#e6d5bd] bg-[#fffaf1] p-4">
-        <SearchField value={search} onChange={setSearch} placeholder="Search user, warning, or appeal…" />
-      </section>
-      {filteredAppeals.length ? filteredAppeals.map((appeal) => (
-        <article key={appeal.appeal_id} className="rounded-2xl border border-[#e6d5bd] bg-[#fffaf1] p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="font-serif text-xl font-bold">{appeal.display_name}</h2>
-              <p className="text-sm text-[#806b56]">@{appeal.username} · appeal received {formatDate(appeal.appeal_created_at)}</p>
+      {userGroups.length ? (
+        <>
+          <section className="rounded-2xl border border-[#e6d5bd] bg-[#fffaf1] px-5 py-4">
+            <p className="text-sm font-bold">Pending appeals by user</p>
+            <p className="mt-1 text-sm text-[#806b56]">{userGroups.length} {userGroups.length === 1 ? 'user' : 'users'} · {filteredAppeals.length} {filteredAppeals.length === 1 ? 'appeal' : 'appeals'}</p>
+          </section>
+          {userGroups.map(([userId, userAppeals]) => {
+            const profile = userAppeals[0]
+            const expanded = expandedUserId === userId
+            return (
+              <section key={userId} className="overflow-hidden rounded-2xl border border-[#e6d5bd] bg-[#fffaf1]">
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  onClick={() => setExpandedUserId(expanded ? null : userId)}
+                  className="flex w-full items-center gap-4 p-4 text-left transition-colors hover:bg-[#f8efdf] focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[#ab4b30] sm:p-5"
+                >
+                  <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[#eadbc5] font-serif text-lg font-bold text-[#72553f]" aria-hidden="true">
+                    {(profile.display_name || profile.username || '?').slice(0, 1).toUpperCase()}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-serif text-lg font-bold">{profile.display_name || profile.username}</span>
+                    <span className="block truncate text-sm text-[#806b56]">@{profile.username}</span>
+                    <span className="mt-1 block text-xs font-semibold text-[#72553f]">{userAppeals.length} pending {userAppeals.length === 1 ? 'appeal' : 'appeals'}</span>
+                  </span>
+                  <span className="hidden shrink-0 rounded-full border border-[#dfc9ac] px-3 py-1 text-xs font-bold sm:inline-flex">
+                    {expanded ? 'Hide appeals' : 'View appeals'}
+                  </span>
+                  <ChevronDown className={`size-5 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} aria-hidden="true" />
+                </button>
+                {expanded && (
+                  <div className="space-y-4 border-t border-[#e6d5bd] bg-[#fcf6eb] p-4 sm:p-5">
+                    <Link href={`/profile/${encodeURIComponent(userId)}`} className="inline-flex min-h-10 items-center gap-2 rounded-full border border-[#dfc9ac] px-4 text-sm font-semibold hover:bg-white">
+                      <UserRound className="size-4" aria-hidden="true" /> View user profile
+                    </Link>
+                    {userAppeals.map((appeal) => (
+                      <article key={appeal.appeal_id} className="rounded-xl border border-[#e6d5bd] bg-[#fffaf1] p-4 sm:p-5">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <h3 className="font-serif text-lg font-bold">Warning appeal</h3>
+                            <p className="text-sm text-[#806b56]">Appeal received {formatDate(appeal.appeal_created_at)}</p>
+                          </div>
+                          <StatusBadge status="pending" />
+                        </div>
+                        <section className="mt-4 rounded-xl bg-[#f4e7d5] p-4">
+                          <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#72553f]">Original warning · {formatDate(appeal.warning_created_at)}</h4>
+                          <p className="mt-2 whitespace-pre-wrap text-sm">{appeal.warning_note || 'No additional reason was provided.'}</p>
+                        </section>
+                        <section className="mt-3 rounded-xl border border-[#eadbc5] p-4">
+                          <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#72553f]">User appeal</h4>
+                          <p className="mt-2 whitespace-pre-wrap text-sm">{appeal.appeal_text}</p>
+                        </section>
+                        <label className="mt-4 block text-sm font-semibold">
+                          Decision note <span className="font-normal text-[#806b56]">(optional; visible to the user)</span>
+                          <textarea
+                            value={notes[appeal.appeal_id] ?? ''}
+                            maxLength={1000}
+                            onChange={(event) => setNotes((current) => ({ ...current, [appeal.appeal_id]: event.target.value }))}
+                            rows={3}
+                            className="mt-2 w-full rounded-xl border border-[#dfc9ac] bg-[#fffaf1] p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#ab4b30]"
+                          />
+                        </label>
+                        <div className="mt-4 flex flex-wrap justify-end gap-2">
+                          <button type="button" disabled={busy} onClick={() => setConfirmation({ appeal, decision: 'upheld' })} className={buttonClass}>
+                            Uphold warning
+                          </button>
+                          <button type="button" disabled={busy} onClick={() => setConfirmation({ appeal, decision: 'rescinded' })} className={primaryButtonClass}>
+                            Rescind warning
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )
+          })}
+        </>
+      ) : <EmptyState>{appeals.length ? 'No appeals match this search.' : 'No warning appeals are waiting for review.'}</EmptyState>}
+      {confirmation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" onClick={(event) => {
+          if (!busy && event.target === event.currentTarget) setConfirmation(null)
+        }}>
+          <section role="alertdialog" aria-modal="true" aria-labelledby="warning-appeal-decision-title" className="w-full max-w-lg rounded-2xl border border-[#e6d5bd] bg-[#fffaf1] p-5 shadow-2xl sm:p-6">
+            <span className="text-xs font-extrabold uppercase tracking-wider text-[#806b56]">Staff decision</span>
+            <h2 id="warning-appeal-decision-title" className="mt-2 font-serif text-2xl font-bold">
+              {confirmation.decision === 'rescinded' ? 'Rescind this warning?' : 'Uphold this warning?'}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[#806b56]">
+              This decision will be added to the audit log and sent to {confirmation.appeal.display_name}.
+            </p>
+            <div className="mt-4 rounded-xl border border-[#eadbc5] bg-white/60 p-4">
+              <p className="text-xs font-extrabold uppercase tracking-wider text-[#72553f]">Appeal</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm">{confirmation.appeal.appeal_text}</p>
+              {notes[confirmation.appeal.appeal_id]?.trim() && (
+                <p className="mt-3 border-t border-[#eadbc5] pt-3 text-sm"><span className="font-bold">Decision note: </span>{notes[confirmation.appeal.appeal_id]}</p>
+              )}
             </div>
-            <StatusBadge status="pending" />
-          </div>
-          <section className="mt-4 rounded-xl bg-[#f4e7d5] p-4">
-            <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#72553f]">Original warning · {formatDate(appeal.warning_created_at)}</h3>
-            <p className="mt-2 whitespace-pre-wrap text-sm">{appeal.warning_note || 'No additional reason was provided.'}</p>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button type="button" disabled={busy} onClick={() => setConfirmation(null)} className={buttonClass}>Go back</button>
+              <button type="button" disabled={busy} onClick={() => void resolve()} className={primaryButtonClass}>
+                {busy ? 'Saving…' : confirmation.decision === 'rescinded' ? 'Confirm rescind' : 'Confirm uphold'}
+              </button>
+            </div>
           </section>
-          <section className="mt-3 rounded-xl border border-[#eadbc5] p-4">
-            <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#72553f]">User appeal</h3>
-            <p className="mt-2 whitespace-pre-wrap text-sm">{appeal.appeal_text}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SuspensionAppealsPage({
+  initialAppeals,
+  onResolve,
+  busy,
+  search,
+  dateRange,
+  onResolved,
+}: {
+  initialAppeals: SuspensionAppeal[]
+  onResolve: (appealId: string, decision: 'upheld' | 'rescinded', note: string) => Promise<boolean>
+  busy: boolean
+  search: string
+  dateRange: DateRange
+  onResolved: () => void
+}) {
+  const [appeals, setAppeals] = useState(initialAppeals)
+  const [notes, setNotes] = useState<Record<string, string>>({})
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null)
+  const [confirmation, setConfirmation] = useState<{
+    appeal: SuspensionAppeal
+    decision: 'upheld' | 'rescinded'
+  } | null>(null)
+  const filteredAppeals = appeals.filter((appeal) => (
+    dateRangeMatches(appeal.appeal_created_at, dateRange)
+    && `${appeal.display_name} ${appeal.username} ${appeal.restriction_note} ${appeal.appeal_text}`.toLowerCase().includes(search.toLowerCase())
+  ))
+  const appealsByUser = new Map<string, SuspensionAppeal[]>()
+  for (const appeal of filteredAppeals) {
+    const userAppeals = appealsByUser.get(appeal.user_id) ?? []
+    userAppeals.push(appeal)
+    appealsByUser.set(appeal.user_id, userAppeals)
+  }
+  const userGroups = Array.from(appealsByUser.entries())
+    .map(([userId, userAppeals]) => [userId, userAppeals] as const)
+    .sort(([, left], [, right]) => right.length - left.length)
+
+  const resolve = async () => {
+    if (!confirmation) return
+    if (await onResolve(confirmation.appeal.appeal_id, confirmation.decision, notes[confirmation.appeal.appeal_id] ?? '')) {
+      setAppeals((current) => current.filter((item) => item.appeal_id !== confirmation.appeal.appeal_id))
+      onResolved()
+      setConfirmation(null)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {userGroups.length ? userGroups.map(([userId, userAppeals]) => {
+        const profile = userAppeals[0]
+        const expanded = expandedUserId === userId
+        return (
+          <section key={userId} className="overflow-hidden rounded-2xl border border-[#e6d5bd] bg-[#fffaf1]">
+            <button type="button" aria-expanded={expanded} onClick={() => setExpandedUserId(expanded ? null : userId)} className="flex w-full items-center gap-4 p-4 text-left hover:bg-[#f8efdf] focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[#ab4b30] sm:p-5">
+              <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[#eadbc5] font-serif text-lg font-bold text-[#72553f]" aria-hidden="true">
+                {(profile.display_name || profile.username || '?').slice(0, 1).toUpperCase()}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-serif text-lg font-bold">{profile.display_name || profile.username}</span>
+                <span className="block truncate text-sm text-[#806b56]">@{profile.username}</span>
+                <span className="mt-1 block text-xs font-semibold text-[#72553f]">{userAppeals.length} pending {userAppeals.length === 1 ? 'appeal' : 'appeals'}</span>
+              </span>
+              <span className="hidden shrink-0 rounded-full border border-[#dfc9ac] px-3 py-1 text-xs font-bold sm:inline-flex">{expanded ? 'Hide appeals' : 'View appeals'}</span>
+              <ChevronDown className={`size-5 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} aria-hidden="true" />
+            </button>
+            {expanded && (
+              <div className="space-y-4 border-t border-[#e6d5bd] bg-[#fcf6eb] p-4 sm:p-5">
+                <Link href={`/profile/${encodeURIComponent(userId)}`} className="inline-flex min-h-10 items-center gap-2 rounded-full border border-[#dfc9ac] px-4 text-sm font-semibold hover:bg-white">
+                  <UserRound className="size-4" aria-hidden="true" /> View user profile
+                </Link>
+                {userAppeals.map((appeal) => (
+                  <article key={appeal.appeal_id} className="rounded-xl border border-[#e6d5bd] bg-[#fffaf1] p-4 sm:p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h3 className="font-serif text-lg font-bold">Suspension appeal</h3>
+                        <p className="text-sm text-[#806b56]">Appeal received {formatDate(appeal.appeal_created_at)}</p>
+                      </div>
+                      <StatusBadge status="pending" />
+                    </div>
+                    <section className="mt-4 rounded-xl bg-[#f4e7d5] p-4">
+                      <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#72553f]">Suspension · {formatDate(appeal.restriction_created_at)}</h4>
+                      <p className="mt-2 whitespace-pre-wrap text-sm">{appeal.restriction_note || 'No additional reason was provided.'}</p>
+                      {appeal.suspended_until && <p className="mt-2 text-xs text-[#806b56]">Scheduled to end {formatDate(appeal.suspended_until)}.</p>}
+                    </section>
+                    <section className="mt-3 rounded-xl border border-[#eadbc5] p-4">
+                      <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#72553f]">User appeal</h4>
+                      <p className="mt-2 whitespace-pre-wrap text-sm">{appeal.appeal_text}</p>
+                    </section>
+                    <label className="mt-4 block text-sm font-semibold">
+                      Decision note <span className="font-normal text-[#806b56]">(optional; visible to the user)</span>
+                      <textarea value={notes[appeal.appeal_id] ?? ''} maxLength={1000} onChange={(event) => setNotes((current) => ({ ...current, [appeal.appeal_id]: event.target.value }))} rows={3} className="mt-2 w-full rounded-xl border border-[#dfc9ac] bg-[#fffaf1] p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#ab4b30]" />
+                    </label>
+                    <div className="mt-4 flex flex-wrap justify-end gap-2">
+                      <button type="button" disabled={busy} onClick={() => setConfirmation({ appeal, decision: 'upheld' })} className={buttonClass}>Uphold suspension</button>
+                      <button type="button" disabled={busy} onClick={() => setConfirmation({ appeal, decision: 'rescinded' })} className={primaryButtonClass}>Rescind suspension</button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
           </section>
-          <label className="mt-4 block text-sm font-semibold">
-            Decision note <span className="font-normal text-[#806b56]">(optional; visible to the user)</span>
-            <textarea
-              value={notes[appeal.appeal_id] ?? ''}
-              maxLength={1000}
-              onChange={(event) => setNotes((current) => ({ ...current, [appeal.appeal_id]: event.target.value }))}
-              rows={3}
-              className="mt-2 w-full rounded-xl border border-[#dfc9ac] bg-[#fffaf1] p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#ab4b30]"
-            />
-          </label>
-          <div className="mt-4 flex flex-wrap justify-end gap-2">
-            <button type="button" disabled={busy} onClick={() => void resolve(appeal, 'upheld')} className={buttonClass}>
-              Uphold warning
-            </button>
-            <button type="button" disabled={busy} onClick={() => void resolve(appeal, 'rescinded')} className={primaryButtonClass}>
-              Rescind warning
-            </button>
-          </div>
-        </article>
-      )) : <EmptyState>{appeals.length ? 'No appeals match this search.' : 'No warning appeals are waiting for review.'}</EmptyState>}
+        )
+      }) : <EmptyState>{appeals.length ? 'No appeals match this search.' : 'No suspension appeals are waiting for review.'}</EmptyState>}
+      {confirmation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" onClick={(event) => {
+          if (!busy && event.target === event.currentTarget) setConfirmation(null)
+        }}>
+          <section role="alertdialog" aria-modal="true" aria-labelledby="suspension-appeal-decision-title" className="w-full max-w-lg rounded-2xl border border-[#e6d5bd] bg-[#fffaf1] p-5 shadow-2xl sm:p-6">
+            <span className="text-xs font-extrabold uppercase tracking-wider text-[#806b56]">Staff decision</span>
+            <h2 id="suspension-appeal-decision-title" className="mt-2 font-serif text-2xl font-bold">{confirmation.decision === 'rescinded' ? 'Rescind this suspension?' : 'Uphold this suspension?'}</h2>
+            <p className="mt-2 text-sm leading-6 text-[#806b56]">This decision will be added to the audit log and sent to {confirmation.appeal.display_name}.</p>
+            <div className="mt-4 rounded-xl border border-[#eadbc5] bg-white/60 p-4">
+              <p className="text-xs font-extrabold uppercase tracking-wider text-[#72553f]">Appeal</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm">{confirmation.appeal.appeal_text}</p>
+              {notes[confirmation.appeal.appeal_id]?.trim() && <p className="mt-3 border-t border-[#eadbc5] pt-3 text-sm"><span className="font-bold">Decision note: </span>{notes[confirmation.appeal.appeal_id]}</p>}
+            </div>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button type="button" disabled={busy} onClick={() => setConfirmation(null)} className={buttonClass}>Go back</button>
+              <button type="button" disabled={busy} onClick={() => void resolve()} className={primaryButtonClass}>
+                {busy ? 'Saving…' : confirmation.decision === 'rescinded' ? 'Confirm rescind' : 'Confirm uphold'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   )
 }
@@ -894,6 +1378,9 @@ export function AdminConsole({
     )
   }
   const users = rows<AdminUser>(data)
+  const appealData = data && typeof data === 'object' && !Array.isArray(data)
+    ? data as Record<string, unknown>
+    : {}
 
   return (
     <div className="space-y-4">
@@ -930,13 +1417,18 @@ export function AdminConsole({
         />
       )}
       {section === 'appeals' && (
-        <WarningAppealsPage
-          initialAppeals={rows<WarningAppeal>(data)}
+        <AppealsPage
+          initialWarningAppeals={rows<WarningAppeal>(appealData.warningAppeals)}
+          initialSuspensionAppeals={rows<SuspensionAppeal>(appealData.suspensionAppeals)}
           busy={busy}
-          onResolve={(appealId, decision, appealNote) => submitAction(
-            { action: 'warning-appeal', appealId, decision, note: appealNote },
-            `Warning appeal ${decision}. The decision was written to the audit log and the user was notified.`,
-          )}
+          onResolveWarning={(appealId, decision, appealNote) => submitAction(
+              { action: 'warning-appeal', appealId, decision, note: appealNote },
+              `Warning appeal ${decision}. The decision was written to the audit log and the user was notified.`,
+            )}
+          onResolveSuspension={(appealId, decision, appealNote) => submitAction(
+              { action: 'suspension-appeal', appealId, decision, note: appealNote },
+              `Suspension appeal ${decision}. The decision was written to the audit log and the user was notified.`,
+            )}
         />
       )}
       {section === 'content' && (

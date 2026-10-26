@@ -14,9 +14,16 @@ export default async function AdminSectionPage({
   const { supabase, staffRole } = await getModerationAccess()
   if (section === 'staff' && staffRole !== 'admin') notFound()
   const data = section === 'appeals'
-    ? await supabase.rpc('get_moderation_warning_appeals').then(({ data: appeals, error }) => {
-      if (error) throw error
-      return appeals
+    ? await Promise.all([
+      supabase.rpc('get_moderation_warning_appeals'),
+      supabase.rpc('get_moderation_suspension_appeals'),
+    ]).then(([warningResult, suspensionResult]) => {
+      if (warningResult.error) throw warningResult.error
+      if (suspensionResult.error) throw suspensionResult.error
+      return {
+        warningAppeals: warningResult.data,
+        suspensionAppeals: suspensionResult.data,
+      }
     })
     : await getModerationPageData(section, '', section === 'users' ? 'all' : 'open')
   return <AdminConsole section={section as AdminSection} data={data} />

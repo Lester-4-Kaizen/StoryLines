@@ -87,56 +87,54 @@ function FieldError({ id, children }: { id: string; children?: string }) {
   return children ? <p id={id} className="text-sm font-medium text-destructive">{children}</p> : null
 }
 
-function SocialButtons({
-  onError,
-  requiresTerms = false,
-  termsAccepted = true,
-}: {
-  onError: (message: string) => void
-  requiresTerms?: boolean
-  termsAccepted?: boolean
-}) {
-  const [provider, setProvider] = useState<'google' | 'facebook' | null>(null)
+function SocialButtons() {
+  const [noticeProvider, setNoticeProvider] = useState<'google' | 'facebook' | null>(null)
+  const [noticeLeaving, setNoticeLeaving] = useState(false)
 
-  const signIn = async (name: 'google' | 'facebook') => {
-    if (requiresTerms && !termsAccepted) {
-      onError('Tanggapin ang Terms at Privacy Policy bago gumawa ng account.')
-      return
+  useEffect(() => {
+    if (!noticeProvider) return
+    const leaveTimer = window.setTimeout(() => setNoticeLeaving(true), 2700)
+    const dismissTimer = window.setTimeout(() => setNoticeProvider(null), 3000)
+    return () => {
+      window.clearTimeout(leaveTimer)
+      window.clearTimeout(dismissTimer)
     }
-    setProvider(name)
-    try {
-      const callback = new URL('/auth/callback', window.location.origin)
-      callback.searchParams.set('next', safeNextPath(new URLSearchParams(window.location.search).get('next')))
-      const { error } = await getSupabaseClient().auth.signInWithOAuth({
-        provider: name,
-        options: { redirectTo: callback.toString() },
-      })
-      if (error) throw error
-    } catch (error) {
-      onError(error instanceof Error ? error.message : `Hindi namin masimulan ang ${name} sign-in. Subukan ulit.`)
-      setProvider(null)
-    }
-  }
+  }, [noticeProvider])
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {(['google', 'facebook'] as const).map((name) => (
-        <button
-          key={name}
-          type="button"
-          onClick={() => void signIn(name)}
-          disabled={provider !== null}
-          className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 text-sm font-bold text-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-wait disabled:opacity-70"
-        >
-          {provider === name ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : (
+    <>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {(['google', 'facebook'] as const).map((name) => (
+          <button
+            key={name}
+            type="button"
+            onClick={() => {
+              setNoticeLeaving(false)
+              setNoticeProvider(name)
+            }}
+            aria-label={`Continue with ${name === 'google' ? 'Google' : 'Facebook'}`}
+            className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 text-sm font-bold text-foreground transition hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
             <span aria-hidden="true" className={`grid size-5 place-items-center font-bold ${name === 'facebook' ? 'text-[#1877F2]' : 'text-foreground'}`}>
               {name === 'google' ? 'G' : 'f'}
             </span>
-          )}
-          Continue with {name === 'google' ? 'Google' : 'Facebook'}
-        </button>
-      ))}
-    </div>
+            <span>Continue with {name === 'google' ? 'Google' : 'Facebook'}</span>
+          </button>
+        ))}
+      </div>
+      {noticeProvider && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`fixed inset-x-4 bottom-5 z-[70] mx-auto max-w-md rounded-2xl border border-border bg-card p-4 text-center text-sm text-foreground shadow-2xl transition-[opacity,transform] duration-300 ease-out motion-reduce:transition-none sm:inset-x-auto ${
+            noticeLeaving ? 'pointer-events-none translate-y-3 opacity-0' : 'translate-y-0 opacity-100'
+          }`}
+        >
+          <p className="font-bold">{noticeProvider === 'google' ? 'Google' : 'Facebook'} sign-in is under development</p>
+          <p className="mt-1 text-muted-foreground">Use your email to continue for now.</p>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -517,17 +515,8 @@ export function AuthPage({
             {(mode === 'login' || mode === 'signup') && (
               <>
                 <div className={isSignup ? 'mt-4' : 'mt-6'}>
-                  <SocialButtons
-                    onError={setTopError}
-                    requiresTerms={isSignup}
-                    termsAccepted={terms}
-                  />
+                  <SocialButtons />
                 </div>
-                {isSignup && !terms && (
-                  <p className="mt-2 text-center text-xs text-muted-foreground">
-                    Check the Terms and Privacy Policy below to enable account creation.
-                  </p>
-                )}
                 <div className="my-5 flex items-center gap-3 text-xs font-medium text-muted-foreground">
                   <span className="h-px flex-1 bg-border" />
                   o gamit ang email mo
@@ -677,7 +666,7 @@ function PageFrame({ children }: { children: ReactNode }) {
           </div>
         </div>
         <div className="mx-auto w-full max-w-xl">
-          <SiteFooter />
+          <SiteFooter compact />
         </div>
       </div>
     </main>

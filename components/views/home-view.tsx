@@ -126,12 +126,12 @@ export function HomeView({
           <div className="min-w-0 max-w-2xl">
             <span className="eyebrow">Para sa mga Pilipinong manlilikha</span>
             <h1 className="mt-3 max-w-xl font-serif text-4xl font-bold leading-[1.06] text-balance sm:text-6xl">
-              Kuwento mo.
+              Mga kuwentong
               <br />
-              Kapitbahay mo.
+              atin.
             </h1>
             <p className="mt-5 max-w-lg text-sm leading-6 text-muted-foreground sm:text-base sm:leading-7">
-              Dito nagsasama ang mga kuwento, sining, at mga taong handang sumuporta sa gawa mo. Tara, simulan natin.
+              Mula sa kuwentong-bayan at kababalaghan hanggang sa kuwentong-barbero at mga karanasan sa araw-araw—dito nagtatagpo ang mga kuwentong naririnig, nararanasan, at nililikha ng mga Pilipino.
             </p>
             <div className="mt-6 flex flex-col gap-3 min-[420px]:flex-row">
               <Button onClick={onCreate} className="min-h-11 min-w-0 whitespace-normal rounded-full bg-accent px-5 text-accent-foreground hover:bg-accent/90">

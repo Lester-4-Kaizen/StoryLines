@@ -55,7 +55,7 @@ export function AdminLayout({
 
   return (
     <div className="min-h-screen bg-[#f1e6d2] text-[#442a1c] lg:grid lg:grid-cols-[13.75rem_minmax(0,1fr)]">
-      <aside className="flex flex-col bg-[#2b140b] px-4 py-4 text-[#f9ebd7] lg:min-h-screen lg:px-4 lg:py-5">
+      <aside className="flex flex-col bg-[#2b140b] px-4 py-4 text-[#f9ebd7] lg:sticky lg:top-0 lg:h-dvh lg:self-start lg:overflow-y-auto lg:px-4 lg:py-5">
         <Link href="/admin" className="px-2 font-serif text-2xl font-bold tracking-tight">StoryLines</Link>
         <span className="ml-2 mt-1 w-fit rounded bg-[#e8ad39] px-2 py-0.5 text-[10px] font-extrabold tracking-[0.16em] text-[#2b140b]">
           {staffRole.toUpperCase()}
@@ -92,7 +92,7 @@ export function AdminLayout({
             type="button"
             onClick={() => void signOut()}
             disabled={signingOut}
-            className="mt-3 flex min-h-10 items-center gap-2 px-2 text-sm text-[#d7b99d] hover:text-white disabled:opacity-60"
+            className="mt-3 flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-sm text-[#d7b99d] hover:bg-white/10 hover:text-white disabled:opacity-60"
           >
             <LogOut className="size-4" /> {signingOut ? 'Logging out…' : 'Log out'}
           </button>

@@ -10,6 +10,8 @@ import { WarningAppealsPanel } from '@/components/moderation/warning-appeals-pan
 import { getSupabaseClient } from '@/lib/supabase'
 import type { Badge } from '@/lib/types'
 
+export type SettingsSection = 'account' | 'privacy' | 'appearance' | 'account-data'
+
 function clearLocalAccountData(userId: string) {
   const draftPrefix = `storylines-editor-draft:${userId}:`
   const draftKeys: string[] = []
@@ -57,6 +59,7 @@ async function accountFunctionErrorMessage(error: { message: string; context?: u
 }
 
 export function SettingsView({
+  section,
   badges,
   activeRole,
   changeRole,
@@ -66,6 +69,7 @@ export function SettingsView({
   isLoggedIn,
   refreshSession,
 }: {
+  section: SettingsSection
   badges: Badge[]
   activeRole: Badge
   changeRole: (role: Badge) => Promise<void>
@@ -101,9 +105,10 @@ export function SettingsView({
   }, [badges])
 
   useEffect(() => {
-    if (!isLoggedIn) {
+    if (!isLoggedIn || section !== 'privacy') {
       setBlockedAccounts([])
       setBlockedError(null)
+      setBlockedLoading(false)
       return
     }
     let active = true
@@ -138,7 +143,7 @@ export function SettingsView({
     return () => {
       active = false
     }
-  }, [isLoggedIn])
+  }, [isLoggedIn, section])
 
   const unblockAccount = async (accountId: string) => {
     setUnblockingAccountId(accountId)
@@ -290,18 +295,23 @@ export function SettingsView({
   }
 
   return (
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
-        <div className="flex min-w-0 flex-col gap-4">
+      <div className="mx-auto w-full max-w-5xl space-y-8">
+        {section === 'account' && (
+        <section id="settings-account" className="space-y-3">
+          <div>
+            <p className="eyebrow">Account</p>
+            <h2 className="mt-1 font-serif text-2xl font-bold">Roles and capabilities</h2>
+          </div>
           <Panel className="p-5 sm:p-7 lg:p-8">
             <span className="eyebrow">Ikaw ang masusunod dito</span>
-            <h1 className="mt-3 font-serif text-3xl font-bold sm:text-4xl">Upgrade account</h1>
+            <h3 className="mt-3 font-serif text-2xl font-bold sm:text-3xl">Upgrade account</h3>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
               Puwede kang pumili ng higit sa isang role. Ikaw ang bahala kung paano sasali. Switch any badge on or off at any time.
             </p>
             {isLoggedIn && (
-              <a href="#blocked-accounts" className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-accent hover:underline">
+              <Link href="/settings/privacy#blocked-accounts" className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-accent hover:underline">
                 <Ban className="size-4" aria-hidden="true" /> Manage blocked accounts
-              </a>
+              </Link>
             )}
             <div className="mt-5 border-t border-border">
               <div className="flex items-center gap-4 border-b border-border py-4">
@@ -376,46 +386,75 @@ export function SettingsView({
               </button>
             </div>
           </Panel>
+        </section>
+        )}
 
-          {isLoggedIn && (
-            <div id="blocked-accounts" className="scroll-mt-24">
-              <Panel className="p-5 sm:p-7 lg:p-8">
-                <span className="eyebrow">Privacy and safety</span>
-                <h2 className="mt-2 font-serif text-2xl font-bold">Blocked accounts</h2>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">Blocked accounts are hidden from your profiles, feeds, works, and messages, and you are automatically unfollowed. Unblock here to see them again; following will not be restored automatically.</p>
-                {blockedLoading ? (
-                  <p className="mt-4 text-sm text-muted-foreground" role="status">Loading blocked accounts…</p>
-                ) : blockedError ? (
-                  <p className="mt-4 text-sm text-destructive" role="alert">{blockedError}</p>
-                ) : blockedAccounts.length ? (
-                  <ul className="mt-4 divide-y divide-border rounded-xl border border-border">
-                    {blockedAccounts.map((account) => (
-                      <li key={account.id} className="flex min-h-16 items-center gap-3 px-3 py-2 sm:px-4">
-                        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground">
-                          <Ban className="size-4" aria-hidden="true" />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-semibold">{account.displayName}</span>
-                          <span className="block truncate text-xs text-muted-foreground">@{account.username}</span>
-                        </span>
-                        <button type="button" onClick={() => void unblockAccount(account.id)} disabled={unblockingAccountId !== null} className="min-h-11 shrink-0 rounded-full border border-border px-4 text-sm font-semibold hover:border-accent hover:text-accent disabled:opacity-60">
-                          {unblockingAccountId === account.id ? 'Unblocking…' : 'Unblock'}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-4 rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">You haven’t blocked any accounts.</p>
-                )}
-              </Panel>
+        {section === 'privacy' && (
+          <section id="settings-safety" className="space-y-3">
+            <div>
+              <p className="eyebrow">Privacy &amp; safety</p>
+              <h2 className="mt-1 font-serif text-2xl font-bold">Your safety settings</h2>
             </div>
-          )}
+            {isLoggedIn ? (
+            <div className="grid items-start gap-4 lg:grid-cols-2">
+              <div id="blocked-accounts" className="scroll-mt-24">
+                <Panel className="p-5 sm:p-7 lg:p-8">
+                  <span className="eyebrow">Privacy and safety</span>
+                  <h3 className="mt-2 font-serif text-2xl font-bold">Blocked accounts</h3>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">Blocked accounts are hidden from your profiles, feeds, works, and messages, and you are automatically unfollowed. Unblock here to see them again; following will not be restored automatically.</p>
+                  {blockedLoading ? (
+                    <p className="mt-4 text-sm text-muted-foreground" role="status">Loading blocked accounts…</p>
+                  ) : blockedError ? (
+                    <p className="mt-4 text-sm text-destructive" role="alert">{blockedError}</p>
+                  ) : blockedAccounts.length ? (
+                    <ul className="mt-4 divide-y divide-border rounded-xl border border-border">
+                      {blockedAccounts.map((account) => (
+                        <li key={account.id} className="flex min-h-16 items-center gap-3 px-3 py-2 sm:px-4">
+                          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground">
+                            <Ban className="size-4" aria-hidden="true" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold">{account.displayName}</span>
+                            <span className="block truncate text-xs text-muted-foreground">@{account.username}</span>
+                          </span>
+                          <button type="button" onClick={() => void unblockAccount(account.id)} disabled={unblockingAccountId !== null} className="min-h-11 shrink-0 rounded-full border border-border px-4 text-sm font-semibold hover:border-accent hover:text-accent disabled:opacity-60">
+                            {unblockingAccountId === account.id ? 'Unblocking…' : 'Unblock'}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-4 rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">You haven’t blocked any accounts.</p>
+                  )}
+                </Panel>
+              </div>
 
-          {isLoggedIn && <WarningAppealsPanel />}
+              <div id="warning-appeals" className="scroll-mt-24">
+                <WarningAppealsPanel />
+              </div>
+            </div>
+            ) : (
+              <Panel className="p-5 sm:p-7">
+                <h3 className="font-serif text-xl font-bold">Sign in to manage privacy and safety</h3>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">Blocked accounts and warning appeals are available when you’re signed in.</p>
+                <Link href="/login?next=%2Fsettings%2Fprivacy" className="mt-4 inline-flex min-h-11 items-center rounded-full bg-accent px-5 text-sm font-bold text-accent-foreground">
+                  Sign in
+                </Link>
+              </Panel>
+            )}
+          </section>
+        )}
 
+        {section === 'appearance' && (
+        <section id="settings-appearance" className="space-y-3">
+          <div>
+            <p className="eyebrow">Personalization</p>
+            <h2 className="mt-1 font-serif text-2xl font-bold">Appearance &amp; device</h2>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
           <Panel className="p-5 sm:p-7 lg:p-8">
             <span className="eyebrow">Personalize your reading space</span>
-            <h2 className="mt-2 font-serif text-2xl font-bold">Theme mode</h2>
+            <h3 className="mt-2 font-serif text-2xl font-bold">Theme mode</h3>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">Piliin ang komportableng itsura ng StoryLines sa device na ito.</p>
             <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2" role="group" aria-label="Theme mode">
               <button
@@ -447,10 +486,20 @@ export function SettingsView({
             <span className="eyebrow">StoryLines on your device</span>
             <PwaInstallPanel />
           </Panel>
+          </div>
+        </section>
+        )}
 
+        {section === 'account-data' && (
+        <section id="settings-account-data" className="space-y-3">
+          <div>
+            <p className="eyebrow">Account management</p>
+            <h2 className="mt-1 font-serif text-2xl font-bold">Manage your account data</h2>
+          </div>
+          <div className="grid items-start gap-4 lg:grid-cols-2">
           <Panel className="border-border p-5 sm:p-7 lg:p-8">
             <span className="eyebrow">Keep your login</span>
-            <h2 className="mt-2 font-serif text-2xl font-bold">Reset account data</h2>
+            <h3 className="mt-2 font-serif text-2xl font-bold">Reset account data</h3>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
               Buburahin ang stories, comics, chapters, posts, comments, likes, saves, follows, messages, reading history, profile photo, at iba pang account data mo. Babalik sa Reader ang account, pero mananatili ang email, username, display name, at login mo. Hindi ito password reset.
             </p>
@@ -460,7 +509,7 @@ export function SettingsView({
             {resetNotice && <p role="status" className="mt-3 text-sm text-muted-foreground">{resetNotice}</p>}
             {!isLoggedIn ? (
               <Link
-                href="/login?next=%2Fsettings"
+                href="/login?next=%2Fsettings%2Faccount-data"
                 className="mt-4 inline-flex min-h-11 items-center rounded-full border border-border px-5 text-sm font-bold hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
               >
                 Mag-log in para magpatuloy
@@ -521,7 +570,7 @@ export function SettingsView({
 
           <Panel className="border-destructive/40 p-5 sm:p-7 lg:p-8">
             <span className="eyebrow text-destructive">Irreversible action</span>
-            <h2 className="mt-2 font-serif text-2xl font-bold">Delete account</h2>
+            <h3 className="mt-2 font-serif text-2xl font-bold">Delete account</h3>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
               Permanenteng mabubura ang profile, posts, comments, stories, comics, likes, saves, follows, messages, at uploaded images mo. Hindi na ito maibabalik.
             </p>
@@ -530,7 +579,7 @@ export function SettingsView({
             </p>
             {!isLoggedIn ? (
               <Link
-                href="/login?next=%2Fsettings"
+                href="/login?next=%2Fsettings%2Faccount-data"
                 className="mt-4 inline-flex min-h-11 items-center rounded-full border border-border px-5 text-sm font-bold hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
               >
                 Mag-log in para magpatuloy
@@ -587,7 +636,9 @@ export function SettingsView({
               </form>
             )}
           </Panel>
-        </div>
+          </div>
+        </section>
+        )}
       </div>
   )
 }

@@ -71,7 +71,7 @@ export function NewWorkView({ go, badges, activeRole }: { go: (route: Route) => 
           {!badges.includes('writer') && !badges.includes('artist') && (
             <div className="flex items-start gap-3 rounded-xl border border-border bg-secondary/50 p-4 text-sm">
               <Sparkles className="mt-0.5 size-4 shrink-0 text-accent" />
-              <p className="text-muted-foreground">Para makagawa, i-enable ang Writer o Artist / Comics badge sa <Link href="/settings" className="font-bold text-accent underline underline-offset-2">account settings</Link>. Reader stays included.</p>
+              <p className="text-muted-foreground">Para makagawa, i-enable ang Writer o Artist / Comics badge sa <Link href="/settings/account" className="font-bold text-accent underline underline-offset-2">account settings</Link>. Reader stays included.</p>
             </div>
           )}
           <div className="flex flex-col-reverse gap-3 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between">

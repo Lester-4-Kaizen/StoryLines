@@ -123,6 +123,7 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
   const [shareOpen, setShareOpen] = useState(false)
   const [connectionsDirection, setConnectionsDirection] = useState<'followers' | 'following' | null>(null)
   const [avatarUploading, setAvatarUploading] = useState(false)
+  const [avatarZoomOpen, setAvatarZoomOpen] = useState(false)
   const [pendingAvatar, setPendingAvatar] = useState<File | null>(null)
   const [pendingAvatarPreview, setPendingAvatarPreview] = useState<string | null>(null)
   const [pendingBanner, setPendingBanner] = useState<File | null>(null)
@@ -132,6 +133,8 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
   const [bannerPosition, setBannerPosition] = useState(initialData.profile?.bannerPosition ?? 50)
   const avatarInputRef = useRef<HTMLInputElement>(null)
   const bannerInputRef = useRef<HTMLInputElement>(null)
+  const avatarTriggerRef = useRef<HTMLButtonElement>(null)
+  const avatarZoomCloseRef = useRef<HTMLButtonElement>(null)
   const editProfileButtonRef = useRef<HTMLButtonElement>(null)
   const editProfileCloseRef = useRef<HTMLButtonElement>(null)
   const wasEditingProfile = useRef(false)
@@ -226,6 +229,17 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
     }
   }, [editing])
 
+  useEffect(() => {
+    if (!avatarZoomOpen) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    avatarZoomCloseRef.current?.focus()
+    return () => {
+      document.body.style.overflow = previousOverflow
+      avatarTriggerRef.current?.focus()
+    }
+  }, [avatarZoomOpen])
+
   if (initialData.error || !data.profile) {
     return (
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
@@ -305,6 +319,7 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
       cancelProfileEdit()
       return
     }
+
     if (event.key !== 'Tab') return
     const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
       'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])',
@@ -317,6 +332,16 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
     } else if (!event.shiftKey && document.activeElement === last) {
       event.preventDefault()
       first?.focus()
+    }
+  }
+
+  const handleAvatarZoomKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      setAvatarZoomOpen(false)
+    } else if (event.key === 'Tab') {
+      event.preventDefault()
+      avatarZoomCloseRef.current?.focus()
     }
   }
 
@@ -382,7 +407,7 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
       if (error) throw error
       setProfileBlocked(nextBlocked)
       if (nextBlocked) {
-        router.replace('/settings#blocked-accounts')
+        router.replace('/settings/privacy#blocked-accounts')
       } else {
         setNotice(`Unblocked @${profile.username}.`)
       }
@@ -988,11 +1013,23 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
         </div>
         <div className="flex flex-col gap-4 px-4 pb-4 sm:flex-row sm:items-end sm:px-6">
           <div className="-mt-8 flex shrink-0 items-center self-start sm:-mt-10">
-            <span className="relative flex size-16 items-center justify-center overflow-hidden rounded-full border-4 border-card bg-secondary text-accent sm:size-20">
-              {profile.avatarUrl
-                ? <Image src={profile.avatarUrl} alt={`${profile.displayName}'s profile picture`} fill sizes="80px" className="object-cover" />
-                : <UserRound className="size-8 sm:size-9" aria-hidden="true" />}
-            </span>
+            {profile.avatarUrl ? (
+              <button
+                ref={avatarTriggerRef}
+                type="button"
+                aria-label={`View ${profile.displayName}'s profile picture`}
+                aria-haspopup="dialog"
+                aria-expanded={avatarZoomOpen}
+                onClick={() => setAvatarZoomOpen(true)}
+                className="relative flex size-16 items-center justify-center overflow-hidden rounded-full border-4 border-card bg-secondary text-accent outline-none transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 sm:size-20 motion-reduce:transition-none"
+              >
+                <Image src={profile.avatarUrl} alt="" fill sizes="80px" className="object-cover" />
+              </button>
+            ) : (
+              <span className="relative flex size-16 items-center justify-center overflow-hidden rounded-full border-4 border-card bg-secondary text-accent sm:size-20">
+                <UserRound className="size-8 sm:size-9" aria-hidden="true" />
+              </span>
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <h1 className="break-words font-serif text-2xl font-bold leading-tight sm:text-3xl">{profile.displayName}</h1>
@@ -1343,6 +1380,44 @@ export function ProfileView({ initialData }: { initialData: ProfilePageData }) {
           </section>
         </div>
       )}
+
+      {avatarZoomOpen && profile.avatarUrl && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setAvatarZoomOpen(false)
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="profile-picture-dialog-title"
+            onKeyDown={handleAvatarZoomKeyDown}
+            className="relative flex flex-col items-center"
+          >
+            <h2 id="profile-picture-dialog-title" className="sr-only">{profile.displayName}'s profile picture</h2>
+            <div className="relative size-[min(82vw,28rem)] overflow-hidden rounded-full border-4 border-card bg-secondary shadow-2xl">
+              <Image
+                src={profile.avatarUrl}
+                alt={`${profile.displayName}'s profile picture`}
+                fill
+                sizes="(max-width: 448px) 82vw, 448px"
+                className="object-cover"
+              />
+              <button
+                ref={avatarZoomCloseRef}
+                type="button"
+                aria-label="Close profile picture"
+                onClick={() => setAvatarZoomOpen(false)}
+                className="absolute right-3 top-3 flex size-11 items-center justify-center rounded-full bg-black/65 text-white shadow-lg outline-none hover:bg-black/80 focus-visible:ring-2 focus-visible:ring-white"
+              >
+                <X className="size-5" aria-hidden="true" />
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {shareOpen && <ShareLinkDialog title="Share this profile" url={`${window.location.origin}${pathname}`} onClose={() => setShareOpen(false)} />}
 
       {guestPrompt && (

@@ -65,7 +65,7 @@ export default function PrivacyPage() {
             <>
               <p>Information is retained while needed to operate the service, maintain your account and content, resolve disputes, or meet legal obligations. Exact retention periods may depend on the data type, provider, and applicable requirements.</p>
               <p>Reports and moderation records may be retained as needed to enforce our policies, review an account’s history, protect members, and address legal or safety obligations, including after content is hidden or an account is restricted.</p>
-              <p>Use <Link href="/settings">Settings</Link> to reset account data while keeping your login, or to request permanent account deletion. A reset removes account activity and creator content supported by the reset flow and returns the profile to Reader. Deletion removes the account; some copies may remain temporarily in provider backups or where retention is legally required.</p>
+              <p>Use <Link href="/settings/account-data">Settings</Link> to reset account data while keeping your login, or to request permanent account deletion. A reset removes account activity and creator content supported by the reset flow and returns the profile to Reader. Deletion removes the account; some copies may remain temporarily in provider backups or where retention is legally required.</p>
               <p>You can update profile information through profile settings. You may also have additional privacy rights under the laws that apply to you.</p>
             </>
           ),

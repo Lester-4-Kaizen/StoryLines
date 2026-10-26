@@ -77,7 +77,7 @@ export function PwaInstallPanel({ compact = false }: { compact?: boolean }) {
         </button>
       ) : compact ? (
         <Link
-          href="/settings"
+          href="/settings/appearance"
           className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-full border border-border px-5 text-sm font-bold hover:bg-muted"
         >
           <Smartphone className="size-4" aria-hidden="true" /> Tingnan ang steps

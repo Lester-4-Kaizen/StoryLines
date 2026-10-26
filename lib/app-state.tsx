@@ -143,7 +143,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const toggleBadge = async (badge: Badge) => {
     if (!user) {
-      requireAuth('/settings')
+      requireAuth('/settings/account')
       return
     }
 
@@ -160,7 +160,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const saveBadges = async (selectedBadges: Badge[]) => {
     if (!user) {
-      requireAuth('/settings')
+      requireAuth('/settings/account')
       throw new Error('Log in to save your account roles.')
     }
     const nextBadges = Array.from(new Set<Badge>(['reader', ...selectedBadges]))
@@ -183,7 +183,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const changeRole = async (nextRole: Badge) => {
     if (!user) {
-      requireAuth('/settings')
+      requireAuth('/settings/account')
       throw new Error('Mag-log in para palitan ang active account role.')
     }
     if (!badges.includes(nextRole)) throw new Error('I-enable muna ang badge na ito sa account settings.')
