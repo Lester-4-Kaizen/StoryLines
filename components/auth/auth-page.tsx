@@ -374,7 +374,7 @@ export function AuthPage({
         }
       } else if (mode === 'login') {
         await refreshSession()
-        router.push(safeNext)
+        window.location.assign(safeNext)
       } else if (mode === 'forgot-password') {
         setSuccessMessage(result.message ?? 'Kung may account gamit ang email na iyan, papunta na ang reset link.')
       } else {

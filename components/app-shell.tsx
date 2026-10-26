@@ -20,6 +20,7 @@ import type { Route } from '@/lib/types'
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const isAuthPage = ['/login', '/signup', '/forgot-password', '/reset-password'].includes(pathname)
+  const isAdminPage = pathname === '/admin' || pathname.startsWith('/admin/')
   const isMessagesPage = pathname === '/messages'
   const {
     creator,
@@ -52,7 +53,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname, isLoggedIn, hydrated, creator])
 
-  if (isAuthPage) return <>{children}</>
+  if (isAuthPage || isAdminPage) return <>{children}</>
 
   return (
     <div className={`flex flex-col bg-background text-foreground ${isMessagesPage ? 'h-[100dvh] min-h-0 overflow-hidden' : 'min-h-screen'}`}>

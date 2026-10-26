@@ -74,7 +74,8 @@ grant select (user_id, update_key, seen_at)
   on public.community_followed_update_reads to authenticated;
 grant insert (user_id, update_key, seen_at)
   on public.community_followed_update_reads to authenticated;
-grant update (seen_at) on public.community_followed_update_reads to authenticated;
+grant update (user_id, update_key, seen_at)
+  on public.community_followed_update_reads to authenticated;
 
 drop policy if exists "Users can read their followed update receipts"
   on public.community_followed_update_reads;

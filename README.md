@@ -289,3 +289,19 @@ Apply [`supabase/migrations/20261025001300_library_liked_works.sql`](./supabase/
 - Email confirmation and resend behavior depends on the Email provider configuration above. New signups show a check-your-inbox state when confirmation is enabled.
 - Social buttons work only after the corresponding Google/Facebook provider is enabled in Supabase.
 - CAPTCHA is not enabled by default. Add Supabase CAPTCHA protection (for example, Cloudflare Turnstile or hCaptcha) only if signup abuse becomes a measured problem; enable it in Supabase Auth and pass the provider token to the relevant Auth calls on both signup and recovery forms.
+
+## Staff moderation console
+
+Apply [`supabase/migrations/20261027000000_admin_moderation.sql`](./supabase/migrations/20261027000000_admin_moderation.sql) after the reports, profiles, community content, works, chapter discussion, and notifications migrations. It adds staff-only moderation RPCs, account status and warning history, hidden-content flags, outcome notifications, and a protected audit log. Apply it before deploying the admin console.
+
+Also apply [`supabase/migrations/20261027000100_hidden_content_policy_permissions.sql`](./supabase/migrations/20261027000100_hidden_content_policy_permissions.sql) after the moderation migration. It grants the hidden-flag column permissions required by public content policies.
+
+Staff privileges are stored in `profiles.staff_role`, a column that is not selectable or writable by regular app clients. To grant the first administrator, use the Supabase SQL Editor with the account's existing username:
+
+```sql
+update public.profiles
+set staff_role = 'admin'
+where username = 'your_admin_username';
+```
+
+Moderators can review reports and act on accounts and content. Only administrators can add/remove staff or change staff roles. Each page and API request checks the signed-in user's database role, and every privileged database function checks it again; ordinary profile roles or browser metadata do not grant staff access. Administrator accounts are routed to the admin console instead of the regular site. A suspended account is blocked from app routes until its suspension expires; a banned account remains blocked until restored by staff. Moderation outcomes can be sent to reporters and reported users as in-app Updates.

@@ -13,6 +13,7 @@ import {
   MessageCircle,
   Megaphone,
   MessageSquare,
+  ShieldAlert,
   UsersRound,
   UserPlus,
 } from 'lucide-react'
@@ -23,8 +24,8 @@ import { getSupabaseClient } from '@/lib/supabase'
 
 type UpdatesTab = 'authors' | 'activity'
 type AuthorFilter = 'all' | 'new-chapters' | 'new-stories' | 'new-comics' | 'announcements' | 'completed'
-type ActivityFilter = 'all' | 'likes' | 'comments' | 'follows' | 'collaboration' | 'mentions'
-type ActivityKind = 'follow' | 'post_like' | 'comment' | 'comment_reply' | 'comment_reaction' | 'mention' | 'collaboration_proposal'
+type ActivityFilter = 'all' | 'likes' | 'comments' | 'follows' | 'collaboration' | 'mentions' | 'moderation'
+type ActivityKind = 'follow' | 'post_like' | 'comment' | 'comment_reply' | 'comment_reaction' | 'mention' | 'collaboration_proposal' | 'moderation_outcome'
 type UpdateKind = 'new-chapters' | 'new-stories' | 'new-comics' | 'announcements' | 'completed'
 
 type Notification = {
@@ -42,6 +43,7 @@ type Notification = {
   postContent?: string
   commentContent?: string
   proposalTitle?: string
+  moderationMessage?: string | null
 }
 
 type ActivityEntry = {
@@ -59,6 +61,7 @@ type ActivityEntry = {
   postContent?: string
   commentContent?: string
   proposalTitle?: string
+  moderationMessage?: string | null
 }
 
 type FollowedUpdate = {
@@ -137,10 +140,12 @@ function activityFilterKind(kind: ActivityKind): ActivityFilter {
   if (kind === 'comment' || kind === 'comment_reply') return 'comments'
   if (kind === 'follow') return 'follows'
   if (kind === 'collaboration_proposal') return 'collaboration'
+  if (kind === 'moderation_outcome') return 'moderation'
   return 'mentions'
 }
 
 function activityText(entry: ActivityEntry) {
+  if (entry.kind === 'moderation_outcome') return entry.moderationMessage ?? 'The moderation team reviewed a report about your account or content.'
   if (entry.kind === 'follow') return 'followed you.'
   if (entry.kind === 'post_like') {
     const others = entry.actorNames.length - 1
@@ -154,6 +159,7 @@ function activityText(entry: ActivityEntry) {
 }
 
 function activityIcon(kind: ActivityKind) {
+  if (kind === 'moderation_outcome') return <ShieldAlert className="size-4" />
   if (kind === 'follow') return <UserPlus className="size-4" />
   if (kind === 'post_like' || kind === 'comment_reaction') return <Heart className="size-4" />
   if (kind === 'collaboration_proposal') return <UsersRound className="size-4" />
@@ -417,7 +423,7 @@ export function UpdatesView() {
       const supabase = getSupabaseClient()
       const [notificationsResult, unreadCountResult, followingResult] = await Promise.all([
         supabase.from('user_notifications')
-          .select('id, actor_id, kind, post_id, comment_id, proposal_id, created_at, read_at')
+          .select('id, actor_id, kind, post_id, comment_id, proposal_id, moderation_message, created_at, read_at')
           .eq('recipient_id', currentUserId)
           .neq('kind', 'message')
           .order('created_at', { ascending: false })
@@ -434,7 +440,7 @@ export function UpdatesView() {
       if (unreadCountResult.error) throw unreadCountResult.error
       if (followingResult.error) throw followingResult.error
       const rows = (notificationsResult.data ?? []).filter((row): row is typeof row & { kind: ActivityKind } => (
-        ['follow', 'post_like', 'comment', 'comment_reply', 'comment_reaction', 'mention', 'collaboration_proposal'].includes(row.kind)
+        ['follow', 'post_like', 'comment', 'comment_reply', 'comment_reaction', 'mention', 'collaboration_proposal', 'moderation_outcome'].includes(row.kind)
       ))
       const actorIds = Array.from(new Set(rows.map((row) => row.actor_id)))
       const postIds = Array.from(new Set(rows.map((row) => row.post_id).filter((id): id is string => Boolean(id))))
@@ -474,6 +480,7 @@ export function UpdatesView() {
           postContent: row.post_id ? postsById.get(row.post_id) : undefined,
           commentContent: row.comment_id ? commentsById.get(row.comment_id) : undefined,
           proposalTitle: row.proposal_id ? proposalsById.get(row.proposal_id) : undefined,
+          moderationMessage: row.moderation_message,
         }
       }))
       setFollowingIds(new Set((followingResult.data ?? []).map((follow) => follow.creator_id)))
@@ -535,6 +542,7 @@ export function UpdatesView() {
             postContent: notification.postContent,
             commentContent: notification.commentContent,
             proposalTitle: notification.proposalTitle,
+              moderationMessage: notification.moderationMessage,
           }
           likesByPost.set(notification.post_id, entry)
           entries.push(entry)
@@ -555,6 +563,7 @@ export function UpdatesView() {
           postContent: notification.postContent,
           commentContent: notification.commentContent,
           proposalTitle: notification.proposalTitle,
+          moderationMessage: notification.moderationMessage,
         })
       }
     }
@@ -657,6 +666,7 @@ export function UpdatesView() {
 
   const openEntry = async (entry: ActivityEntry) => {
     await markEntryRead(entry)
+    if (entry.kind === 'moderation_outcome') return
     if (entry.kind === 'follow' || entry.kind === 'post_like') {
       router.push(entry.kind === 'follow'
         ? `/profile/${encodeURIComponent(entry.actorIds[0])}`
@@ -691,7 +701,7 @@ export function UpdatesView() {
     try {
       const supabase = getSupabaseClient()
       const { data, error: loadError } = await supabase.from('user_notifications')
-        .select('id, actor_id, kind, post_id, comment_id, proposal_id, created_at, read_at')
+        .select('id, actor_id, kind, post_id, comment_id, proposal_id, moderation_message, created_at, read_at')
         .eq('recipient_id', currentUserId)
         .neq('kind', 'message')
         .or(`created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`)
@@ -700,7 +710,7 @@ export function UpdatesView() {
         .limit(NOTIFICATION_PAGE_SIZE)
       if (loadError) throw loadError
       const rows = (data ?? []).filter((row): row is typeof row & { kind: ActivityKind } => (
-        ['follow', 'post_like', 'comment', 'comment_reply', 'comment_reaction', 'mention', 'collaboration_proposal'].includes(row.kind)
+        ['follow', 'post_like', 'comment', 'comment_reply', 'comment_reaction', 'mention', 'collaboration_proposal', 'moderation_outcome'].includes(row.kind)
       ))
       const actorIds = Array.from(new Set(rows.map((row) => row.actor_id)))
       const postIds = Array.from(new Set(rows.map((row) => row.post_id).filter((id): id is string => Boolean(id))))
@@ -737,6 +747,7 @@ export function UpdatesView() {
           postContent: row.post_id ? postsById.get(row.post_id) : undefined,
           commentContent: row.comment_id ? commentsById.get(row.comment_id) : undefined,
           proposalTitle: row.proposal_id ? proposalsById.get(row.proposal_id) : undefined,
+          moderationMessage: row.moderation_message,
         }
       })])
       setHasMoreNotifications((data?.length ?? 0) === NOTIFICATION_PAGE_SIZE)
@@ -896,7 +907,7 @@ export function UpdatesView() {
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4 sm:px-6">
             <div>
               <h2 className="font-serif text-xl font-bold">Activity on your work</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Likes, comments, follows, mentions and collaboration proposals.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Likes, comments, follows, mentions, moderation decisions and collaboration proposals.</p>
             </div>
             <button type="button" disabled={!unreadNotificationCount || saving} onClick={() => void markAllActivityRead()} className="min-h-10 rounded-full border border-border px-4 text-xs font-bold hover:bg-muted disabled:opacity-50">
               {saving ? 'Saving…' : 'Mark all read'}
@@ -910,6 +921,7 @@ export function UpdatesView() {
               ['follows', 'Follows'],
               ['collaboration', 'Collaboration'],
               ['mentions', 'Mentions'],
+              ['moderation', 'Moderation'],
             ] as const).map(([value, label]) => (
               <button key={value} type="button" aria-pressed={activityFilter === value} onClick={() => setActivityFilter(value)} className={`min-h-9 rounded-full border px-3 text-xs font-bold ${activityFilter === value ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-foreground hover:border-accent'}`}>
                 {label}
@@ -1014,13 +1026,17 @@ function ActivityGroup({
                 ? <span className="size-2 shrink-0 rounded-full bg-accent" aria-label="Unread" />
                 : <span className="size-2 shrink-0" aria-hidden="true" />}
               <button type="button" onClick={() => void onOpen(entry)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-                {entry.kind === 'post_like' && entry.actorNames.length > 1 ? (
+                {entry.kind === 'moderation_outcome' ? (
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-secondary text-accent">{activityIcon(entry.kind)}</span>
+                ) : entry.kind === 'post_like' && entry.actorNames.length > 1 ? (
                   <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-secondary text-accent"><Heart className="size-4" /></span>
                 ) : (
                   <ProfileAvatar src={entry.actorAvatarUrl} name={entry.actorNames[0]} className="size-10" />
                 )}
                 <span className="min-w-0 flex-1">
-                  <span className="block text-xs leading-5"><strong>{entry.actorNames[0]}</strong> {activityText(entry)}</span>
+                  <span className="block text-xs leading-5">
+                    {entry.kind === 'moderation_outcome' ? activityText(entry) : <><strong>{entry.actorNames[0]}</strong> {activityText(entry)}</>}
+                  </span>
                   {(snippet || entry.proposalTitle) && <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">{entry.proposalTitle ?? snippet}</span>}
                   <time className="block text-[10px] text-muted-foreground" dateTime={entry.created_at}>{timeAgo(entry.created_at)}</time>
                 </span>

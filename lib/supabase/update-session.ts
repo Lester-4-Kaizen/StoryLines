@@ -4,11 +4,16 @@ import { safeNextPath } from '@/lib/auth/redirect'
 import { isStaleRefreshTokenError } from '@/lib/supabase/auth-errors'
 import { isSupabaseConfigured, supabaseKey, supabaseUrl } from '@/lib/supabase/config'
 
-const PROTECTED_PREFIXES = ['/community', '/create', '/library', '/settings', '/collaborate', '/messages', '/updates']
+const PROTECTED_PREFIXES = ['/community', '/create', '/library', '/settings', '/collaborate', '/messages', '/updates', '/admin', '/api/admin']
+const ADMIN_ALLOWED_PREFIXES = ['/admin', '/api/admin', '/api/auth', '/account-restricted']
 
 function isProtectedPath(pathname: string) {
   return pathname === '/profile'
     || PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+}
+
+function isAdminPath(pathname: string) {
+  return ADMIN_ALLOWED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
 }
 
 function redirectWithCookies(url: URL, response: NextResponse) {
@@ -77,7 +82,28 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (isLoggedIn && ['/login', '/signup'].includes(request.nextUrl.pathname)) {
-    return redirectWithCookies(new URL('/', request.url), response)
+    const { data: staffRole, error: staffRoleError } = await supabase.rpc('get_my_moderation_role')
+    if (staffRoleError) throw staffRoleError
+    return redirectWithCookies(new URL(staffRole === 'admin' ? '/admin' : '/', request.url), response)
+  }
+
+  if (isLoggedIn) {
+    const { data: staffRole, error: staffRoleError } = await supabase.rpc('get_my_moderation_role')
+    if (staffRoleError) throw staffRoleError
+    if (staffRole === 'admin' && !isAdminPath(request.nextUrl.pathname)) {
+      return redirectWithCookies(new URL('/admin', request.url), response)
+    }
+
+    const { data: accountStatus, error: accountStatusError } = await supabase.rpc('get_my_account_status')
+    if (accountStatusError) throw accountStatusError
+    if (
+      (accountStatus === 'suspended' || accountStatus === 'banned')
+      && request.nextUrl.pathname !== '/account-restricted'
+    ) {
+      const restricted = new URL('/account-restricted', request.url)
+      restricted.searchParams.set('status', accountStatus)
+      return redirectWithCookies(restricted, response)
+    }
   }
 
   if (!isLoggedIn && isProtectedPath(request.nextUrl.pathname)) {

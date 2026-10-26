@@ -152,6 +152,8 @@ function AccountMenu({
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [displayName, setDisplayName] = useState('Your profile')
   const [username, setUsername] = useState('')
+  const [isStaff, setIsStaff] = useState(false)
+  const router = useRouter()
   const [roleSaving, setRoleSaving] = useState(false)
   const [roleError, setRoleError] = useState<string | null>(null)
   const ref = useClickOutside<HTMLDivElement>(() => setOpen(false), open)
@@ -191,6 +193,24 @@ function AccountMenu({
     return () => {
       active = false
       window.removeEventListener('storylines:profile-avatar-updated', onAvatarUpdated)
+    }
+  }, [userId])
+
+  useEffect(() => {
+    if (!userId) {
+      setIsStaff(false)
+      return
+    }
+    let active = true
+    void (async () => {
+      const { data, error } = await getSupabaseClient().rpc('get_my_moderation_role')
+      if (error) throw error
+      if (active) setIsStaff(data === 'moderator' || data === 'admin')
+    })().catch((error: unknown) => {
+      console.error('Could not check staff access for the account menu', error)
+    })
+    return () => {
+      active = false
     }
   }, [userId])
 
@@ -336,6 +356,18 @@ function AccountMenu({
             {roleSwitcher}
             <nav className="space-y-1 border-b border-border p-2" aria-label="Account pages">
               {item('Profile', '/profile', <UserRound className="size-4 text-muted-foreground" />)}
+              {isStaff && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false)
+                    router.push('/admin')
+                  }}
+                  className="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium text-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+                >
+                  <Settings className="size-4 text-muted-foreground" /> <span>Moderation</span>
+                </button>
+              )}
               <div className="min-[1200px]:hidden">
                 {item('Library', '/library', <Library className="size-4 text-muted-foreground" />)}
               </div>
@@ -478,7 +510,7 @@ function InboxMenu({ userId, active }: { userId: string | null; active: boolean 
         .maybeSingle(),
       supabase
         .from('user_notifications')
-        .select('actor_id, kind, post_id, comment_id, proposal_id')
+        .select('actor_id, kind, post_id, comment_id, proposal_id, moderation_message')
         .eq('recipient_id', userId)
         .neq('kind', 'message')
         .order('created_at', { ascending: false })
@@ -516,16 +548,17 @@ function InboxMenu({ userId, active }: { userId: string | null; active: boolean 
     if (latestUpdateResult.data) {
       const update = latestUpdateResult.data
       const actor = profileNames.get(update.actor_id) ?? 'Someone'
-      const activity = update.kind === 'follow' ? 'followed you'
+      const activity = update.kind === 'moderation_outcome' ? update.moderation_message ?? 'The moderation team reviewed a report.'
+        : update.kind === 'follow' ? 'followed you'
         : update.kind === 'post_like' ? 'liked your post'
           : update.kind === 'comment' ? 'commented on your post'
             : update.kind === 'comment_reply' ? 'replied to your comment'
               : update.kind === 'comment_reaction' ? 'reacted to your comment'
                 : update.kind === 'mention' ? 'mentioned you'
                   : 'sent a collaboration proposal'
-      activityPreview = `${actor} ${activity}`
+      activityPreview = update.kind === 'moderation_outcome' ? activity : `${actor} ${activity}`
     }
-    setLatestUpdatePreview(followedUpdateSummary.latestPreview ?? activityPreview ?? 'No updates yet')
+    setLatestUpdatePreview(activityPreview ?? followedUpdateSummary.latestPreview ?? 'No updates yet')
     setUnreadFollowedUpdateKeys(followedUpdateSummary.unreadKeys)
     setUnreadCount((updatesResult.count ?? 0) + followedUpdateSummary.unreadKeys.length)
     setUnreadMessageCount(messagesResult.count ?? 0)
