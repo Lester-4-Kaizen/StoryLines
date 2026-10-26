@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Check, MessageSquareReply, MoreHorizontal, PenLine, Send, Smile, ThumbsDown, ThumbsUp, Trash2, X } from 'lucide-react'
 import { ContentReportMenuItem, type ReportTargetType } from '@/components/shared/content-report-menu-item'
+import { MentionTextField } from '@/components/shared/mention-text-field'
 import { ProfileAvatar } from '@/components/shared/profile-avatar'
 import { getErrorMessage } from '@/lib/error-message'
 import type { CommunityComment } from '@/lib/types'
@@ -77,7 +78,7 @@ export function CommunityCommentThread({
     repliesByParent.set(comment.parentCommentId, replies)
   }
 
-  const handleReplyKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+  const handleReplyKeyDown = (event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (
       event.key !== 'Enter'
       || event.shiftKey
@@ -294,10 +295,12 @@ export function CommunityCommentThread({
           {replyTargetId === comment.id && onReplySubmit && onReplyDraftChange && onReplyCancel && (
             <form onSubmit={onReplySubmit} className="ml-2 mt-3 overflow-hidden rounded-lg border border-border bg-background shadow-sm">
               <label className="sr-only" htmlFor={`reply-comment-${comment.id}`}>Write a reply to {replyTargetName}</label>
-              <textarea
+              <MentionTextField
+                as="textarea"
                 id={`reply-comment-${comment.id}`}
                 value={replyDraft ?? ''}
-                onChange={(event) => onReplyDraftChange(event.target.value)}
+                currentUserId={currentUserId}
+                onChange={onReplyDraftChange}
                 onKeyDown={handleReplyKeyDown}
                 placeholder={`Reply to ${replyTargetName}…`}
                 maxLength={500}

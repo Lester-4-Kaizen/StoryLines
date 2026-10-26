@@ -299,6 +299,16 @@ Apply [`supabase/migrations/20261027001300_work_wide_discussions.sql`](./supabas
 
 Apply [`supabase/migrations/20261027001400_discussion_notifications.sql`](./supabase/migrations/20261027001400_discussion_notifications.sql) after the work-wide discussion migration to notify work and chapter authors when readers comment or reply in those discussions. Notifications appear in the Updates activity feed and link back to the relevant discussion.
 
+Apply [`supabase/migrations/20261027001500_discussion_mention_notifications.sql`](./supabase/migrations/20261027001500_discussion_mention_notifications.sql) after migration `20261027001400_discussion_notifications.sql` to enable `@username` notifications inside chapter and story discussions. Community posts, comments, and replies support username autocomplete and mentions through their existing notification triggers.
+
+Apply [`supabase/migrations/20261027001600_staff_safe_mentions_and_work_author_notifications.sql`](./supabase/migrations/20261027001600_staff_safe_mentions_and_work_author_notifications.sql) after migration `20261027001500_discussion_mention_notifications.sql`. It removes moderators and admins from mention suggestions and ensures story authors are notified about new discussion comments and replies.
+
+Apply [`supabase/migrations/20261027001700_mention_following_suggestions.sql`](./supabase/migrations/20261027001700_mention_following_suggestions.sql) after migration `20261027001600_staff_safe_mentions_and_work_author_notifications.sql`. Typing `@` shows up to six followed creators; typing a username prefix searches all non-staff accounts.
+
+Apply [`supabase/migrations/20261027001800_mention_everyone_notifications.sql`](./supabase/migrations/20261027001800_mention_everyone_notifications.sql) after migration `20261027001700_mention_following_suggestions.sql` to add `@everyone` mentions. These notify the non-staff accounts that follow the commenter, in community posts/comments and chapter/story discussions.
+
+Apply [`supabase/migrations/20261027001900_fix_community_comment_policy_recursion.sql`](./supabase/migrations/20261027001900_fix_community_comment_policy_recursion.sql) after migration `20261027001800_mention_everyone_notifications.sql`. It fixes recursive RLS evaluation when inserting replies to community comments; apply it before using comment notifications, since the Updates activity feed also reads those comments for notification context.
+
 Apply [`supabase/migrations/20261025001300_library_liked_works.sql`](./supabase/migrations/20261025001300_library_liked_works.sql) after migration `20261025001200_chapter_discussions_chat_unsend_and_reader_position.sql` to let signed-in users view their own liked works in a separate Library category. It grants access only to each user's own like records.
 
 ## Auth routes and behavior

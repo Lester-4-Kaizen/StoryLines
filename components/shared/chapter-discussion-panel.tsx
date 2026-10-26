@@ -5,6 +5,7 @@ import { X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { CommunityCommentThread } from '@/components/shared/community-comment-thread'
+import { MentionTextField } from '@/components/shared/mention-text-field'
 import { getErrorMessage } from '@/lib/error-message'
 import { getSupabaseClient } from '@/lib/supabase'
 import type { CommunityComment } from '@/lib/types'
@@ -369,7 +370,7 @@ export function ChapterDiscussionPanel({
     }
   }
 
-  const handleCommentKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+  const handleCommentKeyDown = (event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (
       event.key !== 'Enter'
       || event.shiftKey
@@ -512,10 +513,12 @@ export function ChapterDiscussionPanel({
       <label htmlFor={`chapter-comment-input-${paragraphIndex ?? 'chapter'}`} className="sr-only">
         {workWide ? 'Write a comment about this story' : chapterWide ? 'Write a comment about this chapter' : 'Write a comment about this paragraph'}
       </label>
-      <textarea
+      <MentionTextField
+        as="textarea"
         id={`chapter-comment-input-${paragraphIndex ?? 'chapter'}`}
         value={draft}
-        onChange={(event) => setDraft(event.target.value)}
+        currentUserId={currentUserId}
+        onChange={setDraft}
         onKeyDown={handleCommentKeyDown}
         maxLength={500}
         rows={globalDiscussion ? 3 : 2}

@@ -8,6 +8,7 @@ import { getSupabaseClient } from '@/lib/supabase'
 import { getErrorMessage } from '@/lib/error-message'
 import { ContentReportMenuItem } from '@/components/shared/content-report-menu-item'
 import { CommunityCommentThread } from '@/components/shared/community-comment-thread'
+import { MentionTextField } from '@/components/shared/mention-text-field'
 import { PostDetailDialog } from '@/components/shared/post-detail-dialog'
 import { ProfileAvatar } from '@/components/shared/profile-avatar'
 import { ShareLinkDialog } from '@/components/shared/share-link-dialog'
@@ -525,11 +526,13 @@ export function ProfilePostCard({
           <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={(event) => void submitComment(event)}>
             {replyTarget && <div className="flex items-center justify-between rounded-lg bg-secondary/60 px-3 py-2 text-xs sm:order-first"><span>Replying to <strong>{replyTarget.authorName}</strong></span><button type="button" onClick={() => setReplyTarget(null)} className="min-h-8 px-2 font-bold">Cancel</button></div>}
             <label htmlFor={`comment-${post.id}`} className="sr-only">Write a comment</label>
-            <input
+            <MentionTextField
+              as="input"
               id={`comment-${post.id}`}
               value={commentDraft}
+              currentUserId={currentUserId}
               maxLength={500}
-              onChange={(event) => setCommentDraft(event.target.value)}
+              onChange={setCommentDraft}
               placeholder={replyTarget ? `Reply to ${replyTarget.authorName}…` : currentUserId ? 'Write a comment…' : 'Mag-log in para mag-comment'}
               disabled={!currentUserId}
               className="min-h-11 min-w-0 flex-1 rounded-full border border-input bg-background px-4 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"

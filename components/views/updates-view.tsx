@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bell,
   BellOff,
@@ -164,7 +164,11 @@ function activityText(entry: ActivityEntry) {
   if (entry.kind === 'work_comment') return 'commented on your story discussion.'
   if (entry.kind === 'work_comment_reply') return 'replied to your story discussion.'
   if (entry.kind === 'comment_reaction') return 'reacted to your comment.'
-  if (entry.kind === 'mention') return 'mentioned you in a post.'
+  if (entry.kind === 'mention') {
+    if (entry.discussionHref?.includes('#chapter-discussion')) return 'mentioned you in a chapter discussion.'
+    if (entry.discussionHref?.includes('#story-discussion')) return 'mentioned you in a story discussion.'
+    return 'mentioned you in a post.'
+  }
   return 'sent you a collaboration proposal.'
 }
 
@@ -207,6 +211,8 @@ export function UpdatesView() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [reloadVersion, setReloadVersion] = useState(0)
+  const [activityRefreshVersion, setActivityRefreshVersion] = useState(0)
+  const loadedActivityUserId = useRef<string | null>(null)
 
   useEffect(() => {
     if (!currentUserId) {
@@ -424,10 +430,11 @@ export function UpdatesView() {
       setUnreadNotificationCount(0)
       setHasMoreNotifications(false)
       setActivityLoading(false)
+      loadedActivityUserId.current = null
       return
     }
     let active = true
-    setActivityLoading(true)
+    if (loadedActivityUserId.current !== currentUserId) setActivityLoading(true)
     setError(null)
     void (async () => {
       const supabase = getSupabaseClient()
@@ -525,6 +532,7 @@ export function UpdatesView() {
           moderationMessage: row.moderation_message,
         }
       }))
+      loadedActivityUserId.current = currentUserId
       if (rows.some((row) => row.kind === 'moderation_outcome')) setTab('activity')
       setFollowingIds(new Set((followingResult.data ?? []).map((follow) => follow.creator_id)))
       setUnreadNotificationCount(unreadCountResult.count ?? 0)
@@ -534,10 +542,19 @@ export function UpdatesView() {
     }).finally(() => {
       if (active) setActivityLoading(false)
     })
+    const refreshActivity = () => {
+      if (document.visibilityState === 'visible') {
+        setActivityRefreshVersion((version) => version + 1)
+      }
+    }
+    const refreshInterval = window.setInterval(refreshActivity, 30_000)
+    window.addEventListener('focus', refreshActivity)
     return () => {
       active = false
+      window.clearInterval(refreshInterval)
+      window.removeEventListener('focus', refreshActivity)
     }
-  }, [currentUserId, reloadVersion])
+  }, [activityRefreshVersion, currentUserId, reloadVersion])
 
   useEffect(() => {
     const markEveryUpdateRead = () => {

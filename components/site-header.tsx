@@ -510,7 +510,7 @@ function InboxMenu({ userId, active }: { userId: string | null; active: boolean 
         .maybeSingle(),
       supabase
         .from('user_notifications')
-        .select('actor_id, kind, post_id, comment_id, proposal_id, moderation_message')
+        .select('actor_id, kind, post_id, comment_id, chapter_comment_id, work_discussion_comment_id, proposal_id, moderation_message')
         .eq('recipient_id', userId)
         .neq('kind', 'message')
         .order('created_at', { ascending: false })
@@ -558,7 +558,8 @@ function InboxMenu({ userId, active }: { userId: string | null; active: boolean 
                   : update.kind === 'work_comment' ? 'commented on your story discussion'
                     : update.kind === 'work_comment_reply' ? 'replied to your story discussion'
             : update.kind === 'comment_reaction' ? 'reacted to your comment'
-              : update.kind === 'mention' ? 'mentioned you'
+              : update.kind === 'mention' && (update.chapter_comment_id || update.work_discussion_comment_id) ? 'mentioned you in a discussion'
+                : update.kind === 'mention' ? 'mentioned you'
                 : 'sent a collaboration proposal'
       activityPreview = update.kind === 'moderation_outcome' ? activity : `${actor} ${activity}`
     }

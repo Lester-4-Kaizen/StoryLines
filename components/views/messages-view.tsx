@@ -97,6 +97,7 @@ type SharedConversationPreferenceRow = {
   quick_reaction: ConversationPreferences['quick_reaction']
 }
 type ConversationUpdate = {
+  id: string
   actor_id: string | null
   preference_key: 'bubble_color' | 'chat_background' | 'nickname' | 'quick_reaction'
   preference_value: string
@@ -135,6 +136,18 @@ const CHAT_BACKGROUNDS: { value: ChatBackground; label: string; background: stri
   { value: 'night', label: 'Night', background: '#161b22', foreground: '#f0f2f5' },
   { value: 'plain', label: 'Plain', background: 'var(--background)', foreground: 'var(--foreground)' },
 ]
+function conversationUpdateDescription(update: ConversationUpdate) {
+  if (update.preference_key === 'chat_background') {
+    return `changed the theme to ${CHAT_BACKGROUNDS.find((item) => item.value === update.preference_value)?.label ?? update.preference_value}`
+  }
+  if (update.preference_key === 'bubble_color') {
+    return `changed the bubble color to ${BUBBLE_COLORS.find((item) => item.value === update.preference_value)?.label ?? update.preference_value}`
+  }
+  if (update.preference_key === 'nickname') {
+    return `updated a shared nickname${update.preference_value ? ` to ${update.preference_value}` : ''}`
+  }
+  return `changed the quick reaction to ${update.preference_value}`
+}
 const CHAT_TEXT_SIZES: { value: ChatTextSize; label: string; className: string }[] = [
   { value: 'small', label: 'Small', className: 'text-xs leading-5' },
   { value: 'medium', label: 'Medium', className: 'text-sm leading-6' },
@@ -322,7 +335,8 @@ export function MessagesView() {
   const [conversationPreferences, setConversationPreferences] = useState<Map<string, ConversationPreferences>>(new Map())
   const conversationPreferencesRef = useRef(conversationPreferences)
   conversationPreferencesRef.current = conversationPreferences
-  const [latestConversationUpdate, setLatestConversationUpdate] = useState<ConversationUpdate | null>(null)
+  const [conversationUpdates, setConversationUpdates] = useState<ConversationUpdate[]>([])
+  const [conversationUpdatesPartnerId, setConversationUpdatesPartnerId] = useState<string | null>(null)
   const mutedConversationsRef = useRef(mutedConversations)
   mutedConversationsRef.current = mutedConversations
   const [globalChatPreferences, setGlobalChatPreferences] = useState<GlobalChatPreferences>(DEFAULT_GLOBAL_CHAT_PREFERENCES)
@@ -703,7 +717,6 @@ export function MessagesView() {
 
   useEffect(() => {
     if (!currentUserId || !selectedUserId) {
-      setLatestConversationUpdate(null)
       return
     }
     let active = true
@@ -719,13 +732,12 @@ export function MessagesView() {
           .maybeSingle(),
         supabase
           .from('community_conversation_updates')
-          .select('actor_id, preference_key, preference_value, created_at')
+          .select('id, actor_id, preference_key, preference_value, created_at')
           .eq('user_low_id', lowId)
           .eq('user_high_id', highId)
           .order('created_at', { ascending: false })
           .order('id', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
+          .limit(100),
       ])
       if (preferencesResult.error) throw preferencesResult.error
       if (updateResult.error) throw updateResult.error
@@ -751,7 +763,8 @@ export function MessagesView() {
           })
         return next
       })
-      setLatestConversationUpdate(updateResult.data as ConversationUpdate | null)
+      setConversationUpdatesPartnerId(selectedUserId)
+      setConversationUpdates((updateResult.data ?? []).reverse() as ConversationUpdate[])
     }
 
     void refreshSharedConversation().catch((refreshError: unknown) => {
@@ -968,6 +981,26 @@ export function MessagesView() {
       ? threadMessages.filter((message) => message.content.toLocaleLowerCase().includes(query))
       : threadMessages
   }, [searchQuery, threadMessages])
+  const selectedConversationUpdates = conversationUpdatesPartnerId === selectedUserId
+    ? conversationUpdates
+    : []
+  const timelineEntries = useMemo(() => [
+    ...displayedThreadMessages.map((message, messageIndex) => ({
+      kind: 'message' as const,
+      id: message.id,
+      created_at: message.created_at,
+      message,
+      messageIndex,
+    })),
+    ...selectedConversationUpdates.map((update) => ({
+      kind: 'update' as const,
+      id: update.id,
+      created_at: update.created_at,
+      update,
+    })),
+  ].sort((first, second) => new Date(first.created_at).getTime() - new Date(second.created_at).getTime()
+    || (first.kind === second.kind ? first.id.localeCompare(second.id) : first.kind === 'update' ? -1 : 1)),
+  [displayedThreadMessages, selectedConversationUpdates])
   const selectedPerson = selectedUserId ? people.get(selectedUserId) : undefined
   const selectedChatPreferences = selectedUserId
     ? conversationPreferences.get(selectedUserId) ?? DEFAULT_CONVERSATION_PREFERENCES
@@ -991,20 +1024,6 @@ export function MessagesView() {
     ?? BUBBLE_COLORS[0]
   const selectedPartnerName = selectedChatPreferences.nickname_partner.trim() || selectedPerson?.name || 'StoryLines member'
   const selectedSelfName = selectedChatPreferences.nickname_self.trim() || 'You'
-  const latestUpdateActor = latestConversationUpdate?.actor_id === currentUserId
-    ? 'You'
-    : latestConversationUpdate?.actor_id
-      ? people.get(latestConversationUpdate.actor_id)?.name ?? 'A participant'
-      : 'A participant'
-  const latestUpdateDescription = latestConversationUpdate?.preference_key === 'chat_background'
-    ? `changed the theme to ${CHAT_BACKGROUNDS.find((item) => item.value === latestConversationUpdate.preference_value)?.label ?? latestConversationUpdate.preference_value}`
-    : latestConversationUpdate?.preference_key === 'bubble_color'
-      ? `changed the bubble color to ${BUBBLE_COLORS.find((item) => item.value === latestConversationUpdate.preference_value)?.label ?? latestConversationUpdate.preference_value}`
-      : latestConversationUpdate?.preference_key === 'nickname'
-        ? `updated a shared nickname${latestConversationUpdate.preference_value ? ` to ${latestConversationUpdate.preference_value}` : ''}`
-        : latestConversationUpdate?.preference_key === 'quick_reaction'
-          ? `changed the quick reaction to ${latestConversationUpdate.preference_value}`
-          : ''
   const textSizeClass = CHAT_TEXT_SIZES.find((size) => size.value === globalChatPreferences.text_size)?.className
     ?? CHAT_TEXT_SIZES[1].className
   const selectedPendingRequest = selectedUserId
@@ -1201,12 +1220,36 @@ export function MessagesView() {
       const saveError = saveResult.error
       if (saveError) throw saveError
       if (key !== 'pinned' && previous[key] !== value && selectedUserId === partnerId) {
-        setLatestConversationUpdate({
+        const { lowId, highId } = conversationParticipants(currentUserId, partnerId)
+        const preferenceKey: ConversationUpdate['preference_key'] = key === 'nickname_self' || key === 'nickname_partner'
+          ? 'nickname'
+          : key === 'bubble_color'
+            ? 'bubble_color'
+            : key === 'chat_background'
+              ? 'chat_background'
+              : 'quick_reaction'
+        setConversationUpdatesPartnerId(partnerId)
+        setConversationUpdates((current) => [...current, {
+          id: `optimistic-${Date.now()}`,
           actor_id: currentUserId,
-          preference_key: key === 'nickname_self' || key === 'nickname_partner' ? 'nickname' : key,
+          preference_key: preferenceKey,
           preference_value: String(value),
           created_at: new Date().toISOString(),
-        })
+        }].slice(-100))
+        const { data: updateRows, error: updateError } = await getSupabaseClient()
+          .from('community_conversation_updates')
+          .select('id, actor_id, preference_key, preference_value, created_at')
+          .eq('user_low_id', lowId)
+          .eq('user_high_id', highId)
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .limit(100)
+        if (updateError) {
+          setError(describeMessageError(updateError, 'Chat settings were saved, but the timeline could not be refreshed yet.'))
+        } else {
+          setConversationUpdatesPartnerId(partnerId)
+          setConversationUpdates((updateRows ?? []).reverse() as ConversationUpdate[])
+        }
       }
       setStatusMessage('Chat settings saved.')
     } catch (saveError) {
@@ -1951,41 +1994,63 @@ export function MessagesView() {
                 style={{ backgroundColor: selectedChatBackground.background, color: selectedChatBackground.foreground }}
                 aria-live="polite"
               >
-                {latestConversationUpdate && latestUpdateDescription && (
-                  <div className="my-5 flex items-center gap-3" role="status" aria-live="polite">
-                    <span className="h-px flex-1 bg-border" />
-                    <div className="flex max-w-full items-center gap-3 rounded-2xl border border-border bg-card/80 px-4 py-2.5 shadow-sm">
-                      <span className="min-w-0 text-center text-xs leading-5">
-                        <span className="font-bold">{latestUpdateActor}</span> {latestUpdateDescription}.
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setInfoSection('customize')
-                          setInfoPanelOpen(true)
-                        }}
-                        className="min-h-9 shrink-0 rounded-full border border-border bg-background px-3 text-xs font-bold hover:border-accent hover:text-accent"
-                      >
-                        Change
-                      </button>
-                    </div>
-                    <span className="h-px flex-1 bg-border" />
-                  </div>
-                )}
-                {displayedThreadMessages.length ? displayedThreadMessages.map((message, index) => {
+                {timelineEntries.length ? timelineEntries.map((entry, index) => {
+                  const entryDate = new Date(entry.created_at)
+                  const previousEntryDate = index > 0 ? new Date(timelineEntries[index - 1].created_at) : null
+                  const showDateSeparator = !previousEntryDate || !sameMessageDay(entryDate, previousEntryDate)
+                  if (entry.kind === 'update') {
+                    const actor = entry.update.actor_id === currentUserId
+                      ? 'You'
+                      : entry.update.actor_id
+                        ? people.get(entry.update.actor_id)?.name ?? 'A participant'
+                        : 'A participant'
+                    return (
+                      <Fragment key={`update-${entry.id}`}>
+                        {showDateSeparator && (
+                          <div className="my-5 flex items-center gap-3" role="separator" aria-label={messageDateLabel(entryDate)}>
+                            <span className="h-px flex-1 bg-border" />
+                            <time dateTime={entryDate.toISOString()} className="rounded-full bg-card px-3 py-1 text-xs font-semibold text-muted-foreground">
+                              {messageDateLabel(entryDate)}
+                            </time>
+                            <span className="h-px flex-1 bg-border" />
+                          </div>
+                        )}
+                        <div className="mx-auto flex w-fit max-w-full items-center gap-3 rounded-2xl border border-border bg-card/90 px-4 py-2.5 text-center text-xs leading-5 shadow-sm" role="status">
+                          <span className="min-w-0">
+                            <span className="font-bold">{actor}</span> {conversationUpdateDescription(entry.update)}.
+                            <time dateTime={entryDate.toISOString()} className="ml-2 whitespace-nowrap text-muted-foreground">
+                              {entryDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                            </time>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setInfoSection('customize')
+                              setInfoPanelOpen(true)
+                            }}
+                            className="min-h-9 shrink-0 rounded-full border border-border bg-background px-3 text-xs font-bold hover:border-accent hover:text-accent"
+                          >
+                            Change
+                          </button>
+                        </div>
+                      </Fragment>
+                    )
+                  }
+                  const message = entry.message
+                  const messageIndex = entry.messageIndex
                   const isMine = message.sender_id === currentUserId
                   const reply = threadMessages.find((item) => item.id === message.reply_to_message_id) ?? message.replyPreview
                   const sender = isMine ? selectedSelfName : selectedPartnerName
                   const showActions = !message.is_deleted && activeMessageActionsFor === message.id
                   const messageDate = new Date(message.created_at)
-                  const previousMessage = index > 0 ? displayedThreadMessages[index - 1] : null
-                  const previousMessageDate = previousMessage ? new Date(previousMessage.created_at) : null
+                  const previousMessage = messageIndex > 0 ? displayedThreadMessages[messageIndex - 1] : null
                   const startsSenderGroup = !previousMessage
+                    || timelineEntries[index - 1]?.kind !== 'message'
                     || previousMessage.sender_id !== message.sender_id
                     || !sameMessageDay(messageDate, new Date(previousMessage.created_at))
                   return (
                     <Fragment key={message.id}>
-                    {(!previousMessageDate || !sameMessageDay(messageDate, previousMessageDate)) && (
+                    {showDateSeparator && (
                       <div className="my-5 flex items-center gap-3" role="separator" aria-label={messageDateLabel(messageDate)}>
                         <span className="h-px flex-1 bg-border" />
                         <time dateTime={messageDate.toISOString()} className="rounded-full bg-card px-3 py-1 text-xs font-semibold text-muted-foreground">
@@ -2137,6 +2202,9 @@ export function MessagesView() {
                     </Fragment>
                   )
                 }) : <p className="mt-10 text-center text-sm text-muted-foreground">{searchQuery ? 'No messages match your search.' : `Start the conversation with ${selectedPartnerName}.`}</p>}
+                {searchQuery && displayedThreadMessages.length === 0 && timelineEntries.length > 0 && (
+                  <p className="mt-5 text-center text-sm text-muted-foreground">No messages match your search.</p>
+                )}
                 {selectedPendingRequest && (
                   <div className="mx-auto mt-5 w-full max-w-xl rounded-2xl border border-border bg-card p-4 shadow-sm">
                     <p className="text-xs font-bold uppercase tracking-wide text-accent">

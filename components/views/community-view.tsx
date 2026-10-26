@@ -32,6 +32,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Panel } from '@/components/shared/panel'
 import { CommunityCommentThread } from '@/components/shared/community-comment-thread'
+import { MentionTextField } from '@/components/shared/mention-text-field'
 import { PostDetailDialog } from '@/components/shared/post-detail-dialog'
 import { PostContent } from '@/components/shared/post-content'
 import { ProfileAvatar } from '@/components/shared/profile-avatar'
@@ -269,7 +270,7 @@ function FeedPost({
     }
   }
 
-  const handleCommentKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleCommentKeyDown = (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (
       event.key !== 'Enter'
       || event.shiftKey
@@ -701,10 +702,12 @@ function FeedPost({
           {isLoggedIn && !replyTarget ? (
             <form className="mt-3 flex flex-col gap-2" onSubmit={(event) => void submitComment(event)}>
               <label className="sr-only" htmlFor={`comment-${post.id}`}>Write a comment</label>
-              <textarea
+              <MentionTextField
+                as="textarea"
                 id={`comment-${post.id}`}
                 value={commentDraft}
-                onChange={(event) => setCommentDraft(event.target.value)}
+                currentUserId={currentUserId}
+                onChange={setCommentDraft}
                 onKeyDown={handleCommentKeyDown}
                 maxLength={500}
                 rows={2}
@@ -1414,12 +1417,14 @@ export function CommunityView({
                   <button type="button" onClick={() => setComposerExpanded(false)} className="community-icon-button" aria-label="Close composer"><X className="size-4" /></button>
                 </div>
                 <label htmlFor="community-post" className="sr-only">Your post</label>
-                <textarea
-                  ref={textareaRef}
+                <MentionTextField
+                  as="textarea"
                   id="community-post"
                   value={draft}
+                  currentUserId={currentUserId}
+                  fieldRef={textareaRef}
                   maxLength={MAX_POST_LENGTH}
-                  onChange={(event) => { setDraft(event.target.value); setComposerError(null) }}
+                  onChange={(value) => { setDraft(value); setComposerError(null) }}
                   placeholder="Ano'ng ginagawa mo ngayon? Share your progress, a reading reco, or an idea."
                   className="community-composer-textarea mt-4"
                 />
