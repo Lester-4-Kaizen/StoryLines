@@ -281,21 +281,53 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
       discussionPressTimer.current = null
     }, 550)
   }
+  const isWorkOverview = storyTab !== 'read'
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
+    <div className={`mx-auto flex w-full flex-col gap-5 ${isWorkOverview ? 'max-w-7xl' : 'max-w-4xl'}`}>
       <Link href="/browse" className="inline-flex min-h-11 w-fit items-center gap-1 rounded-lg pr-3 text-sm font-bold text-muted-foreground hover:text-accent">
         <ChevronLeft className="size-4" aria-hidden="true" />
         Browse
       </Link>
 
-      <Panel className="p-5 sm:p-8">
-        <div className="flex flex-col gap-5 border-b border-border pb-5 sm:flex-row">
-          <div className="relative aspect-3/4 w-full shrink-0 overflow-hidden rounded-xl bg-secondary sm:w-48">
-            {data.work.coverImageUrl
-              ? <Image src={data.work.coverImageUrl} alt={`Cover for ${data.work.title}`} fill sizes="(max-width: 640px) 100vw, 192px" className="object-cover" unoptimized />
-              : <div className="flex size-full items-center justify-center p-5 text-center text-sm text-muted-foreground">{data.work.type === 'story' ? 'Story cover' : 'Comic cover'}</div>}
-          </div>
+      <Panel className="p-4 sm:p-6">
+        <div className={isWorkOverview ? 'grid gap-6 lg:grid-cols-[minmax(15rem,19rem)_minmax(0,1fr)] lg:gap-8' : ''}>
+          {isWorkOverview && (
+            <aside className="space-y-4 lg:self-start">
+              <div className="relative mx-auto aspect-3/4 w-full max-w-sm overflow-hidden rounded-xl bg-secondary lg:max-w-none">
+                {data.work.coverImageUrl
+                  ? <Image src={data.work.coverImageUrl} alt={`Cover for ${data.work.title}`} fill sizes="(max-width: 1024px) 100vw, 304px" className="object-cover" unoptimized />
+                  : <div className="flex size-full items-center justify-center p-5 text-center text-sm text-muted-foreground">{data.work.type === 'story' ? 'Story cover' : 'Comic cover'}</div>}
+              </div>
+              <div className="rounded-xl border border-border bg-background/60 p-4">
+                <p className="eyebrow">{data.work.type === 'story' ? 'Story' : 'Comic'} details</p>
+                <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-lg bg-secondary/70 p-3">
+                    <dt className="text-xs text-muted-foreground">Chapters</dt>
+                    <dd className="mt-1 font-bold">{data.chapters.length}</dd>
+                  </div>
+                  <div className="rounded-lg bg-secondary/70 p-3">
+                    <dt className="text-xs text-muted-foreground">Views</dt>
+                    <dd className="mt-1 font-bold">{viewCount.toLocaleString()}</dd>
+                  </div>
+                </dl>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className="rounded-full bg-secondary px-3 py-1.5 text-xs font-semibold">{data.work.status}</span>
+                  {data.work.genre && <span className="rounded-full bg-secondary px-3 py-1.5 text-xs font-semibold">{data.work.genre}</span>}
+                  {data.work.language && <span className="rounded-full bg-secondary px-3 py-1.5 text-xs font-semibold">{data.work.language}</span>}
+                </div>
+              </div>
+            </aside>
+          )}
+          <div className="min-w-0">
+          <div className="flex flex-col gap-5 border-b border-border pb-5 sm:flex-row">
+          {!isWorkOverview && (
+            <div className="relative aspect-3/4 w-full shrink-0 overflow-hidden rounded-xl bg-secondary sm:w-48">
+              {data.work.coverImageUrl
+                ? <Image src={data.work.coverImageUrl} alt={`Cover for ${data.work.title}`} fill sizes="(max-width: 640px) 100vw, 192px" className="object-cover" unoptimized />
+                : <div className="flex size-full items-center justify-center p-5 text-center text-sm text-muted-foreground">{data.work.type === 'story' ? 'Story cover' : 'Comic cover'}</div>}
+            </div>
+          )}
           <div className="flex min-w-0 flex-1 flex-col items-start">
             <div className="flex w-full items-start justify-between gap-3">
               <span className="eyebrow">{data.work.type === 'story' ? 'Story' : 'Comic'} · {data.work.status}</span>
@@ -477,7 +509,7 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
             </div>
           )
         ) : data.currentChapter && storyTab === 'read' ? (
-          <article id="reader-panel-read" className="mx-auto max-w-2xl py-8">
+          <article id="reader-panel-read" className="mx-auto w-full max-w-3xl py-8">
             <button type="button" onClick={() => setStoryTab('contents')} className="mb-6 inline-flex min-h-11 items-center gap-1 rounded-lg pr-3 text-sm font-bold text-muted-foreground hover:text-accent">
               <ChevronLeft className="size-4" aria-hidden="true" />
               Back to chapters
@@ -487,7 +519,7 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
             </p>
             <h2 className="mt-2 text-center font-serif text-2xl font-bold">{data.currentChapter.title}</h2>
             {chapterParagraphs.length ? (
-              <div className="mt-8 space-y-6 font-serif text-lg leading-8">
+              <div className="mx-auto mt-8 max-w-2xl space-y-6 font-serif text-lg leading-8">
                 {chapterParagraphs.map((paragraph, index) => (
                   <section
                     key={`${data.currentChapter!.id}-${index}`}
@@ -514,23 +546,31 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
                       <MessageCircle className="size-3.5" aria-hidden="true" />
                     </button>
                     <p className="whitespace-pre-wrap">{paragraph}</p>
-                    {selectedDiscussion?.index === index && (
-                      <div className="mt-4 font-sans text-base lg:fixed lg:right-6 lg:top-1/2 lg:z-30 lg:mt-0 lg:w-[min(26rem,calc(100vw-3rem))] lg:-translate-y-1/2">
-                        <ChapterDiscussionPanel
-                          chapterId={data.currentChapter!.id}
-                          paragraphIndex={index}
-                          anchorText={paragraph}
-                          currentUserId={data.currentUserId}
-                          onClose={() => setSelectedDiscussion(null)}
-                          onLoginRequired={() => router.push(`/login?next=${encodeURIComponent(`/works/${data.work!.id}?chapter=${data.currentChapter!.number}`)}`)}
-                        />
-                      </div>
-                    )}
                   </section>
                 ))}
               </div>
             ) : (
               <p className="mt-8 text-center text-sm text-muted-foreground">Wala pang laman ang kabanatang ito.</p>
+            )}
+            {selectedDiscussion && (
+              <div className="fixed inset-0 z-40 flex items-center justify-center p-4 lg:justify-end lg:p-6">
+                <button
+                  type="button"
+                  onClick={() => setSelectedDiscussion(null)}
+                  className="absolute inset-0 bg-black/35"
+                  aria-label="Close paragraph discussion"
+                />
+                <div className="relative z-10 w-full max-w-md font-sans text-base lg:mr-2 lg:w-[min(26rem,calc(100vw-3rem))]">
+                  <ChapterDiscussionPanel
+                    chapterId={data.currentChapter.id}
+                    paragraphIndex={selectedDiscussion.index}
+                    anchorText={selectedDiscussion.text}
+                    currentUserId={data.currentUserId}
+                    onClose={() => setSelectedDiscussion(null)}
+                    onLoginRequired={() => router.push(`/login?next=${encodeURIComponent(`/works/${data.work!.id}?chapter=${data.currentChapter!.number}`)}`)}
+                  />
+                </div>
+              </div>
             )}
             <div
               aria-hidden="true"
@@ -590,6 +630,16 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
               </Link>
             ) : <span />}
           </nav>
+          <div id="chapter-discussion" className="mt-8 border-t border-border pt-8">
+            <ChapterDiscussionPanel
+              chapterId={data.currentChapter.id}
+              paragraphIndex={null}
+              anchorText=""
+              currentUserId={data.currentUserId}
+              onLoginRequired={() => router.push(`/login?next=${encodeURIComponent(`/works/${data.work!.id}?chapter=${data.currentChapter!.number}`)}`)}
+              onSignUpRequired={() => router.push(`/signup?next=${encodeURIComponent(`/works/${data.work!.id}?chapter=${data.currentChapter!.number}`)}`)}
+            />
+          </div>
           <button
             type="button"
             onClick={() => {
@@ -602,7 +652,28 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
           </button>
           </>
         )}
+          </div>
+        </div>
       </Panel>
+      {data.work.type === 'story' && storyTab !== 'read' && (
+        <Panel className="p-4 sm:p-6">
+          <section id="story-discussion" aria-labelledby="story-discussion-heading">
+            <p className="eyebrow">The whole story</p>
+            <h2 id="story-discussion-heading" className="mt-2 font-serif text-2xl font-bold">Story discussion</h2>
+            <p className="mt-2 text-sm text-muted-foreground">Talk about the story as a whole with other readers.</p>
+            <div className="mt-5">
+              <ChapterDiscussionPanel
+                workId={data.work.id}
+                paragraphIndex={null}
+                anchorText=""
+                currentUserId={data.currentUserId}
+                onLoginRequired={() => router.push(`/login?next=${encodeURIComponent(`/works/${data.work!.id}`)}`)}
+                onSignUpRequired={() => router.push(`/signup?next=${encodeURIComponent(`/works/${data.work!.id}`)}`)}
+              />
+            </div>
+          </section>
+        </Panel>
+      )}
     </div>
   )
 }

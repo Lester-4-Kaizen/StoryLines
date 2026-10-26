@@ -47,8 +47,9 @@ type AdminUser = {
 }
 export type AdminReport = {
   id: string
+  source?: 'message'
   targetType: string
-  targetId: string
+  targetId: string | null
   createdAt: string
   reason: string
   content: string
@@ -133,6 +134,10 @@ const reasonLabels: Record<string, string> = {
   violence_self_harm: 'Violence or self-harm',
   copied_stolen_work: 'Copied or stolen work',
   something_else: 'Something else',
+  harassment: 'Harassment or bullying',
+  spam: 'Spam or scams',
+  inappropriate: 'Inappropriate content',
+  other: 'Something else',
 }
 const actionLabels: Record<string, string> = {
   dismiss: 'Dismissed report',
@@ -261,6 +266,7 @@ function formatAction(action: string) {
 
 function isUrgent(report: AdminReport) {
   return report.reason === 'violence_self_harm'
+    || report.reason === 'harassment'
     || Date.now() - new Date(report.createdAt).getTime() > 24 * 60 * 60 * 1000
 }
 
@@ -593,7 +599,7 @@ function ReportDetail({
         </label>
         <div className="mt-4 flex flex-wrap gap-2">
           <button type="button" className={buttonClass} disabled={busy} onClick={() => onAction('dismiss')}><Check className="size-4" /> Dismiss</button>
-          {report.targetType !== 'profile' && <button type="button" className={buttonClass} disabled={busy} onClick={() => onAction('hide_content')}><EyeOff className="size-4" /> Hide content</button>}
+          {report.targetType !== 'profile' && report.targetId && <button type="button" className={buttonClass} disabled={busy} onClick={() => onAction('hide_content')}><EyeOff className="size-4" /> Hide content</button>}
           <button type="button" className={buttonClass} disabled={busy || Boolean(user.staffRole)} title={user.staffRole ? 'Remove staff access before moderating this account.' : undefined} onClick={() => onAction('warn')}><ShieldAlert className="size-4" /> Warn</button>
           <button type="button" className={buttonClass} disabled={busy || Boolean(user.staffRole)} title={user.staffRole ? 'Remove staff access before moderating this account.' : undefined} onClick={() => onAction('suspend')}><Clock3 className="size-4" /> Suspend</button>
           <button type="button" className={`${primaryButtonClass} bg-[#9f321e] hover:bg-[#822816]`} disabled={busy || Boolean(user.staffRole)} title={user.staffRole ? 'Remove staff access before moderating this account.' : undefined} onClick={() => onAction('ban')}><Ban className="size-4" /> Ban</button>
@@ -628,7 +634,7 @@ function Reports({
   setNotifyReporters: (value: boolean) => void
   notifyReported: boolean
   setNotifyReported: (value: boolean) => void
-  onAction: (action: string, reportId: string) => void
+  onAction: (action: string, reportId: string, source?: 'message') => void
   busy: boolean
 }) {
   const [search, setSearch] = useState('')
@@ -679,7 +685,7 @@ function Reports({
         </select>
         <select aria-label="Reported content type" value={targetType} onChange={(event) => setTargetType(event.target.value)} className={fieldClass}>
           <option value="all">All content</option>
-          {['post', 'comment', 'chapter_comment', 'work', 'profile'].map((type) => <option key={type} value={type}>{type.replace('_', ' ')}</option>)}
+          {['post', 'comment', 'chapter_comment', 'work_comment', 'work', 'profile', 'message'].map((type) => <option key={type} value={type}>{type.replaceAll('_', ' ')}</option>)}
         </select>
         <div className="md:col-span-2 xl:col-span-4">
           <DateRangeFilter value={dateRange} onChange={setDateRange} />
@@ -700,7 +706,7 @@ function Reports({
             setNotifyReporters={setNotifyReporters}
             notifyReported={notifyReported}
             setNotifyReported={setNotifyReported}
-            onAction={(action) => onAction(action, selectedReport.id)}
+            onAction={(action) => onAction(action, selectedReport.id, selectedReport.source)}
             busy={busy}
           />
         </div>
@@ -1363,9 +1369,9 @@ export function AdminConsole({
     }
   }
 
-  const reportAction = (action: string, reportId: string) => {
+  const reportAction = (action: string, reportId: string, source?: 'message') => {
     void submitAction(
-      { action: 'report', reportId, moderationAction: action, note, suspendDays, notifyReporters, notifyReported },
+      { action: source === 'message' ? 'message-report' : 'report', reportId, moderationAction: action, note, suspendDays, notifyReporters, notifyReported },
       `${formatAction(action)}. The decision was written to the audit log.`,
       action === 'ban' ? getBanConfirmText('this account and resolve all open reports about this content') : undefined,
     )

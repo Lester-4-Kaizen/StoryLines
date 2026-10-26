@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { Check, Flag, X } from 'lucide-react'
 import { getSupabaseClient } from '@/lib/supabase'
 
-export type ReportTargetType = 'post' | 'comment' | 'chapter_comment' | 'work' | 'profile'
+export type ReportTargetType = 'post' | 'comment' | 'chapter_comment' | 'work_comment' | 'work' | 'profile'
 type ReportReason =
   | 'spam_scam'
   | 'harassment_bullying'

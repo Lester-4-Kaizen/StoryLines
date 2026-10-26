@@ -553,9 +553,13 @@ function InboxMenu({ userId, active }: { userId: string | null; active: boolean 
         : update.kind === 'post_like' ? 'liked your post'
           : update.kind === 'comment' ? 'commented on your post'
             : update.kind === 'comment_reply' ? 'replied to your comment'
-              : update.kind === 'comment_reaction' ? 'reacted to your comment'
-                : update.kind === 'mention' ? 'mentioned you'
-                  : 'sent a collaboration proposal'
+              : update.kind === 'chapter_comment' ? 'commented on your chapter discussion'
+                : update.kind === 'chapter_comment_reply' ? 'replied to your chapter discussion'
+                  : update.kind === 'work_comment' ? 'commented on your story discussion'
+                    : update.kind === 'work_comment_reply' ? 'replied to your story discussion'
+            : update.kind === 'comment_reaction' ? 'reacted to your comment'
+              : update.kind === 'mention' ? 'mentioned you'
+                : 'sent a collaboration proposal'
       activityPreview = update.kind === 'moderation_outcome' ? activity : `${actor} ${activity}`
     }
     setLatestUpdatePreview(activityPreview ?? followedUpdateSummary.latestPreview ?? 'No updates yet')
@@ -837,6 +841,7 @@ export function SiteHeader({
           <NavItem label="HOME" active={route === '/'} onClick={() => go('/')} />
           <NavItem label="COMMUNITY" active={route === '/community'} onClick={() => go('/community')} />
           <NavItem label="BROWSE" active={route === '/browse'} onClick={() => go('/browse')} />
+          <NavItem label="LIBRARY" active={route === '/library'} onClick={() => go('/library')} />
           <NavItem label="RANKING" active={route === '/ranking'} onClick={() => go('/ranking')} />
           <NavMenu
             label="CREATE"

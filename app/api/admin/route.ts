@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { getModerationAccess } from '@/lib/admin/access'
+import { getModerationAccess, getModerationPageData } from '@/lib/admin/access'
+import { parseReportModerationInput } from '@/lib/moderation/request-validation'
 
 type RequestBody = Record<string, unknown>
 
@@ -31,17 +32,18 @@ export async function GET(request: NextRequest) {
   if (section !== 'reports' || !['open', 'dismissed', 'actioned'].includes(status)) {
     return NextResponse.json({ error: 'Unknown moderation filter.' }, { status: 400 })
   }
-  const { supabase } = await getModerationAccess()
-  const { data, error } = await supabase.rpc('admin_moderation_data', {
-    p_section: section,
-    p_search: searchParams.get('search') ?? '',
-    p_status: status,
-  })
-  if (error) {
-    const statusCode = error.message.includes('Staff access') ? 403 : 400
-    return NextResponse.json({ error: error.message }, { status: statusCode })
+  try {
+    const data = await getModerationPageData(section, searchParams.get('search') ?? '', status)
+    return NextResponse.json({ data })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Could not load moderation reports.'
+    const statusCode = message.includes('Staff access')
+      ? 403
+      : message.startsWith('Invalid moderation') || message.startsWith('Invalid message report')
+        ? 400
+        : 500
+    return NextResponse.json({ error: message }, { status: statusCode })
   }
-  return NextResponse.json({ data })
 }
 
 export async function POST(request: NextRequest) {
@@ -59,16 +61,29 @@ export async function POST(request: NextRequest) {
   let error: { message: string } | null = null
 
   if (body.action === 'report') {
-    if (!isString(body.reportId) || !isString(body.moderationAction)) {
-      return NextResponse.json({ error: 'A report and action are required.' }, { status: 400 })
-    }
+    const parsedInput = parseReportModerationInput(body)
+    if (!parsedInput.ok) return NextResponse.json({ error: parsedInput.error }, { status: 400 })
+    const input = parsedInput.data
     const result = await supabase.rpc('moderate_community_report', {
-      p_report_id: body.reportId,
-      p_action: body.moderationAction,
-      p_note: typeof body.note === 'string' ? body.note : '',
-      p_suspend_days: typeof body.suspendDays === 'number' ? body.suspendDays : 7,
-      p_notify_reporters: body.notifyReporters !== false,
-      p_notify_reported: body.notifyReported !== false,
+      p_report_id: input.reportId,
+      p_action: input.moderationAction,
+      p_note: input.note,
+      p_suspend_days: input.suspendDays,
+      p_notify_reporters: input.notifyReporters,
+      p_notify_reported: input.notifyReported,
+    })
+    error = result.error
+  } else if (body.action === 'message-report') {
+    const parsedInput = parseReportModerationInput(body)
+    if (!parsedInput.ok) return NextResponse.json({ error: parsedInput.error }, { status: 400 })
+    const input = parsedInput.data
+    const result = await supabase.rpc('moderate_community_message_report', {
+      p_report_id: input.reportId,
+      p_action: input.moderationAction,
+      p_note: input.note,
+      p_suspend_days: input.suspendDays,
+      p_notify_reporters: input.notifyReporters,
+      p_notify_reported: input.notifyReported,
     })
     error = result.error
   } else if (body.action === 'user') {

@@ -25,7 +25,7 @@ import { getSupabaseClient } from '@/lib/supabase'
 type UpdatesTab = 'authors' | 'activity'
 type AuthorFilter = 'all' | 'new-chapters' | 'new-stories' | 'new-comics' | 'announcements' | 'completed'
 type ActivityFilter = 'all' | 'likes' | 'comments' | 'follows' | 'collaboration' | 'mentions' | 'moderation'
-type ActivityKind = 'follow' | 'post_like' | 'comment' | 'comment_reply' | 'comment_reaction' | 'mention' | 'collaboration_proposal' | 'moderation_outcome'
+type ActivityKind = 'follow' | 'post_like' | 'comment' | 'comment_reply' | 'comment_reaction' | 'mention' | 'collaboration_proposal' | 'moderation_outcome' | 'chapter_comment' | 'chapter_comment_reply' | 'work_comment' | 'work_comment_reply'
 type UpdateKind = 'new-chapters' | 'new-stories' | 'new-comics' | 'announcements' | 'completed'
 
 type Notification = {
@@ -34,6 +34,8 @@ type Notification = {
   kind: ActivityKind
   post_id: string | null
   comment_id: string | null
+  chapter_comment_id: string | null
+  work_discussion_comment_id: string | null
   proposal_id: string | null
   created_at: string
   read_at: string | null
@@ -44,6 +46,7 @@ type Notification = {
   commentContent?: string
   proposalTitle?: string
   moderationMessage?: string | null
+  discussionHref?: string
 }
 
 type ActivityEntry = {
@@ -54,6 +57,8 @@ type ActivityEntry = {
   actorAvatarUrl: string | null
   post_id: string | null
   comment_id: string | null
+  chapter_comment_id: string | null
+  work_discussion_comment_id: string | null
   proposal_id: string | null
   created_at: string
   notificationIds: string[]
@@ -62,6 +67,7 @@ type ActivityEntry = {
   commentContent?: string
   proposalTitle?: string
   moderationMessage?: string | null
+  discussionHref?: string
 }
 
 type FollowedUpdate = {
@@ -137,7 +143,7 @@ function groupActivity(entries: ActivityEntry[]) {
 
 function activityFilterKind(kind: ActivityKind): ActivityFilter {
   if (kind === 'post_like' || kind === 'comment_reaction') return 'likes'
-  if (kind === 'comment' || kind === 'comment_reply') return 'comments'
+  if (kind === 'comment' || kind === 'comment_reply' || kind === 'chapter_comment' || kind === 'chapter_comment_reply' || kind === 'work_comment' || kind === 'work_comment_reply') return 'comments'
   if (kind === 'follow') return 'follows'
   if (kind === 'collaboration_proposal') return 'collaboration'
   if (kind === 'moderation_outcome') return 'moderation'
@@ -153,6 +159,10 @@ function activityText(entry: ActivityEntry) {
   }
   if (entry.kind === 'comment') return 'commented on your post.'
   if (entry.kind === 'comment_reply') return 'replied to your comment.'
+  if (entry.kind === 'chapter_comment') return 'commented on your chapter discussion.'
+  if (entry.kind === 'chapter_comment_reply') return 'replied to your chapter discussion.'
+  if (entry.kind === 'work_comment') return 'commented on your story discussion.'
+  if (entry.kind === 'work_comment_reply') return 'replied to your story discussion.'
   if (entry.kind === 'comment_reaction') return 'reacted to your comment.'
   if (entry.kind === 'mention') return 'mentioned you in a post.'
   return 'sent you a collaboration proposal.'
@@ -423,7 +433,7 @@ export function UpdatesView() {
       const supabase = getSupabaseClient()
       const [notificationsResult, unreadCountResult, followingResult] = await Promise.all([
         supabase.from('user_notifications')
-          .select('id, actor_id, kind, post_id, comment_id, proposal_id, moderation_message, created_at, read_at')
+          .select('id, actor_id, kind, post_id, comment_id, chapter_comment_id, work_discussion_comment_id, proposal_id, moderation_message, created_at, read_at')
           .eq('recipient_id', currentUserId)
           .neq('kind', 'message')
           .order('created_at', { ascending: false })
@@ -440,35 +450,58 @@ export function UpdatesView() {
       if (unreadCountResult.error) throw unreadCountResult.error
       if (followingResult.error) throw followingResult.error
       const rows = (notificationsResult.data ?? []).filter((row): row is typeof row & { kind: ActivityKind } => (
-        ['follow', 'post_like', 'comment', 'comment_reply', 'comment_reaction', 'mention', 'collaboration_proposal', 'moderation_outcome'].includes(row.kind)
+        ['follow', 'post_like', 'comment', 'comment_reply', 'comment_reaction', 'mention', 'collaboration_proposal', 'moderation_outcome', 'chapter_comment', 'chapter_comment_reply', 'work_comment', 'work_comment_reply'].includes(row.kind)
       ))
       const actorIds = Array.from(new Set(rows.map((row) => row.actor_id)))
       const postIds = Array.from(new Set(rows.map((row) => row.post_id).filter((id): id is string => Boolean(id))))
       const commentIds = Array.from(new Set(rows.map((row) => row.comment_id).filter((id): id is string => Boolean(id))))
+      const chapterCommentIds = Array.from(new Set(rows.map((row) => row.chapter_comment_id).filter((id): id is string => Boolean(id))))
+      const workDiscussionCommentIds = Array.from(new Set(rows.map((row) => row.work_discussion_comment_id).filter((id): id is string => Boolean(id))))
       const proposalIds = Array.from(new Set(rows.map((row) => row.proposal_id).filter((id): id is string => Boolean(id))))
-      const [profilesResult, postsResult, commentsResult, proposalsResult] = await Promise.all([
+      const [profilesResult, postsResult, commentsResult, chapterCommentsResult, workDiscussionCommentsResult, proposalsResult] = await Promise.all([
         actorIds.length ? supabase.from('profiles').select('id, display_name, username, avatar_path').in('id', actorIds) : Promise.resolve({ data: [], error: null }),
         postIds.length ? supabase.from('community_posts').select('id, content').in('id', postIds) : Promise.resolve({ data: [], error: null }),
         commentIds.length ? supabase.from('community_post_comments').select('id, content').in('id', commentIds) : Promise.resolve({ data: [], error: null }),
+        chapterCommentIds.length ? supabase.from('creator_chapter_comments').select('id, content, chapter_id').in('id', chapterCommentIds) : Promise.resolve({ data: [], error: null }),
+        workDiscussionCommentIds.length ? supabase.from('creator_work_discussion_comments').select('id, content, work_id').in('id', workDiscussionCommentIds) : Promise.resolve({ data: [], error: null }),
         proposalIds.length ? supabase.from('collaboration_requests').select('id, title').in('id', proposalIds) : Promise.resolve({ data: [], error: null }),
       ])
       if (profilesResult.error) throw profilesResult.error
       if (postsResult.error) throw postsResult.error
       if (commentsResult.error) throw commentsResult.error
+      if (chapterCommentsResult.error) throw chapterCommentsResult.error
+      if (workDiscussionCommentsResult.error) throw workDiscussionCommentsResult.error
       if (proposalsResult.error) throw proposalsResult.error
+      const chapterIds = Array.from(new Set((chapterCommentsResult.data ?? []).map((comment) => comment.chapter_id)))
+      const chaptersResult = chapterIds.length
+        ? await supabase.from('creator_work_chapters').select('id, work_id, chapter_number').in('id', chapterIds)
+        : { data: [], error: null }
+      if (chaptersResult.error) throw chaptersResult.error
       if (!active) return
       const profilesById = new Map((profilesResult.data ?? []).map((profile) => [profile.id, profile]))
       const postsById = new Map((postsResult.data ?? []).map((post) => [post.id, post.content]))
       const commentsById = new Map((commentsResult.data ?? []).map((comment) => [comment.id, comment.content]))
+      const chapterCommentsById = new Map((chapterCommentsResult.data ?? []).map((comment) => [comment.id, comment]))
+      const workDiscussionCommentsById = new Map((workDiscussionCommentsResult.data ?? []).map((comment) => [comment.id, comment]))
+      const chaptersById = new Map((chaptersResult.data ?? []).map((chapter) => [chapter.id, chapter]))
       const proposalsById = new Map((proposalsResult.data ?? []).map((proposal) => [proposal.id, proposal.title]))
       setNotifications(rows.map((row) => {
         const actor = profilesById.get(row.actor_id)
+        const chapterComment = row.chapter_comment_id
+          ? chapterCommentsById.get(row.chapter_comment_id)
+          : undefined
+        const chapter = chapterComment ? chaptersById.get(chapterComment.chapter_id) : undefined
+        const workDiscussionComment = row.work_discussion_comment_id
+          ? workDiscussionCommentsById.get(row.work_discussion_comment_id)
+          : undefined
         return {
           id: row.id,
           actor_id: row.actor_id,
           kind: row.kind,
           post_id: row.post_id,
           comment_id: row.comment_id,
+          chapter_comment_id: row.chapter_comment_id,
+          work_discussion_comment_id: row.work_discussion_comment_id,
           proposal_id: row.proposal_id,
           created_at: row.created_at,
           read_at: row.read_at,
@@ -478,7 +511,16 @@ export function UpdatesView() {
             ? supabase.storage.from('avatars').getPublicUrl(actor.avatar_path).data.publicUrl
             : null,
           postContent: row.post_id ? postsById.get(row.post_id) : undefined,
-          commentContent: row.comment_id ? commentsById.get(row.comment_id) : undefined,
+          discussionHref: chapter
+              ? `/works/${encodeURIComponent(chapter.work_id)}?chapter=${chapter.chapter_number}#chapter-discussion`
+            : workDiscussionComment
+                ? `/works/${encodeURIComponent(workDiscussionComment.work_id)}#story-discussion`
+              : undefined,
+          commentContent: row.chapter_comment_id
+            ? chapterComment?.content
+            : row.work_discussion_comment_id
+              ? workDiscussionComment?.content
+              : row.comment_id ? commentsById.get(row.comment_id) : undefined,
           proposalTitle: row.proposal_id ? proposalsById.get(row.proposal_id) : undefined,
           moderationMessage: row.moderation_message,
         }
@@ -536,6 +578,8 @@ export function UpdatesView() {
             actorAvatarUrl: notification.actorAvatarUrl,
             post_id: notification.post_id,
             comment_id: notification.comment_id,
+            chapter_comment_id: notification.chapter_comment_id,
+            work_discussion_comment_id: notification.work_discussion_comment_id,
             proposal_id: notification.proposal_id,
             created_at: notification.created_at,
             notificationIds: [notification.id],
@@ -543,6 +587,7 @@ export function UpdatesView() {
             postContent: notification.postContent,
             commentContent: notification.commentContent,
             proposalTitle: notification.proposalTitle,
+              discussionHref: notification.discussionHref,
               moderationMessage: notification.moderationMessage,
           }
           likesByPost.set(notification.post_id, entry)
@@ -557,6 +602,8 @@ export function UpdatesView() {
           actorAvatarUrl: notification.actorAvatarUrl,
           post_id: notification.post_id,
           comment_id: notification.comment_id,
+          chapter_comment_id: notification.chapter_comment_id,
+          work_discussion_comment_id: notification.work_discussion_comment_id,
           proposal_id: notification.proposal_id,
           created_at: notification.created_at,
           notificationIds: [notification.id],
@@ -564,6 +611,7 @@ export function UpdatesView() {
           postContent: notification.postContent,
           commentContent: notification.commentContent,
           proposalTitle: notification.proposalTitle,
+          discussionHref: notification.discussionHref,
           moderationMessage: notification.moderationMessage,
         })
       }
@@ -668,7 +716,9 @@ export function UpdatesView() {
   const openEntry = async (entry: ActivityEntry) => {
     await markEntryRead(entry)
     if (entry.kind === 'moderation_outcome') return
-    if (entry.kind === 'follow' || entry.kind === 'post_like') {
+    if (entry.discussionHref) {
+      router.push(entry.discussionHref)
+    } else if (entry.kind === 'follow' || entry.kind === 'post_like') {
       router.push(entry.kind === 'follow'
         ? `/profile/${encodeURIComponent(entry.actorIds[0])}`
         : `/community#post-${entry.post_id}`)
@@ -702,7 +752,7 @@ export function UpdatesView() {
     try {
       const supabase = getSupabaseClient()
       const { data, error: loadError } = await supabase.from('user_notifications')
-        .select('id, actor_id, kind, post_id, comment_id, proposal_id, moderation_message, created_at, read_at')
+        .select('id, actor_id, kind, post_id, comment_id, chapter_comment_id, work_discussion_comment_id, proposal_id, moderation_message, created_at, read_at')
         .eq('recipient_id', currentUserId)
         .neq('kind', 'message')
         .or(`created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`)
@@ -711,34 +761,55 @@ export function UpdatesView() {
         .limit(NOTIFICATION_PAGE_SIZE)
       if (loadError) throw loadError
       const rows = (data ?? []).filter((row): row is typeof row & { kind: ActivityKind } => (
-        ['follow', 'post_like', 'comment', 'comment_reply', 'comment_reaction', 'mention', 'collaboration_proposal', 'moderation_outcome'].includes(row.kind)
+        ['follow', 'post_like', 'comment', 'comment_reply', 'comment_reaction', 'mention', 'collaboration_proposal', 'moderation_outcome', 'chapter_comment', 'chapter_comment_reply', 'work_comment', 'work_comment_reply'].includes(row.kind)
       ))
       const actorIds = Array.from(new Set(rows.map((row) => row.actor_id)))
       const postIds = Array.from(new Set(rows.map((row) => row.post_id).filter((id): id is string => Boolean(id))))
       const commentIds = Array.from(new Set(rows.map((row) => row.comment_id).filter((id): id is string => Boolean(id))))
+      const chapterCommentIds = Array.from(new Set(rows.map((row) => row.chapter_comment_id).filter((id): id is string => Boolean(id))))
+      const workDiscussionCommentIds = Array.from(new Set(rows.map((row) => row.work_discussion_comment_id).filter((id): id is string => Boolean(id))))
       const proposalIds = Array.from(new Set(rows.map((row) => row.proposal_id).filter((id): id is string => Boolean(id))))
-      const [profilesResult, postsResult, commentsResult, proposalsResult] = await Promise.all([
+      const [profilesResult, postsResult, commentsResult, chapterCommentsResult, workDiscussionCommentsResult, proposalsResult] = await Promise.all([
         actorIds.length ? supabase.from('profiles').select('id, display_name, username, avatar_path').in('id', actorIds) : Promise.resolve({ data: [], error: null }),
         postIds.length ? supabase.from('community_posts').select('id, content').in('id', postIds) : Promise.resolve({ data: [], error: null }),
         commentIds.length ? supabase.from('community_post_comments').select('id, content').in('id', commentIds) : Promise.resolve({ data: [], error: null }),
+        chapterCommentIds.length ? supabase.from('creator_chapter_comments').select('id, content, chapter_id').in('id', chapterCommentIds) : Promise.resolve({ data: [], error: null }),
+        workDiscussionCommentIds.length ? supabase.from('creator_work_discussion_comments').select('id, content, work_id').in('id', workDiscussionCommentIds) : Promise.resolve({ data: [], error: null }),
         proposalIds.length ? supabase.from('collaboration_requests').select('id, title').in('id', proposalIds) : Promise.resolve({ data: [], error: null }),
       ])
       if (profilesResult.error) throw profilesResult.error
       if (postsResult.error) throw postsResult.error
       if (commentsResult.error) throw commentsResult.error
+      if (chapterCommentsResult.error) throw chapterCommentsResult.error
+      if (workDiscussionCommentsResult.error) throw workDiscussionCommentsResult.error
       if (proposalsResult.error) throw proposalsResult.error
+      const chapterIds = Array.from(new Set((chapterCommentsResult.data ?? []).map((comment) => comment.chapter_id)))
+      const chaptersResult = chapterIds.length
+        ? await supabase.from('creator_work_chapters').select('id, work_id, chapter_number').in('id', chapterIds)
+        : { data: [], error: null }
+      if (chaptersResult.error) throw chaptersResult.error
       const profilesById = new Map((profilesResult.data ?? []).map((profile) => [profile.id, profile]))
       const postsById = new Map((postsResult.data ?? []).map((post) => [post.id, post.content]))
       const commentsById = new Map((commentsResult.data ?? []).map((comment) => [comment.id, comment.content]))
+      const chapterCommentsById = new Map((chapterCommentsResult.data ?? []).map((comment) => [comment.id, comment]))
+      const workDiscussionCommentsById = new Map((workDiscussionCommentsResult.data ?? []).map((comment) => [comment.id, comment]))
+      const chaptersById = new Map((chaptersResult.data ?? []).map((chapter) => [chapter.id, chapter]))
       const proposalsById = new Map((proposalsResult.data ?? []).map((proposal) => [proposal.id, proposal.title]))
       setNotifications((current) => [...current, ...rows.map((row) => {
         const actor = profilesById.get(row.actor_id)
+        const chapterComment = row.chapter_comment_id ? chapterCommentsById.get(row.chapter_comment_id) : undefined
+        const chapter = chapterComment ? chaptersById.get(chapterComment.chapter_id) : undefined
+        const workDiscussionComment = row.work_discussion_comment_id
+          ? workDiscussionCommentsById.get(row.work_discussion_comment_id)
+          : undefined
         return {
           id: row.id,
           actor_id: row.actor_id,
           kind: row.kind,
           post_id: row.post_id,
           comment_id: row.comment_id,
+          chapter_comment_id: row.chapter_comment_id,
+          work_discussion_comment_id: row.work_discussion_comment_id,
           proposal_id: row.proposal_id,
           created_at: row.created_at,
           read_at: row.read_at,
@@ -746,7 +817,16 @@ export function UpdatesView() {
           actorUsername: actor?.username ?? '',
           actorAvatarUrl: actor?.avatar_path ? supabase.storage.from('avatars').getPublicUrl(actor.avatar_path).data.publicUrl : null,
           postContent: row.post_id ? postsById.get(row.post_id) : undefined,
-          commentContent: row.comment_id ? commentsById.get(row.comment_id) : undefined,
+          commentContent: row.chapter_comment_id
+            ? chapterComment?.content
+            : row.work_discussion_comment_id
+              ? workDiscussionComment?.content
+              : row.comment_id ? commentsById.get(row.comment_id) : undefined,
+          discussionHref: chapter
+            ? `/works/${encodeURIComponent(chapter.work_id)}?chapter=${chapter.chapter_number}#chapter-discussion`
+            : workDiscussionComment
+              ? `/works/${encodeURIComponent(workDiscussionComment.work_id)}#story-discussion`
+              : undefined,
           proposalTitle: row.proposal_id ? proposalsById.get(row.proposal_id) : undefined,
           moderationMessage: row.moderation_message,
         }
@@ -1048,7 +1128,7 @@ function ActivityGroup({
               {entry.kind === 'follow' && !followingIds.has(entry.actorIds[0]) && (
                 <button type="button" onClick={() => void onFollowBack(entry)} className="min-h-9 shrink-0 rounded-full border border-border px-3 text-[10px] font-bold hover:border-accent">Follow back</button>
               )}
-              {(entry.kind === 'mention' || entry.kind === 'collaboration_proposal' || entry.kind === 'comment_reply') && (
+              {(entry.kind === 'mention' || entry.kind === 'collaboration_proposal' || entry.kind === 'comment_reply' || entry.kind === 'chapter_comment' || entry.kind === 'chapter_comment_reply' || entry.kind === 'work_comment' || entry.kind === 'work_comment_reply') && (
                 <button type="button" onClick={() => void onOpen(entry)} className="min-h-9 shrink-0 rounded-full border border-border px-3 text-[10px] font-bold hover:border-accent">View</button>
               )}
               {actorNotification?.actorUsername && <span className="sr-only">@{actorNotification.actorUsername}</span>}

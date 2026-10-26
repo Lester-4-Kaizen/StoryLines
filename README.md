@@ -291,6 +291,14 @@ Apply [`supabase/migrations/20261025001100_chapter_reading_completion.sql`](./su
 
 Apply [`supabase/migrations/20261025001200_chapter_discussions_chat_unsend_and_reader_position.sql`](./supabase/migrations/20261025001200_chapter_discussions_chat_unsend_and_reader_position.sql) after migration `20261025001100_chapter_reading_completion.sql`. It adds paragraph-anchored chapter discussions and reactions, message unsend tombstones, and saved scroll position for the reader. It also updates account-data reset to remove chapter comments and reactions. Apply it before deploying the updated reader or Messages UI. Community Following and My Posts feeds use the existing follows and posts tables; direct-message unread counts appear separately from social notification counts.
 
+Apply [`supabase/migrations/20261027001100_chapter_wide_discussions_and_policy_fix.sql`](./supabase/migrations/20261027001100_chapter_wide_discussions_and_policy_fix.sql) after the other `20261027` moderation migrations and before deploying this reader update. It fixes recursive chapter-comment insert-policy evaluation and enables a separate chapter-wide discussion at the end of each chapter, while preserving paragraph-anchored discussions.
+
+Apply [`supabase/migrations/20261027001200_chapter_discussion_reactions.sql`](./supabase/migrations/20261027001200_chapter_discussion_reactions.sql) after migration `20261027001100_chapter_wide_discussions_and_policy_fix.sql`. It adds the chapter reaction bar and securely stores one reaction per account per published chapter.
+
+Apply [`supabase/migrations/20261027001300_work_wide_discussions.sql`](./supabase/migrations/20261027001300_work_wide_discussions.sql) after migration `20261027001200_chapter_discussion_reactions.sql` to add a whole-story discussion below the work overview and chapter list, including threaded replies, comment reactions, reporting, and moderation. The migration applies published-work, account-status, and block checks, and includes work discussion comments in account-data reset.
+
+Apply [`supabase/migrations/20261027001400_discussion_notifications.sql`](./supabase/migrations/20261027001400_discussion_notifications.sql) after the work-wide discussion migration to notify work and chapter authors when readers comment or reply in those discussions. Notifications appear in the Updates activity feed and link back to the relevant discussion.
+
 Apply [`supabase/migrations/20261025001300_library_liked_works.sql`](./supabase/migrations/20261025001300_library_liked_works.sql) after migration `20261025001200_chapter_discussions_chat_unsend_and_reader_position.sql` to let signed-in users view their own liked works in a separate Library category. It grants access only to each user's own like records.
 
 ## Auth routes and behavior
@@ -309,6 +317,10 @@ Apply [`supabase/migrations/20261027000000_admin_moderation.sql`](./supabase/mig
 Also apply [`supabase/migrations/20261027000100_hidden_content_policy_permissions.sql`](./supabase/migrations/20261027000100_hidden_content_policy_permissions.sql) after the moderation migration. It grants the hidden-flag column permissions required by public content policies.
 
 Apply [`supabase/migrations/20261027000700_warning_appeals.sql`](./supabase/migrations/20261027000700_warning_appeals.sql) after the other `20261027` migrations to enable per-warning appeals. Users can submit and track an appeal in Settings or on the account-restricted screen; staff review pending appeals at `/admin/appeals`. Uphold/rescind decisions update the warning count when appropriate, notify the user, and remain in the audit log.
+
+Apply [`supabase/migrations/20261027000900_message_moderation.sql`](./supabase/migrations/20261027000900_message_moderation.sql) after the existing message reports, moderation, account-restriction, and appeal migrations and before deploying message moderation. It adds message-report status tracking, staff-only queue/detail data with nearby conversation context, and audited Dismiss, Hide message, Warn, Suspend, and Ban actions. Reporters and reported users can receive in-app outcome notifications. Message reports then appear in the existing `/admin/reports` queue alongside community-content reports.
+
+Apply [`supabase/migrations/20261027001000_message_report_abuse_controls.sql`](./supabase/migrations/20261027001000_message_report_abuse_controls.sql) after message moderation and before deploying message-report submission changes. It moves report submission behind an authenticated database function, validates that the report is tied to a real conversation and a message authored by the reported user, rejects duplicate reports, and limits combined content and message reports to five per reporter per hour.
 
 Staff privileges are stored in `profiles.staff_role`, a column that is not selectable or writable by regular app clients. To grant the first administrator, use the Supabase SQL Editor with the account's existing username:
 

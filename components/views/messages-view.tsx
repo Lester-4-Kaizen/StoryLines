@@ -272,7 +272,7 @@ function describeMessageError(error: unknown, fallback: string) {
       return 'Messaging features are not installed. Apply the latest migration 20261026000200_message_work_sharing_mutes_and_reports.sql in Supabase.'
     }
     if (error.code === 'PGRST202') {
-      return 'A messaging database function is missing. Apply migrations 20261025000400 through 20261025000900, 20261025001200_chapter_discussions_chat_unsend_and_reader_position.sql, and 20261027000600_blocked_account_visibility_and_shared_chat_customization.sql in Supabase.'
+      return 'A messaging database function is missing. Apply migrations 20261025000400 through 20261025000900, 20261025001200_chapter_discussions_chat_unsend_and_reader_position.sql, 20261027000600_blocked_account_visibility_and_shared_chat_customization.sql, and 20261027001000_message_report_abuse_controls.sql in Supabase.'
     }
     if (error.code === '42501') {
       return 'Supabase denied this message action. Apply migrations 20261025000400 through 20261025000800, then sign in again.'
@@ -1528,13 +1528,11 @@ export function MessagesView() {
     try {
       const reportedMessage = [...threadMessages].reverse().find((message) => message.sender_id === selectedUserId)
       const { error: reportError } = await getSupabaseClient()
-        .from('community_message_reports')
-        .insert({
-          reporter_id: currentUserId,
-          reported_user_id: selectedUserId,
-          message_id: reportedMessage?.id ?? null,
-          reason: reportReason,
-          details: reportDetails.trim(),
+        .rpc('submit_community_message_report', {
+          p_reported_user_id: selectedUserId,
+          p_message_id: reportedMessage?.id ?? null,
+          p_reason: reportReason,
+          p_details: reportDetails.trim(),
         })
       if (reportError) throw reportError
       setReportOpen(false)

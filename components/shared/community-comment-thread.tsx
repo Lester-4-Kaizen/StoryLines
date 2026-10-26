@@ -8,6 +8,8 @@ import { ProfileAvatar } from '@/components/shared/profile-avatar'
 import { getErrorMessage } from '@/lib/error-message'
 import type { CommunityComment } from '@/lib/types'
 
+const VISIBLE_REPLY_COUNT = 2
+
 function timeAgo(timestamp: number) {
   const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000))
   if (minutes < 1) return 'Now'
@@ -29,11 +31,13 @@ export function CommunityCommentThread({
   replyTargetId,
   replyTargetName,
   replyDraft,
+  replyError,
   onReplyDraftChange,
   onReplySubmit,
   onReplyCancel,
   replySubmitting = false,
   reportTargetType = 'comment',
+  allowReports = true,
 }: {
   comments: CommunityComment[]
   currentUserId: string | null
@@ -46,11 +50,13 @@ export function CommunityCommentThread({
   replyTargetId?: string | null
   replyTargetName?: string
   replyDraft?: string
+  replyError?: string | null
   onReplyDraftChange?: (value: string) => void
   onReplySubmit?: (event: React.FormEvent<HTMLFormElement>) => void
   onReplyCancel?: () => void
   replySubmitting?: boolean
-  reportTargetType?: Extract<ReportTargetType, 'comment' | 'chapter_comment'>
+  allowReports?: boolean
+  reportTargetType?: Extract<ReportTargetType, 'comment' | 'chapter_comment' | 'work_comment'>
 }) {
   const [expandedReplies, setExpandedReplies] = useState<string[]>([])
   const [pendingReactions, setPendingReactions] = useState<string[]>([])
@@ -143,6 +149,8 @@ export function CommunityCommentThread({
     const displayComment = { ...comment, ...reactionOverrides[comment.id] }
     const replies = repliesByParent.get(comment.id) ?? []
     const repliesExpanded = expandedReplies.includes(comment.id)
+    const visibleReplies = repliesExpanded ? replies : replies.slice(0, VISIBLE_REPLY_COUNT)
+    const hiddenReplyCount = replies.length - visibleReplies.length
     return (
       <article key={comment.id} className={`flex gap-2.5 ${nested ? 'ml-8 border-l-2 border-border pl-3' : ''}`}>
         <button type="button" onClick={() => onProfile(comment.authorId)} className="self-start rounded-full focus-visible:outline-2 focus-visible:outline-ring" aria-label={`View ${comment.authorName}'s profile`}>
@@ -233,7 +241,7 @@ export function CommunityCommentThread({
                 <Trash2 className="size-3.5" /> Delete
               </button>
             )}
-            {currentUserId !== comment.authorId && (
+            {allowReports && currentUserId !== comment.authorId && (
               <details className="group relative">
                 <summary className="inline-flex size-8 cursor-pointer list-none items-center justify-center rounded-full hover:bg-secondary focus-visible:outline-2 focus-visible:outline-ring" aria-label="Comment actions">
                   <MoreHorizontal className="size-4" />
@@ -258,40 +266,58 @@ export function CommunityCommentThread({
               </button>
             )}
           </div>
-          {repliesExpanded && replies.length > 0 && <div className="mt-1 flex flex-col gap-2.5">{replies.map((reply) => renderComment(reply, true))}</div>}
+          {replies.length > 0 && (
+            <div className="mt-1 flex flex-col gap-2.5">
+              {visibleReplies.map((reply) => renderComment(reply, true))}
+              {hiddenReplyCount > 0 && (
+                <button
+                  type="button"
+                  aria-expanded={repliesExpanded}
+                  onClick={() => setExpandedReplies((current) => current.includes(comment.id) ? current : [...current, comment.id])}
+                  className="ml-11 min-h-8 self-start text-left text-xs font-semibold text-accent hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+                >
+                  View {hiddenReplyCount} more {hiddenReplyCount === 1 ? 'reply' : 'replies'}
+                </button>
+              )}
+              {repliesExpanded && replies.length > VISIBLE_REPLY_COUNT && (
+                <button
+                  type="button"
+                  aria-expanded="true"
+                  onClick={() => setExpandedReplies((current) => current.filter((id) => id !== comment.id))}
+                  className="ml-11 min-h-8 self-start text-left text-xs font-semibold text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                >
+                  Hide extra replies
+                </button>
+              )}
+            </div>
+          )}
           {replyTargetId === comment.id && onReplySubmit && onReplyDraftChange && onReplyCancel && (
-            <form onSubmit={onReplySubmit} className="ml-2 mt-2 rounded-2xl border border-border bg-secondary/55 p-2.5 shadow-sm sm:p-3">
-              <div className="flex items-start gap-2.5">
-                <ProfileAvatar name={replyTargetName ?? 'You'} className="mt-1 size-8" imageSizes="32px" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2">
-                    <span className="shrink-0 rounded-md bg-accent/15 px-2 py-1 text-xs font-bold text-accent">
-                      @{replyTargetName}
-                    </span>
-                    <label className="sr-only" htmlFor={`reply-comment-${comment.id}`}>Write a reply to {replyTargetName}</label>
-                    <textarea
-                      id={`reply-comment-${comment.id}`}
-                      value={replyDraft ?? ''}
-                      onChange={(event) => onReplyDraftChange(event.target.value)}
-                      onKeyDown={handleReplyKeyDown}
-                      placeholder="Write a reply…"
-                      maxLength={500}
-                      rows={1}
-                      disabled={replySubmitting}
-                      className="min-h-9 min-w-0 flex-1 resize-y bg-transparent py-1 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
-                    />
-                    <button type="button" onClick={onReplyCancel} disabled={replySubmitting} className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50" aria-label="Cancel reply">
-                      <X className="size-4" />
-                    </button>
-                  </div>
-                  <div className="mt-1.5 flex items-center justify-between">
-                    <button type="button" onClick={() => onReplyDraftChange(`${replyDraft ?? ''}😊`)} disabled={replySubmitting} className="flex size-8 items-center justify-center rounded-full text-muted-foreground hover:bg-background hover:text-accent disabled:opacity-50" aria-label="Add a smile emoji">
-                      <Smile className="size-4" />
-                    </button>
-                    <button type="submit" disabled={replySubmitting || !(replyDraft ?? '').trim()} className="inline-flex min-h-9 items-center gap-1.5 rounded-full bg-accent px-3.5 text-xs font-bold text-accent-foreground hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50">
-                      <Send className="size-3.5" /> {replySubmitting ? 'Sending…' : 'Reply'}
-                    </button>
-                  </div>
+            <form onSubmit={onReplySubmit} className="ml-2 mt-3 overflow-hidden rounded-lg border border-border bg-background shadow-sm">
+              <label className="sr-only" htmlFor={`reply-comment-${comment.id}`}>Write a reply to {replyTargetName}</label>
+              <textarea
+                id={`reply-comment-${comment.id}`}
+                value={replyDraft ?? ''}
+                onChange={(event) => onReplyDraftChange(event.target.value)}
+                onKeyDown={handleReplyKeyDown}
+                placeholder={`Reply to ${replyTargetName}…`}
+                maxLength={500}
+                rows={3}
+                disabled={replySubmitting}
+                className="block min-h-20 w-full resize-y bg-transparent px-3 py-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-60"
+              />
+              {replyError && <p role="alert" className="px-3 pb-2 text-xs text-destructive">{replyError}</p>}
+              <div className="flex min-h-11 items-center justify-between gap-3 border-t border-border bg-secondary/30 px-2.5 py-1.5">
+                <button type="button" onClick={() => onReplyDraftChange(`${replyDraft ?? ''}😊`)} disabled={replySubmitting} className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-accent disabled:opacity-50" aria-label="Add a smile emoji">
+                  <Smile className="size-4" />
+                </button>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-muted-foreground">{(replyDraft ?? '').length}/500</span>
+                  <button type="button" onClick={onReplyCancel} disabled={replySubmitting} className="min-h-9 rounded-md px-2.5 text-xs font-semibold text-muted-foreground hover:bg-background disabled:opacity-50">
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={replySubmitting || !(replyDraft ?? '').trim()} className="inline-flex min-h-9 items-center gap-1.5 rounded-md bg-accent px-3.5 text-xs font-bold text-accent-foreground hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50">
+                    <Send className="size-3.5" /> {replySubmitting ? 'Posting…' : 'Post'}
+                  </button>
                 </div>
               </div>
             </form>
@@ -302,6 +328,6 @@ export function CommunityCommentThread({
   }
 
   return roots.length > 0
-    ? <div className="flex flex-col gap-3">{reactionError && <p role="alert" className="text-xs text-destructive">{reactionError}</p>}{roots.map((comment) => renderComment(comment))}</div>
+    ? <div className="divide-y divide-border">{reactionError && <p role="alert" className="py-2 text-xs text-destructive">{reactionError}</p>}{roots.map((comment) => <div key={comment.id} className="py-4 first:pt-0 last:pb-0">{renderComment(comment)}</div>)}</div>
     : <p className="py-2 text-sm text-muted-foreground">Wala pang comments. Ikaw ang mauna!</p>
 }
