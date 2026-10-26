@@ -11,7 +11,15 @@ import { ContentReportMenuItem } from '@/components/shared/content-report-menu-i
 import { getSupabaseClient } from '@/lib/supabase'
 import type { ReaderPageData } from '@/lib/reader-data'
 
-export function ReaderView({ data, initialChapterSelected = false }: { data: ReaderPageData; initialChapterSelected?: boolean }) {
+export function ReaderView({
+  data,
+  initialChapterSelected = false,
+  initialDiscussionParagraphIndex,
+}: {
+  data: ReaderPageData
+  initialChapterSelected?: boolean
+  initialDiscussionParagraphIndex?: number
+}) {
   const router = useRouter()
   const [storyTab, setStoryTab] = useState<'about' | 'contents' | 'read'>(initialChapterSelected && data.currentChapter ? 'read' : 'about')
   const [isSaved, setIsSaved] = useState(data.isSaved)
@@ -27,6 +35,9 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
   const [chapterProgress, setChapterProgress] = useState(data.chapterProgress)
   const [savedScrollProgress, setSavedScrollProgress] = useState(data.savedScrollProgress)
   const [selectedDiscussion, setSelectedDiscussion] = useState<{ index: number; text: string } | null>(null)
+  const [paragraphCommentCounts, setParagraphCommentCounts] = useState<Record<number, number>>({})
+  const [paragraphCommentCountsChapterId, setParagraphCommentCountsChapterId] = useState<string | null>(null)
+  const [paragraphCommentCountError, setParagraphCommentCountError] = useState<string | null>(null)
   const [comicIndex, setComicIndex] = useState(0)
   const completionInFlight = useRef(new Set<string>())
   const scrollSaveTimer = useRef<number | null>(null)
@@ -135,6 +146,39 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
   }, [data.currentChapter, data.currentUserId, data.work])
 
   useEffect(() => {
+    const chapterId = data.currentChapter?.id
+    if (!chapterId || data.work?.type !== 'story') return
+    let active = true
+    const loadCommentCounts = async () => {
+      const { data: rows, error } = await getSupabaseClient()
+        .rpc('get_creator_chapter_paragraph_comment_counts', { p_chapter_id: chapterId })
+      if (error) throw error
+      if (!active) return
+      const counts: Record<number, number> = {}
+      for (const row of rows ?? []) counts[row.paragraph_index] = Number(row.comment_count)
+      setParagraphCommentCounts(counts)
+      setParagraphCommentCountsChapterId(chapterId)
+      setParagraphCommentCountError(null)
+    }
+    const refreshCounts = () => {
+      void loadCommentCounts().catch((countError: unknown) => {
+        if (active) {
+          console.error('Could not load paragraph discussion counts', countError)
+          setParagraphCommentCountError('Paragraph discussion counts are unavailable. Apply migration 20261027002000_paragraph_discussion_comment_counts.sql in Supabase.')
+        }
+      })
+    }
+    refreshCounts()
+    const interval = window.setInterval(refreshCounts, 30_000)
+    window.addEventListener('focus', refreshCounts)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+      window.removeEventListener('focus', refreshCounts)
+    }
+  }, [data.currentChapter?.id, data.work?.type])
+
+  useEffect(() => {
     const userId = data.currentUserId
     const work = data.work
     const chapter = data.currentChapter
@@ -224,6 +268,15 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
     }
   }
 
+  useEffect(() => {
+    if (!initialChapterSelected || initialDiscussionParagraphIndex === undefined) return
+    const paragraph = (data.currentChapter?.body ?? '')
+      .split(/\r?\n+/)
+      .map((text) => text.trim())
+      .filter(Boolean)[initialDiscussionParagraphIndex]
+    if (paragraph) setSelectedDiscussion({ index: initialDiscussionParagraphIndex, text: paragraph })
+  }, [data.currentChapter?.body, initialChapterSelected, initialDiscussionParagraphIndex])
+
   if (!data.work) {
     return (
       <div role="alert">
@@ -263,6 +316,7 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
     .split(/\r?\n+/)
     .map((paragraph) => paragraph.trim())
     .filter(Boolean) ?? []
+
   const openDiscussion = (index: number, text: string) => {
     setSelectedDiscussion((current) => current?.index === index ? null : { index, text })
   }
@@ -518,11 +572,15 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
               Chapter {data.currentChapter.number}
             </p>
             <h2 className="mt-2 text-center font-serif text-2xl font-bold">{data.currentChapter.title}</h2>
+            {paragraphCommentCountError && (
+              <p role="status" className="mt-3 text-center text-xs text-muted-foreground">{paragraphCommentCountError}</p>
+            )}
             {chapterParagraphs.length ? (
               <div className="mx-auto mt-8 max-w-2xl space-y-6 font-serif text-lg leading-8">
                 {chapterParagraphs.map((paragraph, index) => (
                   <section
                     key={`${data.currentChapter!.id}-${index}`}
+                    id={`paragraph-discussion-${index}`}
                     className="group relative"
                     onPointerDown={(event) => beginParagraphPress(event, index, paragraph)}
                     onPointerUp={clearDiscussionPress}
@@ -539,11 +597,14 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
                       type="button"
                       onClick={() => openDiscussion(index, paragraph)}
                       aria-expanded={selectedDiscussion?.index === index}
-                      aria-label={`${selectedDiscussion?.index === index ? 'Close' : 'Open'} discussion for paragraph ${index + 1}`}
+                      aria-label={`${selectedDiscussion?.index === index ? 'Close' : 'Open'} discussion for paragraph ${index + 1}${(paragraphCommentCountsChapterId === data.currentChapter!.id ? paragraphCommentCounts[index] ?? 0 : 0) > 0 ? `, ${paragraphCommentCounts[index]} ${paragraphCommentCounts[index] === 1 ? 'comment' : 'comments'}` : ''}`}
                       title="Discuss this paragraph"
-                      className="absolute right-0 top-0 z-10 inline-flex size-8 -translate-y-2 items-center justify-center rounded-full border border-border bg-card/95 font-sans text-muted-foreground opacity-0 shadow-sm transition-opacity hover:border-accent hover:text-accent focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent group-hover:opacity-100 group-focus-within:opacity-100 max-lg:opacity-60"
+                      className="absolute right-0 top-0 z-10 inline-flex min-h-8 min-w-8 -translate-y-2 items-center justify-center gap-1 rounded-full border border-border bg-card/95 px-2 font-sans text-muted-foreground opacity-0 shadow-sm transition-opacity hover:border-accent hover:text-accent focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent group-hover:opacity-100 group-focus-within:opacity-100 max-lg:opacity-60"
                     >
                       <MessageCircle className="size-3.5" aria-hidden="true" />
+                      {(paragraphCommentCountsChapterId === data.currentChapter!.id ? paragraphCommentCounts[index] ?? 0 : 0) > 0 && (
+                        <span className="text-[10px] font-bold">[{paragraphCommentCounts[index]}]</span>
+                      )}
                     </button>
                     <p className="whitespace-pre-wrap">{paragraph}</p>
                   </section>
@@ -566,6 +627,14 @@ export function ReaderView({ data, initialChapterSelected = false }: { data: Rea
                     paragraphIndex={selectedDiscussion.index}
                     anchorText={selectedDiscussion.text}
                     currentUserId={data.currentUserId}
+                    onCommentCreated={(paragraphIndex) => {
+                      if (paragraphIndex === null) return
+                      setParagraphCommentCountsChapterId(data.currentChapter!.id)
+                      setParagraphCommentCounts((counts) => ({
+                        ...counts,
+                        [paragraphIndex]: (counts[paragraphIndex] ?? 0) + 1,
+                      }))
+                    }}
                     onClose={() => setSelectedDiscussion(null)}
                     onLoginRequired={() => router.push(`/login?next=${encodeURIComponent(`/works/${data.work!.id}?chapter=${data.currentChapter!.number}`)}`)}
                   />

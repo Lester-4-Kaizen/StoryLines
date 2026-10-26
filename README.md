@@ -309,6 +309,8 @@ Apply [`supabase/migrations/20261027001800_mention_everyone_notifications.sql`](
 
 Apply [`supabase/migrations/20261027001900_fix_community_comment_policy_recursion.sql`](./supabase/migrations/20261027001900_fix_community_comment_policy_recursion.sql) after migration `20261027001800_mention_everyone_notifications.sql`. It fixes recursive RLS evaluation when inserting replies to community comments; apply it before using comment notifications, since the Updates activity feed also reads those comments for notification context.
 
+Apply [`supabase/migrations/20261027002000_paragraph_discussion_comment_counts.sql`](./supabase/migrations/20261027002000_paragraph_discussion_comment_counts.sql) after migration `20261027001900_fix_community_comment_policy_recursion.sql` to show comment counts beside paragraph discussion controls in the story reader.
+
 Apply [`supabase/migrations/20261025001300_library_liked_works.sql`](./supabase/migrations/20261025001300_library_liked_works.sql) after migration `20261025001200_chapter_discussions_chat_unsend_and_reader_position.sql` to let signed-in users view their own liked works in a separate Library category. It grants access only to each user's own like records.
 
 ## Auth routes and behavior

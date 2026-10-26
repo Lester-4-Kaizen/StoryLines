@@ -47,6 +47,7 @@ type Notification = {
   proposalTitle?: string
   moderationMessage?: string | null
   discussionHref?: string
+  chapterParagraphIndex?: number | null
 }
 
 type ActivityEntry = {
@@ -68,6 +69,7 @@ type ActivityEntry = {
   proposalTitle?: string
   moderationMessage?: string | null
   discussionHref?: string
+  chapterParagraphIndex?: number | null
 }
 
 type FollowedUpdate = {
@@ -159,12 +161,23 @@ function activityText(entry: ActivityEntry) {
   }
   if (entry.kind === 'comment') return 'commented on your post.'
   if (entry.kind === 'comment_reply') return 'replied to your comment.'
-  if (entry.kind === 'chapter_comment') return 'commented on your chapter discussion.'
-  if (entry.kind === 'chapter_comment_reply') return 'replied to your chapter discussion.'
+  if (entry.kind === 'chapter_comment') {
+    return entry.chapterParagraphIndex === null || entry.chapterParagraphIndex === undefined
+      ? 'commented on your chapter discussion.'
+      : `commented on paragraph ${entry.chapterParagraphIndex + 1} in your chapter.`
+  }
+  if (entry.kind === 'chapter_comment_reply') {
+    return entry.chapterParagraphIndex === null || entry.chapterParagraphIndex === undefined
+      ? 'replied in your chapter discussion.'
+      : `replied to a comment on paragraph ${entry.chapterParagraphIndex + 1}.`
+  }
   if (entry.kind === 'work_comment') return 'commented on your story discussion.'
   if (entry.kind === 'work_comment_reply') return 'replied to your story discussion.'
   if (entry.kind === 'comment_reaction') return 'reacted to your comment.'
   if (entry.kind === 'mention') {
+    if (entry.discussionHref?.includes('#paragraph-discussion-') && entry.chapterParagraphIndex !== null && entry.chapterParagraphIndex !== undefined) {
+      return `mentioned you in the discussion on paragraph ${entry.chapterParagraphIndex + 1}.`
+    }
     if (entry.discussionHref?.includes('#chapter-discussion')) return 'mentioned you in a chapter discussion.'
     if (entry.discussionHref?.includes('#story-discussion')) return 'mentioned you in a story discussion.'
     return 'mentioned you in a post.'
@@ -469,7 +482,7 @@ export function UpdatesView() {
         actorIds.length ? supabase.from('profiles').select('id, display_name, username, avatar_path').in('id', actorIds) : Promise.resolve({ data: [], error: null }),
         postIds.length ? supabase.from('community_posts').select('id, content').in('id', postIds) : Promise.resolve({ data: [], error: null }),
         commentIds.length ? supabase.from('community_post_comments').select('id, content').in('id', commentIds) : Promise.resolve({ data: [], error: null }),
-        chapterCommentIds.length ? supabase.from('creator_chapter_comments').select('id, content, chapter_id').in('id', chapterCommentIds) : Promise.resolve({ data: [], error: null }),
+        chapterCommentIds.length ? supabase.from('creator_chapter_comments').select('id, content, chapter_id, paragraph_index').in('id', chapterCommentIds) : Promise.resolve({ data: [], error: null }),
         workDiscussionCommentIds.length ? supabase.from('creator_work_discussion_comments').select('id, content, work_id').in('id', workDiscussionCommentIds) : Promise.resolve({ data: [], error: null }),
         proposalIds.length ? supabase.from('collaboration_requests').select('id, title').in('id', proposalIds) : Promise.resolve({ data: [], error: null }),
       ])
@@ -519,10 +532,13 @@ export function UpdatesView() {
             : null,
           postContent: row.post_id ? postsById.get(row.post_id) : undefined,
           discussionHref: chapter
-              ? `/works/${encodeURIComponent(chapter.work_id)}?chapter=${chapter.chapter_number}#chapter-discussion`
+              ? chapterComment?.paragraph_index !== null && chapterComment?.paragraph_index !== undefined
+                ? `/works/${encodeURIComponent(chapter.work_id)}?chapter=${chapter.chapter_number}&paragraph=${chapterComment.paragraph_index}#paragraph-discussion-${chapterComment.paragraph_index}`
+                : `/works/${encodeURIComponent(chapter.work_id)}?chapter=${chapter.chapter_number}#chapter-discussion`
             : workDiscussionComment
                 ? `/works/${encodeURIComponent(workDiscussionComment.work_id)}#story-discussion`
               : undefined,
+          chapterParagraphIndex: chapterComment?.paragraph_index ?? null,
           commentContent: row.chapter_comment_id
             ? chapterComment?.content
             : row.work_discussion_comment_id
@@ -606,6 +622,7 @@ export function UpdatesView() {
             proposalTitle: notification.proposalTitle,
               discussionHref: notification.discussionHref,
               moderationMessage: notification.moderationMessage,
+              chapterParagraphIndex: notification.chapterParagraphIndex,
           }
           likesByPost.set(notification.post_id, entry)
           entries.push(entry)
@@ -630,6 +647,7 @@ export function UpdatesView() {
           proposalTitle: notification.proposalTitle,
           discussionHref: notification.discussionHref,
           moderationMessage: notification.moderationMessage,
+          chapterParagraphIndex: notification.chapterParagraphIndex,
         })
       }
     }
@@ -790,7 +808,7 @@ export function UpdatesView() {
         actorIds.length ? supabase.from('profiles').select('id, display_name, username, avatar_path').in('id', actorIds) : Promise.resolve({ data: [], error: null }),
         postIds.length ? supabase.from('community_posts').select('id, content').in('id', postIds) : Promise.resolve({ data: [], error: null }),
         commentIds.length ? supabase.from('community_post_comments').select('id, content').in('id', commentIds) : Promise.resolve({ data: [], error: null }),
-        chapterCommentIds.length ? supabase.from('creator_chapter_comments').select('id, content, chapter_id').in('id', chapterCommentIds) : Promise.resolve({ data: [], error: null }),
+        chapterCommentIds.length ? supabase.from('creator_chapter_comments').select('id, content, chapter_id, paragraph_index').in('id', chapterCommentIds) : Promise.resolve({ data: [], error: null }),
         workDiscussionCommentIds.length ? supabase.from('creator_work_discussion_comments').select('id, content, work_id').in('id', workDiscussionCommentIds) : Promise.resolve({ data: [], error: null }),
         proposalIds.length ? supabase.from('collaboration_requests').select('id, title').in('id', proposalIds) : Promise.resolve({ data: [], error: null }),
       ])
@@ -840,10 +858,13 @@ export function UpdatesView() {
               ? workDiscussionComment?.content
               : row.comment_id ? commentsById.get(row.comment_id) : undefined,
           discussionHref: chapter
-            ? `/works/${encodeURIComponent(chapter.work_id)}?chapter=${chapter.chapter_number}#chapter-discussion`
+            ? chapterComment?.paragraph_index !== null && chapterComment?.paragraph_index !== undefined
+              ? `/works/${encodeURIComponent(chapter.work_id)}?chapter=${chapter.chapter_number}&paragraph=${chapterComment.paragraph_index}#paragraph-discussion-${chapterComment.paragraph_index}`
+              : `/works/${encodeURIComponent(chapter.work_id)}?chapter=${chapter.chapter_number}#chapter-discussion`
             : workDiscussionComment
               ? `/works/${encodeURIComponent(workDiscussionComment.work_id)}#story-discussion`
               : undefined,
+          chapterParagraphIndex: chapterComment?.paragraph_index ?? null,
           proposalTitle: row.proposal_id ? proposalsById.get(row.proposal_id) : undefined,
           moderationMessage: row.moderation_message,
         }

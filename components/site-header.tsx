@@ -524,6 +524,16 @@ function InboxMenu({ userId, active }: { userId: string | null; active: boolean 
     if (latestMessageResult.error) throw unreadCountQueryError('community_direct_messages', latestMessageResult.error)
     if (latestUpdateResult.error) throw unreadCountQueryError('user_notifications', latestUpdateResult.error)
 
+    const latestChapterCommentResult = latestUpdateResult.data?.chapter_comment_id
+      ? await supabase.from('creator_chapter_comments')
+        .select('paragraph_index')
+        .eq('id', latestUpdateResult.data.chapter_comment_id)
+        .maybeSingle()
+      : { data: null, error: null }
+    if (latestChapterCommentResult.error) {
+      throw unreadCountQueryError('creator_chapter_comments', latestChapterCommentResult.error)
+    }
+
     const actorIds = [
       latestMessageResult.data
         ? latestMessageResult.data.sender_id === userId ? null : latestMessageResult.data.sender_id
@@ -553,12 +563,18 @@ function InboxMenu({ userId, active }: { userId: string | null; active: boolean 
         : update.kind === 'post_like' ? 'liked your post'
           : update.kind === 'comment' ? 'commented on your post'
             : update.kind === 'comment_reply' ? 'replied to your comment'
-              : update.kind === 'chapter_comment' ? 'commented on your chapter discussion'
-                : update.kind === 'chapter_comment_reply' ? 'replied to your chapter discussion'
+              : update.kind === 'chapter_comment' ? latestChapterCommentResult.data?.paragraph_index !== null && latestChapterCommentResult.data?.paragraph_index !== undefined
+                ? `commented on paragraph ${latestChapterCommentResult.data.paragraph_index + 1}`
+                : 'commented on your chapter discussion'
+                : update.kind === 'chapter_comment_reply' ? latestChapterCommentResult.data?.paragraph_index !== null && latestChapterCommentResult.data?.paragraph_index !== undefined
+                  ? `replied to a comment on paragraph ${latestChapterCommentResult.data.paragraph_index + 1}`
+                  : 'replied in your chapter discussion'
                   : update.kind === 'work_comment' ? 'commented on your story discussion'
                     : update.kind === 'work_comment_reply' ? 'replied to your story discussion'
             : update.kind === 'comment_reaction' ? 'reacted to your comment'
-              : update.kind === 'mention' && (update.chapter_comment_id || update.work_discussion_comment_id) ? 'mentioned you in a discussion'
+              : update.kind === 'mention' && update.chapter_comment_id && latestChapterCommentResult.data?.paragraph_index !== null && latestChapterCommentResult.data?.paragraph_index !== undefined
+                ? `mentioned you in the discussion on paragraph ${latestChapterCommentResult.data.paragraph_index + 1}`
+                : update.kind === 'mention' && (update.chapter_comment_id || update.work_discussion_comment_id) ? 'mentioned you in a discussion'
                 : update.kind === 'mention' ? 'mentioned you'
                 : 'sent a collaboration proposal'
       activityPreview = update.kind === 'moderation_outcome' ? activity : `${actor} ${activity}`

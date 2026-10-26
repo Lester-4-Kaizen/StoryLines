@@ -43,6 +43,7 @@ export function ChapterDiscussionPanel({
   paragraphIndex,
   anchorText,
   currentUserId,
+  onCommentCreated,
   onClose,
   onLoginRequired,
   onSignUpRequired,
@@ -52,6 +53,7 @@ export function ChapterDiscussionPanel({
   paragraphIndex: number | null
   anchorText: string
   currentUserId: string | null
+  onCommentCreated?: (paragraphIndex: number | null) => void
   onClose?: () => void
   onLoginRequired: () => void
   onSignUpRequired?: () => void
@@ -362,6 +364,7 @@ export function ChapterDiscussionPanel({
       }
       setDraft('')
       setReplyingTo(null)
+      onCommentCreated?.(paragraphIndex)
     } catch (submitError) {
       console.error('Failed to post discussion comment', submitError)
       setError(getErrorMessage(submitError, 'Could not post this comment.'))
