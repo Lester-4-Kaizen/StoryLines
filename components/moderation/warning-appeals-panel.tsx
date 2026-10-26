@@ -29,6 +29,14 @@ function formatDate(value: string) {
     : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(date)
 }
 
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string') {
+    return error.message
+  }
+  return fallback
+}
+
 export function WarningAppealsPanel() {
   const [warnings, setWarnings] = useState<WarningAppeal[]>([])
   const [loading, setLoading] = useState(true)
@@ -36,6 +44,7 @@ export function WarningAppealsPanel() {
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [confirmWarningId, setConfirmWarningId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -44,7 +53,7 @@ export function WarningAppealsPanel() {
         const data = await fetchWarnings()
         if (active) setWarnings(data)
       } catch (loadError) {
-        if (active) setError(loadError instanceof Error ? loadError.message : 'Could not load warnings.')
+        if (active) setError(getErrorMessage(loadError, 'Could not load warnings.'))
       } finally {
         if (active) setLoading(false)
       }
@@ -59,6 +68,7 @@ export function WarningAppealsPanel() {
     const appealText = drafts[warningId]?.trim() ?? ''
     if (appealText.length < 20 || appealText.length > 2000 || busyId) return
     setError(null)
+    setNotice(null)
     setConfirmWarningId(warningId)
   }
 
@@ -82,8 +92,10 @@ export function WarningAppealsPanel() {
           appeal_created_at: new Date().toISOString(),
         }
         : warning))
+      setConfirmWarningId(null)
+      setNotice('Your appeal was submitted and is awaiting review.')
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Could not submit this appeal.')
+      setError(getErrorMessage(submitError, 'Could not submit this appeal.'))
     } finally {
       setBusyId(null)
     }
@@ -105,6 +117,7 @@ export function WarningAppealsPanel() {
       <p className="mt-2 text-sm leading-6 text-muted-foreground">
         Review warnings or appeal a decision. Open a warning to see its details.
       </p>
+      {notice && <p role="status" className="mt-4 rounded-lg border border-green-700/20 bg-green-700/10 p-3 text-sm font-semibold text-green-800">{notice}</p>}
       {error && <p role="alert" className="mt-4 text-sm text-destructive">{error}</p>}
       {warnings.length > 0 && (
         <ul className="mt-4 divide-y divide-border rounded-xl border border-border">
