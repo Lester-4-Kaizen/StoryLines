@@ -483,6 +483,7 @@ export function UpdatesView() {
           moderationMessage: row.moderation_message,
         }
       }))
+      if (rows.some((row) => row.kind === 'moderation_outcome')) setTab('activity')
       setFollowingIds(new Set((followingResult.data ?? []).map((follow) => follow.creator_id)))
       setUnreadNotificationCount(unreadCountResult.count ?? 0)
       setHasMoreNotifications((notificationsResult.data?.length ?? 0) === NOTIFICATION_PAGE_SIZE)

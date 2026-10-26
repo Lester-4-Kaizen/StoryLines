@@ -41,6 +41,12 @@ Use branded confirmation and password-reset templates under **Authentication →
 
 ### Profiles table and row-level security
 
+### Moderation account restrictions
+
+After the admin moderation migration, apply `20261027000300_enforce_moderation_account_restrictions.sql` in Supabase SQL Editor (or apply pending migrations with the Supabase CLI). It installs the account-status RPC used by the app, restrictive RLS policies, and write guards for RLS-enabled public tables.
+
+Active accounts retain their existing access. Suspended accounts can read public community posts and profiles only; they cannot read stories or other app data, or write to app tables/storage. Banned accounts cannot access app tables or storage. The app checks status while open, shows warning and restriction notices, and provides suspended users a read-only community feed. These database protections take effect only after the migration has been applied to the Supabase project.
+
 Run this SQL in **Supabase → SQL Editor** before accepting signups. The auth trigger creates one `profiles` row per new auth user, including Google/Facebook users. OAuth accounts without a username receive a generated username; users can later update it through their profile settings. The final `INSERT` backfills users created before installing the trigger.
 
 ```sql

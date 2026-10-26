@@ -9,6 +9,7 @@ const ADMIN_ALLOWED_PREFIXES = ['/admin', '/api/admin', '/api/auth', '/account-r
 
 function isProtectedPath(pathname: string) {
   return pathname === '/profile'
+    || pathname === '/account-restricted'
     || PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
 }
 
@@ -98,6 +99,7 @@ export async function updateSession(request: NextRequest) {
     if (accountStatusError) throw accountStatusError
     if (
       (accountStatus === 'suspended' || accountStatus === 'banned')
+      && !(accountStatus === 'suspended' && request.nextUrl.pathname === '/community')
       && request.nextUrl.pathname !== '/account-restricted'
     ) {
       const restricted = new URL('/account-restricted', request.url)
